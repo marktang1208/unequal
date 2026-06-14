@@ -1,0 +1,19 @@
+{
+  "name": "unequal",
+  "private": true,
+  "version": "0.0.1",
+  "description": "WeChat-ecosystem personal parenting RAG agent",
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "dev:api": "pnpm -F api dev",
+    "dev:admin": "pnpm -F admin dev",
+    "deploy:api": "pnpm -F api deploy",
+    "deploy:admin": "pnpm -F admin deploy"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  }
+}
