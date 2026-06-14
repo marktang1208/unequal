@@ -56,9 +56,15 @@
 
 ## 3. 横向议题
 
-### 3.1 反幻觉：双层验证
+### 3.1 反幻觉：双层验证 + 医疗免责声明
 
 LLM prompt 强制要求答案末尾输出 `{"citations": [N, M, ...]}` 块，正文里只允许用 `[来源 N]` 引用。应用层取两层交集 = 真正引用的编号。交集为空则降级为"未在知识库中找到可靠来源"。
+
+**强制医疗免责声明**（法务底线，0 成本，必须在 MVP 落地）：所有 LLM 生成的答案必须追加以下声明（不计入 citations 校验）：
+
+> 以上信息来源于知识库内容，不构成医疗建议。具体情况请咨询专业儿科医生。
+
+声明由应用层在 `§5.2 ⑨` 之后追加，不由 LLM 生成（避免被 LLM 改写或省略）。如果 LLM 自己已经在答案里写了类似免责语，去重不重复追加。
 
 ### 3.2 信源评级：所有来源平权入库
 
@@ -194,9 +200,11 @@ CREATE TABLE crawl_job (
   ⑧ 双层验证：取 文本 [来源 N] ∩ JSON.citations = 真正引用
      交集为空 → 降级为"未在知识库中找到可靠来源"
   ↓
-  ⑨ 写回缓存：把 {q, answer, citations, q_embedding} 写入 Vectorize, is_cached=true
+  ⑨ 强制追加医疗免责声明（见 §3.1），不计入 citations 校验
   ↓
-返回 {answer, citations: [{n, title, snippet, url, trust_level, source_id, chunk_id}], cached}
+  ⑩ 写回缓存：把 {q, answer, citations, q_embedding} 写入 Vectorize, is_cached=true
+  ↓
+返回 {answer, disclaimer, citations: [{n, title, snippet, url, trust_level, source_id, chunk_id}], cached}
 ```
 
 ### 5.3 多轮对话
@@ -229,7 +237,8 @@ CREATE TABLE crawl_job (
 
 ```json
 {
-  "answer": "5个月宝宝发烧38.5°C 建议... [来源 1] [来源 3]",
+  "answer": "5个月宝宝发烧38.5°C 建议... [来源 1] [来源 3]\n\n以上信息来源于知识库内容，不构成医疗建议。具体情况请咨询专业儿科医生。",
+  "disclaimer": "以上信息来源于知识库内容，不构成医疗建议。具体情况请咨询专业儿科医生。",
   "citations": [
     {
       "n": 1,
@@ -319,6 +328,7 @@ Cloudflare 资源清单（一次性开通）：
 | Vectorize metadata 不可信 | 应用层用 chunk_id 反查 D1 二次校验 |
 | 年卡额度用完 | 监控 token 用量 |
 | 反幻觉双层验证失败率过高 | 降级为单层文本模式 |
+| 医疗免责声明缺失 | 用户误把答案当医嘱 | MVP 强制加 disclaimer 字段（见 §3.1） |
 
 ## 12. 监控
 
@@ -331,6 +341,8 @@ Cloudflare 资源清单（一次性开通）：
 
 - 多用户真鉴权（wx.login → openid → JWT）
 - BGE-reranker / LLM-as-reranker
+- **NLI 蕴含验证**：在 §5.2 ⑧ 之后用 NLI 模型判断每条答案句是否被检索 chunk 蕴含；不蕴含的句子降级为"知识库未支持"。能再压一档幻觉。预计 1-2 天工作量。
+- **HyDE 检索增强**：在 §5.2 ② 之前用 LLM 根据 q 生成"假设性答案文本"，用这个文本 embedding 去检索。适合"用户问得口语化、文档写得书面化"的育儿场景。预计 1 天工作量。
 - 答案质量反馈（点赞/点踩 → D1）
 - 知识库更新自动 invalidate 缓存
 - 信源自动评级（域名白名单 + 账号粉丝数）
@@ -351,3 +363,6 @@ Cloudflare 资源清单（一次性开通）：
 | 信源评级 | 所有来源平权入库 + trust_level 0-3 | 澄清 5 补充 |
 | 查询缓存 | 复用 Vectorize, is_cached 区分；每次成功自动回写 | 澄清 7（追问） |
 | 鉴权 | MVP 不做真鉴权，schema 预留 wx_openid | 横向议题 3.3 |
+| 医疗免责声明 | 强制在所有答案末尾追加，不依赖 LLM | 业界策略反馈后追加 |
+| NLI 验证 | v2 候选 | 业界策略反馈后追加 |
+| HyDE 检索 | v2 候选 | 业界策略反馈后追加 |
