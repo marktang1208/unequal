@@ -1,0 +1,3 @@
+ADMIN_TOKEN=dev-token-change-me
+MINIMAX_API_KEY=sk-MiniMax-placeholder
+MINIMAX_BASE_URL=https://api.MiniMax.chat/v1

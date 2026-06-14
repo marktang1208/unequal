@@ -1,0 +1,35 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "unequal-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  "vars": {
+    "ENVIRONMENT": "development"
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "unequal-db",
+      "database_id": "PLACEHOLDER_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  "vectorize": [
+    {
+      "binding": "VECTORIZE",
+      "index_name": "unequal-chunks"
+    }
+  ],
+
+  "r2_buckets": [
+    {
+      "binding": "R2",
+      "bucket_name": "unequal-storage"
+    }
+  ]
+}
