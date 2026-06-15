@@ -6,7 +6,10 @@
  * --no-ingest: 只抓取不调 ingest（调试用）。
  */
 import { fetchUrl } from "./sources/webpage.js";
+import { fetchXiaohongshuNote } from "./sources/xiaohongshu.js";
+import { fetchWechatMpArticle } from "./sources/wechat-mp.js";
 import { buildIngestPayload, submitToIngest } from "./ingest.js";
+import type { CrawledDocument } from "./types.js";
 
 function parseArgs(argv: string[]): Record<string, string | boolean> {
   const out: Record<string, string | boolean> = {};
@@ -29,8 +32,13 @@ function parseArgs(argv: string[]): Record<string, string | boolean> {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const url = args.url as string;
+  const sourceType = (args["source-type"] as string) ?? "webpage";
+  if (!["webpage", "xiaohongshu", "wechat-mp"].includes(sourceType)) {
+    console.error(`[crawler] invalid --source-type: ${sourceType} (must be webpage|xiaohongshu|wechat-mp)`);
+    process.exit(1);
+  }
   if (!url) {
-    console.error("Usage: --url <URL> [--ingest-url <URL>] [--token <T>] [--user-id <U>] [--trust 0-3] [--no-ingest]");
+    console.error("Usage: --url <URL> [--source-type webpage|xiaohongshu|wechat-mp] [--ingest-url <URL>] [--token <T>] [--user-id <U>] [--trust 0-3] [--no-ingest]");
     process.exit(1);
   }
 
@@ -40,8 +48,15 @@ async function main() {
   const trustLevel = parseInt((args.trust as string) ?? "2", 10) as 0 | 1 | 2 | 3;
   const noIngest = args["no-ingest"] === true;
 
-  console.log(`[crawler] fetch ${url}`);
-  const doc = await fetchUrl(url);
+  let doc: CrawledDocument;
+  console.log(`[crawler] fetch ${url} (source-type: ${sourceType})`);
+  if (sourceType === "xiaohongshu") {
+    doc = await fetchXiaohongshuNote(url);
+  } else if (sourceType === "wechat-mp") {
+    doc = await fetchWechatMpArticle(url);
+  } else {
+    doc = await fetchUrl(url);
+  }
   console.log(`[crawler] title: ${doc.title}`);
   console.log(`[crawler] paragraphs: ${doc.paragraphs.length}, totalChars: ${doc.totalChars}`);
 
