@@ -231,4 +231,22 @@ describe("/ask integration (Miniflare + undici MockAgent + __hits DI)", () => {
     expect(body.answer.startsWith("未在知识库中找到可靠来源")).toBe(true);
     expect(body.citations).toEqual([]);
   });
+
+  it("401: 缺 Authorization header", async () => {
+    const res = await mf.dispatchFetch("http://localhost/ask", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ q: "test" }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("400: 缺 q 字段", async () => {
+    const res = await mf.dispatchFetch("http://localhost/ask", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer test-token" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+  });
 });
