@@ -100,3 +100,37 @@ export async function ask(q: string): Promise<AskResponse> {
   }
   return (await res.json()) as AskResponse;
 }
+
+export interface CrawledDocument {
+  url: string;
+  title: string;
+  content: string;
+  fetchedAt: string;
+  trustLevel: number;
+}
+
+export interface CrawlResult {
+  document: CrawledDocument;
+  ingested: boolean;
+  sourceId: string;
+  documentId: string;
+  chunkCount: number;
+}
+
+export async function crawlUrl(
+  url: string,
+  trustLevel: number
+): Promise<CrawlResult> {
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  const token = getToken();
+  if (token) headers.authorization = `Bearer ${token}`;
+  const res = await fetch(`/api/crawl?url=${encodeURIComponent(url)}&trust_level=${trustLevel}`, {
+    method: "POST",
+    headers,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`/crawl ${res.status}: ${text}`);
+  }
+  return (await res.json()) as CrawlResult;
+}
