@@ -6,6 +6,7 @@ import { seedUserRoute } from "./routes/seed-user.js";
 import { uploadRoute } from "./routes/upload.js";
 import { ingestRoute } from "./routes/ingest.js";
 import { searchRoute } from "./routes/search.js";
+import { askRoute } from "./routes/ask.js";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -31,6 +32,7 @@ app.post("/seed-user", (c) => seedUserRoute.POST(c.req.raw, c.env));
 app.post("/upload", (c) => uploadRoute.POST(c.req.raw, c.env));
 app.post("/ingest", (c) => ingestRoute.POST(c.req.raw, c.env));
 app.get("/search", (c) => searchRoute.GET(c.req.raw, c.env));
+app.post("/ask", (c) => askRoute.POST(c.req.raw, c.env));
 
 app.notFound((c) => c.text("Not found", 404));
 
