@@ -9,10 +9,19 @@ import type { HistoryEntry } from "../../lib/types.js";
 // 注入 wx storage 实现
 // @ts-expect-error wx 全局类型 mock-first 缺失
 __setStorageImpl(
-  // @ts-expect-error wx 全局类型 mock-first 缺失
-  () => (wx.getStorageSync("unequal:history") as HistoryEntry[]) ?? [],
-  // @ts-expect-error wx 全局类型 mock-first 缺失
-  (entries: HistoryEntry[]) => wx.setStorageSync("unequal:history", entries),
+  // @ts-nocheck wx 全局类型 mock-first 缺失
+  // wx.getStorageSync 缺失 key 时返回 ""（空字符串），不是 null/undefined；
+  // 空字符串 .slice() 工作但 .reverse() 抛 TypeError。用 Array.isArray 守门。
+  () => {
+    // @ts-expect-error wx 全局类型 mock-first 缺失
+    const raw = wx.getStorageSync("unequal:history");
+    return Array.isArray(raw) ? (raw as HistoryEntry[]) : [];
+  },
+  // @ts-nocheck wx 全局类型 mock-first 缺失
+  (entries: HistoryEntry[]) => {
+    // @ts-expect-error wx 全局类型 mock-first 缺失
+    wx.setStorageSync("unequal:history", entries);
+  },
 );
 
 Page({
