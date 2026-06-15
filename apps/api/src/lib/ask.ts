@@ -4,6 +4,7 @@ import { buildAskPrompt, DISCLAIMER_TEXT, type AskContext } from "@unequal/share
 import { verifyCitations } from "@unequal/shared/cite-verify";
 import type { Citation } from "@unequal/shared/types";
 import { chatCompletion, type LLMMessage } from "./llm.js";
+import { readCache, writeCache } from "./cache.js";
 import type { Env } from "../types.js";
 
 const DEFAULT_USER_ID = "01H0000000000000000000000";
@@ -40,8 +41,31 @@ export async function runAsk(opts: RunAskOptions): Promise<AskResult> {
   const [qEmbedding] = await embed.embed([q]);
   if (!qEmbedding) throw new Error("embedding returned empty");
 
-  if (opts.cacheRead) {
-    const cached = await opts.cacheRead(qEmbedding);
+  const cacheRead = opts.cacheRead ?? (async (qEmbedding) => {
+    const cached = await readCache({
+      d1: env.DB,
+      vectorize: env.VECTORIZE,
+      userId: DEFAULT_USER_ID,
+      q,
+      qEmbedding,
+    });
+    if (!cached) return null;
+    return { answer: cached.answer, disclaimer: DISCLAIMER_TEXT, citations: [], cached: false };
+  });
+  const cacheWrite = opts.cacheWrite ?? (async (qEmbedding, result) => {
+    await writeCache({
+      d1: env.DB,
+      vectorize: env.VECTORIZE,
+      userId: DEFAULT_USER_ID,
+      q,
+      qEmbedding,
+      answer: result.answer,
+      verified: result.citations.map((c) => c.n),
+    });
+  });
+
+  if (cacheRead) {
+    const cached = await cacheRead(qEmbedding);
     if (cached) return { ...cached, cached: true };
   }
 
@@ -111,8 +135,8 @@ export async function runAsk(opts: RunAskOptions): Promise<AskResult> {
   }
 
   const result: AskResult = { answer, disclaimer, citations, cached: false };
-  if (verified.length > 0 && opts.cacheWrite) {
-    await opts.cacheWrite(qEmbedding, result);
+  if (verified.length > 0 && cacheWrite) {
+    await cacheWrite(qEmbedding, result);
   }
 
   return result;

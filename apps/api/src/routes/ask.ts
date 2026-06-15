@@ -1,5 +1,6 @@
 import { verifyAdminToken } from "../lib/auth.js";
 import { runAsk } from "../lib/ask.js";
+import { DISCLAIMER_TEXT } from "@unequal/shared/prompt";
 import type { SearchResult } from "@unequal/shared/retrieval";
 import type { Env } from "../types.js";
 
@@ -29,6 +30,21 @@ export const askRoute = {
       if (Array.isArray(hits)) {
         // 类型断言：test-only，生产不接
         opts.searchFn = async () => hits as SearchResult[];
+      }
+      const cacheHit = (body as { __cacheHit?: { answer: string; verified: number[] } }).__cacheHit;
+      if (cacheHit) {
+        opts.cacheRead = async () => ({
+          answer: cacheHit.answer,
+          disclaimer: DISCLAIMER_TEXT,
+          citations: [],
+          cached: false,
+        });
+      }
+      // __noCache: 测试环境禁用 cache 模块默认实现（Miniflare v3 不支持 VECTORIZE binding；
+      // 显式 cache-hit 测试通过 __cacheHit 注入 opts.cacheRead 覆盖，二者不冲突）
+      if ((body as { __noCache?: boolean }).__noCache) {
+        opts.cacheRead = async () => null;
+        opts.cacheWrite = async () => undefined;
       }
     }
 

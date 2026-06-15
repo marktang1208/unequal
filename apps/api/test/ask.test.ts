@@ -177,6 +177,7 @@ describe("/ask integration (Miniflare + undici MockAgent + __hits DI)", () => {
       body: JSON.stringify({
         q: "5个月宝宝发烧38.5怎么办",
         __hits: FAKE_HITS,
+        __noCache: true,
       }),
     });
     expect(res.status).toBe(200);
@@ -197,7 +198,7 @@ describe("/ask integration (Miniflare + undici MockAgent + __hits DI)", () => {
     const res = await mf.dispatchFetch("http://localhost/ask", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: "Bearer test-token" },
-      body: JSON.stringify({ q: "5个月宝宝发烧38.5", __hits: FAKE_HITS }),
+      body: JSON.stringify({ q: "5个月宝宝发烧38.5", __hits: FAKE_HITS, __noCache: true }),
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { answer: string; citations: unknown[] };
@@ -211,7 +212,7 @@ describe("/ask integration (Miniflare + undici MockAgent + __hits DI)", () => {
     const res = await mf.dispatchFetch("http://localhost/ask", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: "Bearer test-token" },
-      body: JSON.stringify({ q: "5个月宝宝发烧38.5", __hits: FAKE_HITS }),
+      body: JSON.stringify({ q: "5个月宝宝发烧38.5", __hits: FAKE_HITS, __noCache: true }),
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { answer: string; citations: unknown[] };
@@ -224,7 +225,7 @@ describe("/ask integration (Miniflare + undici MockAgent + __hits DI)", () => {
     const res = await mf.dispatchFetch("http://localhost/ask", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: "Bearer test-token" },
-      body: JSON.stringify({ q: "5个月宝宝发烧38.5", __hits: FAKE_HITS }),
+      body: JSON.stringify({ q: "5个月宝宝发烧38.5", __hits: FAKE_HITS, __noCache: true }),
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { answer: string; citations: unknown[] };
@@ -248,5 +249,25 @@ describe("/ask integration (Miniflare + undici MockAgent + __hits DI)", () => {
       body: JSON.stringify({}),
     });
     expect(res.status).toBe(400);
+  });
+
+  it("cached: __cacheHit 注入 → cached=true + answer 是注入的文本", async () => {
+    const res = await mf.dispatchFetch("http://localhost/ask", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer test-token" },
+      body: JSON.stringify({
+        q: "5个月宝宝发烧38.5",
+        __hits: FAKE_HITS,
+        __cacheHit: {
+          answer: "来自缓存的答案 + 不构成医疗建议",
+          verified: [1, 3],
+        },
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { cached: boolean; answer: string; citations: unknown[] };
+    expect(body.cached).toBe(true);
+    expect(body.answer).toContain("来自缓存");
+    expect(body.citations).toEqual([]); // cache 命中不返回 citations（按 plan §5.2）
   });
 });
