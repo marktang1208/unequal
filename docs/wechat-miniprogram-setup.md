@@ -5,6 +5,8 @@
 > 目标读者：项目作者本人（非团队 — 所有微信平台账号、AppID、付费认证都是个人主体）。
 >
 > 预计耗时：注册 + 审核 1-2 个工作日，其余步骤当天可完成。
+>
+> 状态：已配置真 AppID `wxf5b8ce05a977f0c6`，等待 Cloudflare 资源 + 微信开发者工具真机预览。
 
 ---
 
@@ -105,7 +107,7 @@ pnpm -F admin dev
 
 - 微信开发者工具 → 左侧「小程序」tab → 右上角「+」→ 「导入项目」
 - **项目目录**：选择本仓库的 `apps/miniprogram/` 目录（不是仓库根，是子目录）
-- **AppID**：选择「使用测试号」→ **取消** → 选「手动输入 AppID」→ 粘贴第 2 步拿到的 AppID
+- **AppID**：选择「使用测试号」→ **取消** → 选「手动输入 AppID」→ 粘贴第 2 步拿到的 AppID（项目仓库已配置真 AppID `wxf5b8ce05a977f0c6`，无需手动输入；如果显示的是 `touristappid0000000`，说明 `project.config.json` 没拉到最新，重新 git pull / 切到 `m3-realdeploy` 分支）
 - **项目名称**：`unequal-miniprogram`（或自取）
 - 点击「导入」
 
@@ -127,18 +129,23 @@ pnpm -F admin dev
 - 勾选 ✅ **不校验合法域名、web-view（业务域名）、TLS 版本以及 HTTPS 证书**
 - 勾选 ✅ **不校验 WebSecurity 域名**
 
-### 5.2 替换占位 AppID
+### 5.2 确认 AppID 已配置
 
-`apps/miniprogram/project.config.json` 当前 `appid` 是 `touristappid0000000`（CP-3 mock-first 留下的占位，真机联调前必须替换）。
+`apps/miniprogram/project.config.json` 当前 `appid` 已是真值 `wxf5b8ce05a977f0c6`（m3-realdeploy 分支完成）。
 
-```diff
-   "appid": "touristappid0000000",
-+  "appid": "wx你的真实AppID",
-```
+如果微信开发者工具「详情」面板显示的还是 `touristappid0000000`，说明本地 `project.config.json` 没拉到最新分支，重新 `git checkout m3-realdeploy && git pull`。
 
-替换完在微信开发者工具「详情」面板会刷新为真实 AppID。
+### 5.3 AppSecret 暂存说明
 
-### 5.3 apiBaseUrl 说明
+小程序 AppSecret **不写入任何项目文件**（包括 `.env` / `wrangler.toml` / `project.private.config.json` 和任何 `.ts` `.wxml` `.wxss` `.json` 文件，包括本文档 — AppSecret 真值只存密码管理器）。
+
+- 暂存到密码管理器（1Password / macOS Keychain / Bitwarden）
+- **不** commit 到 git（包括 private config / env / comments）
+- M6 多租户 / 用户体系阶段会通过 `wrangler secret put WX_APP_SECRET` 注入到 Cloudflare Worker（wrangler secret 本身不进 git）
+
+当前 `apps/api` 没有任何调微信 API 的代码 → AppSecret 现在没地方落地，这一步可以先跳过。
+
+### 5.4 apiBaseUrl 说明
 
 `apps/miniprogram/app.ts` 里：
 
@@ -163,11 +170,8 @@ apiBaseUrl: "http://localhost:8787",  // CP-5 后改 https://unequal.xxx.workers
 
 ### 6.2 体验成员授权
 
-如果用非管理员微信扫码（家庭成员 / 测试朋友），需要先在后台加体验成员：
-
-- mp.weixin.qq.com → 左侧「成员管理」→ 「体验成员」tab → 「添加」→ 输入对方微信号
-- 对方微信会收到「邀请体验」通知，同意后才能扫码预览
-- 个人主体最多 15 个体验成员
+- **个人主体 + 注册时绑定的管理员微信**：直接扫码预览（无需额外加体验成员，个人主体默认管理员即体验者）
+- **其他微信（家庭成员 / 测试朋友）**：需要先在后台加体验成员 — mp.weixin.qq.com → 左侧「成员管理」→ 「体验成员」tab → 「添加」→ 输入对方微信号；对方微信会收到「邀请体验」通知，同意后才能扫码预览；个人主体最多 15 个体验成员
 
 ### 6.3 手机扫码
 
