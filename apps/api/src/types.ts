@@ -6,4 +6,5 @@ export interface Env {
   MINIMAX_API_KEY: string;
   MINIMAX_BASE_URL: string;
   ENVIRONMENT: string;
+  ALLOWED_ORIGIN: string;
 }
