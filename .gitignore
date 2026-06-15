@@ -8,3 +8,8 @@ dist/
 .DS_Store
 coverage/
 .worktrees/
+
+# Miniflare integration test build output
+# (apps/api/test/integration.test.ts bundles src/index.ts here at suite-setup
+# so Miniflare can resolve node_modules-relative bare specifiers.)
+apps/api/.test-bundle/
