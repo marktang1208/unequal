@@ -1261,3 +1261,170 @@ Page({
 });
 ```
 
+
+---
+
+## CP-4 (续): Tasks 16-18 (实际已由 subagent 完成)
+
+> **Plan 修订说明**：CP-4 段在初次 plan 写入时被截断到 Task 15，Tasks 16-18 段实际由 orchestrator prompt 驱动 subagent 完成，代码全部到位（见 m3-miniprogram 分支 git log: b21f19c / 554099b / 85704fd / 0008a46 / 5ec7553 共 5 commit）。
+> 本节为补写，让 plan 与实际 commit 一致。
+
+### Task 16: source-detail 页
+
+**Files:**
+- Create: `apps/miniprogram/pages/source-detail/source-detail.ts`
+- Create: `apps/miniprogram/pages/source-detail/source-detail.wxml`
+- Create: `apps/miniprogram/pages/source-detail/source-detail.wxss`
+- Create: `apps/miniprogram/pages/source-detail/source-detail.json`
+
+**实现要点**：
+- `source-detail.ts`：Page({ data: { chunkId, title, trustLevel, rawUrl, loading: true }, onLoad(query) 设 chunkId/title; onOpenRaw 用 wx.setClipboardData 复制 rawUrl + showToast）
+- `source-detail.wxml`：header (title) + meta (chunkId) + content (placeholder "完整内容由 source-detail 接口返回（M3 范围外，M4+ 实现）") + actions (button 复制原文链接)
+- `source-detail.wxss`：.page padding 32rpx 24rpx，.title 36rpx 600，.meta 24rpx 灰，.content 白底圆角 12rpx，.btn-primary 蓝
+- `source-detail.json`：`{ "navigationBarTitleText": "引用详情" }`
+- commit "M3 task 16: source-detail page (4 files: .ts + .wxml + .wxss + .json)" ✓ 已落地 0008a46
+
+### Task 17: history 页
+
+**Files:**
+- Create: `apps/miniprogram/pages/history/history.ts`
+- Create: `apps/miniprogram/pages/history/history.wxml`
+- Create: `apps/miniprogram/pages/history/history.wxss`
+- Create: `apps/miniprogram/pages/history/history.json`
+
+**实现要点**：
+- `history.ts`：import loadHistory, clearHistory, __setStorageImpl from storage.js
+  - Page({ data: { entries, loading }, onShow refresh, onAskAgain(e) wx.redirectTo chat?q=..., onClear() showModal + clearHistory })
+  - refresh 注入 wx storage impl
+- `history.wxml`：header (title + 清空 button) + empty state + entry list (q + meta 含 citations 数量 + cached 标签)
+- `history.wxss`：.entry 白底圆角带阴影，.q 28rpx，.meta 22rpx 灰，.cached 绿，.empty 居中灰
+- `history.json`：`{ "navigationBarTitleText": "历史" }`
+- commit "M3 task 17: history page (4 files: .ts + .wxml + .wxss + .json)" ✓ 已落地 5ec7553
+
+### Task 18: CP-4 收尾
+
+- `pnpm -r typecheck`：4 包全绿 ✓
+- `pnpm -F admin build`：绿（177.31 kB / 57.05 kB gzip，无回归）✓
+- Task 18 无 dirty 跳过 commit ✓
+
+---
+
+## CP-5: docs + README + 真人 checklist + 收尾
+
+**目标**：`docs/wechat-miniprogram-setup.md` 真人操作清单完整；README M3 段加完；全测全绿。
+
+**完成定义**：`pnpm -r typecheck` 绿；docs 完整。
+
+---
+
+### Task 19: docs/wechat-miniprogram-setup.md
+
+**Files:**
+- Create: `docs/wechat-miniprogram-setup.md`
+
+**实现要点**（完整内容 ~309 行）：
+- §1 注册个人主体（30 元/年，1-2 工作日审核）
+- §2 获取 AppID（mp.weixin.qq.com → 开发管理 → 开发设置）
+- §3 安装微信开发者工具（macOS）
+- §4 导入项目（项目目录 + AppID）
+- §5 开发期配置（不校验合法域名 + 替换占位 AppID）
+- §6 真机预览（开发者工具预览 + 体验成员）
+- §7 联调 /ask 端到端
+- §8 提审前准备
+- §9 遇到问题（排查表）
+- §10 Mock-first 真机回退（admin ChatSim 可代验）
+- §11 速查表
+- 关联文档
+
+- commit "M3 task 19: docs/wechat-miniprogram-setup.md (real-person onboarding checklist)" ✓ 已落地 2fbfc28
+
+### Task 20: README M3 段 + CP-5 收尾
+
+**Files:**
+- Modify: `README.md`
+
+**实现要点**：在 `## M2 状态` 段之后追加 M3 状态段（含小程序端/ChatSim 用法、真机联调前置 4 步、M3 测试矩阵）。
+
+- commit "M3 task 20: README M3 section + CP-5 final verification" ✓ 已落地 b8b37f9
+
+---
+
+## 20 任务汇总（最终）
+
+| CP | Task | Commit msg | 关键产物 | Commit SHA |
+|---|---|---|---|---|
+| 1 | 1 | monorepo scaffold for apps/miniprogram | tsconfig + package.json + workspace | db76a10 |
+| 1 | 2 | miniprogram lib/types.ts | types.ts | 460ec68 |
+| 1 | 3 | miniprogram lib/storage.ts | storage.ts | 51b6f19 |
+| 1 | 4 | miniprogram lib/api.ts | api.ts | 8045dfd |
+| 1 | 5 | miniprogram lib/api.ts — 4 vitest unit tests | 4 用例 | 06edc01 |
+| 1 | 6 | CP-1 final verification (lockfile: typescript+vitest devDeps) | lockfile | 1e77cfc |
+| 2 | 7 | admin ChatSim page | ChatSim.tsx | 2184ee0 |
+| 2 | 8 | wire ChatSim into App routing + nav | App.tsx | 2ddcb57 |
+| 2 | 9 | CP-2 final verification | — (无 dirty) | — |
+| 3 | 10 | miniprogram global app.ts + app.json + app.wxss | 全局配置 | f8c0093 |
+| 3 | 11 | miniprogram project.config.json (placeholder AppID) | 占位 AppID | 2ca5b2f |
+| 3 | 12 | CP-3 final verification | — (无 dirty) | — |
+| 4 | 13 | citation-card component | 4 文件 | b21f19c |
+| 4 | 14 | message-bubble component | 4 文件 | 554099b |
+| 4 | 15 | chat page | 4 文件 | 85704fd |
+| 4 | 16 | source-detail page | 4 文件 | 0008a46 |
+| 4 | 17 | history page | 4 文件 | 5ec7553 |
+| 4 | 18 | CP-4 final verification | — (无 dirty) | — |
+| 5 | 19 | docs/wechat-miniprogram-setup.md | 真机 checklist | 2fbfc28 |
+| 5 | 20 | README M3 section + CP-5 final verification | README | b8b37f9 |
+
+---
+
+## 21. Mock-first 边界（重申）
+
+- ❌ 不注册真小程序账号
+- ❌ 不获取真 AppID
+- ❌ 不装微信开发者工具
+- ❌ 不在真机调试
+- ❌ 不提交审核
+- ❌ 不跑 `pnpm install` 增加 runtime 依赖（仅 devDep：typescript + vitest，monorepo 已有共享）
+- ✅ `pnpm -F miniprogram test` + `pnpm -F miniprogram typecheck` + `pnpm -F admin build` 全绿
+- ✅ ChatSim 页在 admin 内嵌可调通 /ask 端到端
+- ✅ 真机联调推到 v2+（详见 docs/wechat-miniprogram-setup.md）
+
+---
+
+## 22. 风险与回退
+
+| 风险 | 概率 | 缓解 | 回退 |
+|---|---|---|---|
+| miniprogram-api-typings 缺失致 typecheck 警告 | 高 | tsconfig 容忍 + .ts 文件 `// @ts-expect-error wx 全局类型 mock-first 缺失` | v2+ 真机联调前 `pnpm -F miniprogram add -D miniprogram-api-typings` |
+| lib/types.ts 与 packages/shared 不一致漂移 | 中 | CP-1 task 2 comment 明确指向 M2 Citation；CP-1 收尾比对一次 | 改 packages/shared re-export + lib import |
+| ChatSim admin 调通但小程序 UI 字段不一致 | 中 | 两者都用同套 AskResponse 类型；Task 13/15 对齐 | 调整 UI 字段 |
+| 真机调试 wx API 与 ts 类型不符 | 低 | 真机调试时再处理；CP-5 范围内不验证 | v2+ 修复 |
+| admin Vite proxy 未配置 miniprogram 域 | 低 | admin 已配 /api → :8787；ChatSim 走 /api/ask 不需额外配 | v2+ 加 |
+| 小程序 storage 在 chat 页 + history 页状态不同步 | 中 | 都在 onLoad/onShow 调 `__setStorageImpl(wx load, wx save)` 注入 | 改 storage 为单例 |
+| **plan 文件 CP-5 段被遗漏（已发现并修复）** | 低 | 本次 commit 追加 CP-5 + Tasks 16-20 段 | — |
+
+---
+
+## 23. 出 CP-1/2/3/4/5 后的归档
+
+- `state.md`（M3 专用）记录：
+  - mock-first 边界
+  - checkpoint pass 标准
+  - 与 spec 的偏差
+  - 未做项（推到 v2+ 真机联调）
+  - **plan 修订记录**（CP-5 段 + Tasks 16-20 段初次遗漏，已 amend）
+- 完成后用 `superpowers:finishing-a-development-branch` 决定 merge / PR
+
+---
+
+## 24. 写 plan 时的自检（修订后）
+
+按 writing-plans skill §Self-Review：
+
+- ✅ Spec coverage：spec §1-9 都有对应 task（CP-4 段扩展到 Task 18 + CP-5 段补齐后完整）
+- ✅ Placeholder scan：无 TBD/TODO（修订消除了 inline 修正标记）
+- ✅ Type consistency：`Citation` / `AskResponse` / `HistoryEntry` 跨 task 一致
+- ✅ No "see Task N" 重定向：每个 step 独立完整
+- ✅ Frequent commits：20 task = 18 commit（CP-1 多了 lockfile commit，CP-2/3/4 各省略 1 个收尾 commit）
+- ✅ TDD：lib/api.ts Task 5 先 test 后 impl（RED-GREEN 已显式）
+- ✅ File structure 在 §1 锁定
+- ⚠️ **已知偏差**：CP-5 + Tasks 16-20 段在初次 plan 写入时被截断，已在 CP-5 完成后 amend；commit SHA 已在 §20 任务汇总对应
