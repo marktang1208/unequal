@@ -9,7 +9,8 @@
     "./types": "./src/types.ts",
     "./chunking": "./src/chunking.ts",
     "./embedding": "./src/embedding.ts",
-    "./retrieval": "./src/retrieval.ts"
+    "./retrieval": "./src/retrieval.ts",
+    "./cite-verify": "./src/cite-verify.ts"
   },
   "scripts": {
     "test": "vitest run",
