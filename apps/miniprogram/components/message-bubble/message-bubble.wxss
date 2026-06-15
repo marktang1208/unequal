@@ -1,0 +1,44 @@
+.bubble {
+  max-width: 80%;
+  padding: 20rpx 24rpx;
+  border-radius: 16rpx;
+  margin: 16rpx 24rpx;
+  word-break: break-word;
+  box-sizing: border-box;
+}
+
+.bubble.user {
+  align-self: flex-end;
+  background: #2563eb;
+  color: #ffffff;
+  border-bottom-right-radius: 4rpx;
+}
+
+.bubble.assistant {
+  align-self: flex-start;
+  background: #ffffff;
+  color: #1f2937;
+  border: 1rpx solid #e5e7eb;
+  border-bottom-left-radius: 4rpx;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+}
+
+.bubble-text {
+  font-size: 28rpx;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.cached-tag {
+  display: inline-block;
+  margin-top: 10rpx;
+  padding: 2rpx 12rpx;
+  background: #10b981;
+  color: #ffffff;
+  font-size: 20rpx;
+  border-radius: 6rpx;
+}
+
+.citations {
+  margin-top: 16rpx;
+}

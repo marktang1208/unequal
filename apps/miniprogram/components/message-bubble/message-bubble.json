@@ -1,0 +1,6 @@
+{
+  "component": true,
+  "usingComponents": {
+    "citation-card": "/components/citation-card/citation-card"
+  }
+}

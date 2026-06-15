@@ -1,0 +1,11 @@
+<view class="bubble {{role === 'user' ? 'user' : 'assistant'}}">
+  <view class="bubble-text">{{text}}</view>
+  <view class="cached-tag" wx:if="{{cached}}">已缓存</view>
+  <view class="citations" wx:if="{{citations.length > 0}}">
+    <citation-card
+      wx:for="{{citations}}"
+      wx:key="chunkId"
+      citation="{{item}}"
+    />
+  </view>
+</view>
