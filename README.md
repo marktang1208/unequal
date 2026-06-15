@@ -91,6 +91,30 @@ curl -X POST http://localhost:8787/ask \
 - M4-M5: 爬虫
 - M6: 多轮会话 + 真鉴权
 
+## M3 状态
+
+跑通：微信小程序 + admin ChatSim 双形态落地，端到端接 /ask，单轮问答 + 引用卡片可视化。
+
+mock-first 实现：AppID 用占位字符串（真机联调前用户需到 mp.weixin.qq.com 注册 + 替换），/ask 调本地 mock API（CP-5 后改 Cloudflare Workers URL）。
+
+### 小程序端 / ChatSim 用法
+
+- 微信小程序：导入 `apps/miniprogram` 到微信开发者工具（详见 `docs/wechat-miniprogram-setup.md`）
+- admin ChatSim：`pnpm -F admin dev` → 访问 `/chat-sim` → 输入问题
+
+### 真机联调前置
+
+1. mp.weixin.qq.com 注册个人主体（30 元/年，1-2 工作日审核）
+2. 获取 AppID
+3. 替换 `apps/miniprogram/project.config.json` 的 `appid` 字段
+4. 勾选微信开发者工具「不校验合法域名」开发期
+
+### M3 测试矩阵
+
+- `pnpm -F miniprogram test` — 4 用例（lib/api.ts: happy / 带 token / 400 / 500）
+- `pnpm -F miniprogram typecheck` — 绿（容忍 types 警告，types 包 v2+ 补）
+- `pnpm -F admin build` — 成功（含 ChatSim 页）
+
 ## 开发
 
 ```bash
