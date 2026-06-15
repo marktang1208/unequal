@@ -4,7 +4,13 @@ import type { TrustLevel } from "@unequal/shared/types";
 const API_BASE = "/api";
 
 export function getToken(): string {
-  return localStorage.getItem("admin_token") ?? "dev-token-change-me";
+  const token = localStorage.getItem("admin_token");
+  if (token) return token;
+  // Dev-only fallback so the local dev experience still works
+  // (set localStorage("admin_token", "...") for any non-dev env).
+  // Production builds throw to avoid silent auth.
+  if (import.meta.env.DEV) return "dev-token-change-me";
+  throw new Error("admin_token 未设置：请先在 localStorage 设置 admin_token");
 }
 
 export interface UploadResponse {
