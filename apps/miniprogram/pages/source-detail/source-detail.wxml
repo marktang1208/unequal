@@ -1,0 +1,19 @@
+<view class="page">
+  <view class="header">
+    <text class="title">{{title}}</text>
+    <text class="trust-badge">信任等级 L{{trustLevel}}</text>
+  </view>
+
+  <view class="meta">
+    <text class="meta-label">chunk_id:</text>
+    <text class="meta-value">{{chunkId}}</text>
+  </view>
+
+  <view class="content">
+    <text class="placeholder">点击下方按钮复制原文链接到剪贴板，再在浏览器打开查看完整内容。</text>
+  </view>
+
+  <view class="actions">
+    <button class="btn-primary" bindtap="onOpenRaw">复制原文链接</button>
+  </view>
+</view>
