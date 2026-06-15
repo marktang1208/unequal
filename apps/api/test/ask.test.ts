@@ -18,7 +18,9 @@ const undici: any = require("undici");
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = resolve(__dirname, "../migrations");
 const SRC_ENTRY = resolve(__dirname, "../src/index.ts");
-const BUNDLE_DIR = resolve(__dirname, "../.test-bundle");
+// ask.test 与 integration.test 并行跑，bundle 路径必须分开以避免 race condition
+// （rm -rf .test-bundle 时另一个 suite 正在 load bundle → parse error）
+const BUNDLE_DIR = resolve(__dirname, "../.test-bundle-ask");
 const BUNDLE_PATH = join(BUNDLE_DIR, "worker.mjs");
 
 const DEFAULT_USER_ID = "01H0000000000000000000000";
@@ -188,5 +190,45 @@ describe("/ask integration (Miniflare + undici MockAgent + __hits DI)", () => {
     expect(body.citations.map((c) => c.n).sort()).toEqual([1, 3]);
     expect(body.answer).toContain("不构成医疗建议");
     expect(body.cached).toBe(false);
+  });
+
+  it("no_citation: LLM 不引用 → answer='未在知识库中找到可靠来源' + citations=[]", async () => {
+    currentFixture = "no_citation";
+    const res = await mf.dispatchFetch("http://localhost/ask", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer test-token" },
+      body: JSON.stringify({ q: "5个月宝宝发烧38.5", __hits: FAKE_HITS }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { answer: string; citations: unknown[] };
+    expect(body.answer.startsWith("未在知识库中找到可靠来源")).toBe(true);
+    expect(body.citations).toEqual([]);
+    expect(body.answer).toContain("不构成医疗建议");
+  });
+
+  it("cite_mismatch: 文本引 1 但 JSON 引 2 → 降级", async () => {
+    currentFixture = "cite_mismatch";
+    const res = await mf.dispatchFetch("http://localhost/ask", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer test-token" },
+      body: JSON.stringify({ q: "5个月宝宝发烧38.5", __hits: FAKE_HITS }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { answer: string; citations: unknown[] };
+    expect(body.answer.startsWith("未在知识库中找到可靠来源")).toBe(true);
+    expect(body.citations).toEqual([]);
+  });
+
+  it("malformed_json: JSON 坏 → 降级", async () => {
+    currentFixture = "malformed_json";
+    const res = await mf.dispatchFetch("http://localhost/ask", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer test-token" },
+      body: JSON.stringify({ q: "5个月宝宝发烧38.5", __hits: FAKE_HITS }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { answer: string; citations: unknown[] };
+    expect(body.answer.startsWith("未在知识库中找到可靠来源")).toBe(true);
+    expect(body.citations).toEqual([]);
   });
 });
