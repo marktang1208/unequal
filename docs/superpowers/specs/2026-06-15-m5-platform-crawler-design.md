@@ -243,7 +243,7 @@ mock-first 模式下：admin fixture 命中 OK；/ingest 在 Vectorize 远端 bi
 | **CP-1** | crawler lib 骨架：`sources/xiaohongshu.ts` + `sources/wechat-mp.ts` + parser + types + fixture HTML × 2 + 8 单测全绿 | 4-5 | `pnpm -F crawler test` 8 绿 |
 | **CP-2** | crawler main.ts 扩展 + CLI smoke test + Vitest mock fetch | 1-2 | CLI dry-run 跑 fixture URL 出 title |
 | **CP-3** | admin 2 抓取页 + 路由 + mock fixture JSON × 2 + dedupe lib | 3-4 | admin build 绿 + `pnpm dev:admin` 真打开走通 |
-| **CP-4** | docs/platform-crawler-setup.md + README M5 段 + 全测绿 | 1-2 | 文档齐全 + 67 用例绿（48 M0-M3 + 11 M4 + 8 M5） |
+| **CP-4** | docs/platform-crawler-setup.md + README M5 段 + 全测绿 | 1-2 | 文档齐全 + 71 用例绿（46 M0-M3 + 11 M4 + 8 M5 crawler + 4 M5 admin dedupe；最终以 `pnpm -r test` 输出为准） |
 
 **预估总 task 数**：9-13 task（与 M4 的 13 task 量级相当）。
 
