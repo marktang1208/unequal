@@ -122,3 +122,24 @@ M3 全程零真人操作：
 - `pnpm -r typecheck`：4 包全绿（miniprogram / shared / admin / api）
 - `pnpm -F admin build`：成功（177.31 kB / 57.05 kB gzip）
 - 累计测试用例（M0+M1 + M2 + M3）：44 + 4 = 48 用例全绿
+
+## m3-realdeploy 增量（2026-06-15）
+
+m3-realdeploy worktree 基于 master 51a1de2 切出，用于 M3 真机联调前的 AppID / brand / 文档收尾。
+
+### 改动清单
+- `apps/miniprogram/project.config.json`：`appid` 占位 → 真值 `wxf5b8ce05a977f0c6`
+- `apps/miniprogram/project.private.config.json`：新建（gitignored），开发者本地配置
+- `apps/miniprogram/app.json`：`navigationBarTitleText` → "育儿不等号 · 育儿问答"
+- `docs/wechat-miniprogram-setup.md`：移除占位提示 + 加 AppSecret 暂存安全说明 + 真机 preview 补充
+
+### 安全红线
+- AppSecret **不写入任何项目文件**（密码管理器暂存 — 1Password / macOS Keychain / Bitwarden）
+- AppSecret 用途：M6 多租户 / 用户体系阶段 wx.login → code2Session 服务端调用
+- 当前 apps/api 没有任何调微信 API 的代码 → AppSecret 现在没地方落地
+
+### 后续阻塞（需真人 / 平台操作）
+1. 装微信开发者工具（macOS）
+2. 项目 import + 真机预览（用注册时的个人微信）
+3. 联调 /ask 端到端（需先 CP-5 真接 Cloudflare 拿到 URL）
+4. 提审前：业务域名白名单 + 隐私协议 + 类目
