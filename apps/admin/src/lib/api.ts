@@ -134,3 +134,100 @@ export async function crawlUrl(
   }
   return (await res.json()) as CrawlResult;
 }
+
+// ─────────────────────────────────────────────────────────
+// M5: 小红书 / 微信公众号批量抓取（mock-first）
+// ─────────────────────────────────────────────────────────
+
+export interface PlatformCrawledDoc {
+  url: string;
+  title: string;
+  author: string;
+  publishedAt: string;
+  content: string;
+  paragraphs: string[];
+}
+
+export type PlatformCrawlOutcome =
+  | { ok: true; doc: PlatformCrawledDoc }
+  | { ok: false; reason: "fixture_miss" | "parse_fail"; message: string };
+
+export interface PlatformCrawlResult {
+  /** 所有提交的 URL（保持输入顺序） */
+  urls: string[];
+  /** 每个 URL 的抓取结果，与 urls 一一对应 */
+  outcomes: PlatformCrawlOutcome[];
+}
+
+/**
+ * Mock-first 抓取小红书 URL 列表：
+ * 1. fetch /mock-crawl/xiaohongshu.json (Vite 静态服务)
+ * 2. 按 URL 查 fixture，命中即返回 ok: true
+ * 3. 未命中返 ok: false, reason: 'fixture_miss'
+ *
+ * 真接 Cloudflare 时改为 fetch https://unequal-api.xxx.workers.dev/crawl/xiaohongshu
+ */
+export async function crawlXiaohongshuUrls(
+  urls: string[]
+): Promise<PlatformCrawlResult> {
+  const res = await fetch("/mock-crawl/xiaohongshu.json");
+  if (!res.ok) {
+    return {
+      urls,
+      outcomes: urls.map((url) => ({
+        ok: false,
+        reason: "fixture_miss",
+        message: `fixture fetch failed: HTTP ${res.status}`,
+      })),
+    };
+  }
+  const fixtureMap = (await res.json()) as Record<string, PlatformCrawledDoc>;
+  return {
+    urls,
+    outcomes: urls.map((url) => {
+      const doc = fixtureMap[url];
+      if (!doc) {
+        return {
+          ok: false,
+          reason: "fixture_miss",
+          message: `URL not in fixture (mock-first mode)`,
+        };
+      }
+      return { ok: true, doc };
+    }),
+  };
+}
+
+/**
+ * Mock-first 抓取微信公众号 URL 列表：同 crawlXiaohongshuUrls，fixture 路径换 wechat-mp.json
+ */
+export async function crawlWechatMpUrls(
+  urls: string[]
+): Promise<PlatformCrawlResult> {
+  const res = await fetch("/mock-crawl/wechat-mp.json");
+  if (!res.ok) {
+    return {
+      urls,
+      outcomes: urls.map((url) => ({
+        ok: false,
+        reason: "fixture_miss",
+        message: `fixture fetch failed: HTTP ${res.status}`,
+      })),
+    };
+  }
+  const fixtureMap = (await res.json()) as Record<string, PlatformCrawledDoc>;
+  return {
+    urls,
+    outcomes: urls.map((url) => {
+      const doc = fixtureMap[url];
+      if (!doc) {
+        return {
+          ok: false,
+          reason: "fixture_miss",
+          message: `URL not in fixture (mock-first mode)`,
+        };
+      }
+      return { ok: true, doc };
+    }),
+  };
+}
