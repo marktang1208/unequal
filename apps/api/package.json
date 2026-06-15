@@ -15,10 +15,14 @@
   "dependencies": {
     "@unequal/shared": "workspace:*",
     "hono": "^4.5.0",
+    "mammoth": "^1.12.0",
+    "pdf-parse": "1.1.1",
+    "ulid": "^3.0.2",
     "zod": "^3.23.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240620.0",
+    "@types/node": "^25.9.3",
     "typescript": "^5.5.0",
     "vitest": "^2.0.0",
     "wrangler": "^3.65.0"
