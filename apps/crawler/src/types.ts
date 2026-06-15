@@ -17,11 +17,21 @@ export interface CrawledDocument {
   totalChars: number;
   /** 抓取时间戳 ms */
   fetchedAt: number;
-  /** 平台特定字段（XHS / WX-MP 填，普通 webpage 留空） */
+  /** 平台特定字段（XHS / WX-MP 填，普通 webpage 留空）。 */
+  /**
+   * 注：XHS 与 WX-MP 字段含义不同（XHS author=用户名，WX-MP author=公众号名），
+   * 命名统一以减少 schema 复杂度。typecheck 仅校验形状，运行时 consumer 应结合 source.type 解读。
+   * v2+ 可改 discriminated union 做更严的类型安全。
+   */
   platformSpecific?: {
-    /** 小红书：用户名；微信公众号：公众号名 */
+    /** 小红书：用户名；微信公众号：公众号名（命名统一） */
     author?: string;
-    /** 发布或更新时间（ISO 字符串，平台原始格式） */
+    /**
+     * 发布时间字符串。**注意：保留平台原始格式**，不做 ISO 归一化：
+     * - 小红书：`meta[property="article:published_time"]` 通常为 ISO 8601
+     * - 微信公众号：`#publish_time` 文本（例 `2026-06-08 14:23`）
+     * consumer 解析时按 source.type 分支处理。
+     */
     publishedAt?: string;
   };
 }
