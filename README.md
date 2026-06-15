@@ -112,6 +112,49 @@ pnpm deploy:admin  # wrangler pages deploy dist
 
 首次部署前先走完上面「第一次跑」的 step 1–3。
 
+## 故障排查
+
+### `pnpm install` 报 `ERR_PNPM_IGNORED_BUILDS: sharp@...`
+
+`sharp` 是 wrangler 的 transitive dep（image processing）。pnpm 11 strict mode 要求显式 opt-in/out。已在 `pnpm-workspace.yaml` 的 `allowBuilds:` 设 `sharp: false`（用 prebuilt binaries，不用 build native）。如复现：
+
+```bash
+grep "sharp" pnpm-workspace.yaml   # 应有 `sharp: false`
+pnpm install
+```
+
+### `wrangler d1 migrations apply unequal-db` 报 "no migrations found"
+
+迁移文件必须在 `apps/api/migrations/` 目录（由 `wrangler.jsonc` 的 `migrations_dir` 指定）。检查：
+
+```bash
+ls apps/api/migrations/             # 应有 0001_init.sql 等
+cd apps/api && pnpm wrangler d1 migrations list unequal-db
+```
+
+### `/upload` 后 `/search` 没命中
+
+D1 有数据但 Vectorize 没有 — upload 流程的两个 upsert 没都跑通。检查：
+
+1. 是否在 admin UI 看到 `✅ 入库成功：N chunks`？N > 0 才说明 Vectorize.upsert 也跑了。
+2. MiniMax API key 是否有效（`pnpm wrangler secret list`）。
+3. 查询 query 是否与 chunk 内容语义相关（MiniMax 1024-dim embedding 对短查询/不相关 query 会返回低分）。
+
+### Admin UI 调 API 报 CORS 错误
+
+开发环境：Vite proxy 已处理（`/api/*` → `http://localhost:8787/*`），不应出现 CORS 错。
+
+生产环境：API Worker 的 `ALLOWED_ORIGIN` 必须包含 admin 域名。修改 `wrangler.jsonc` 的 `vars.ALLOWED_ORIGIN`（如 `"https://unequal-admin.pages.dev"`），然后 `pnpm deploy:api`。
+
+### `wrangler dev` 报 "Authentication error [code: 10000]"
+
+未登录。跑 `pnpm wrangler login` 后重试。
+
+### TypeScript 报 `Cannot find name 'Buffer'` 或 `Property 'env' does not exist on type 'ImportMeta'`
+
+- `Buffer`: `apps/api` 已加 `import { Buffer } from "node:buffer"`，检查 `tsconfig.json` 是否有 `"types": ["@cloudflare/workers-types"]`。
+- `import.meta.env`: `apps/admin` 已加 `"types": ["vite/client"]`，检查 `apps/admin/tsconfig.json`。
+
 ## 许可 / 致谢
 
 个人项目，暂未开源许可证。
