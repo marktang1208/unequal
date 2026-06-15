@@ -67,3 +67,36 @@ export async function search(q: string, topK = 5): Promise<SearchResponse> {
   }
   return (await resp.json()) as SearchResponse;
 }
+
+export interface AskCitation {
+  n: number;
+  title: string;
+  snippet: string;
+  url: string;
+  trustLevel: number;
+  sourceId: string;
+  chunkId: string;
+}
+
+export interface AskResponse {
+  answer: string;
+  disclaimer: string;
+  citations: AskCitation[];
+  cached: boolean;
+}
+
+export async function ask(q: string): Promise<AskResponse> {
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  const token = getToken();
+  if (token) headers.authorization = `Bearer ${token}`;
+  const res = await fetch("/api/ask", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ q }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`/ask ${res.status}: ${text}`);
+  }
+  return (await res.json()) as AskResponse;
+}
