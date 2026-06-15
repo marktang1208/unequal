@@ -10,7 +10,8 @@
     "./chunking": "./src/chunking.ts",
     "./embedding": "./src/embedding.ts",
     "./retrieval": "./src/retrieval.ts",
-    "./cite-verify": "./src/cite-verify.ts"
+    "./cite-verify": "./src/cite-verify.ts",
+    "./prompt": "./src/prompt.ts"
   },
   "scripts": {
     "test": "vitest run",
