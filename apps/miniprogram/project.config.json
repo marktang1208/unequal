@@ -1,5 +1,5 @@
 {
-  "description": "不等号 / unequal 微信小程序配置。占位 AppID 用于本地开发，真机调试前需替换。",
+  "description": "不等号 / unequal 微信小程序配置。已配置真 AppID wxf5b8ce05a977f0c6，等待 Cloudflare 资源 + 微信开发者工具真机预览。",
   "packOptions": { "ignore": [], "include": [] },
   "setting": {
     "urlCheck": false,
@@ -40,7 +40,7 @@
   },
   "compileType": "miniprogram",
   "libVersion": "3.5.0",
-  "appid": "touristappid0000000",
+  "appid": "wxf5b8ce05a977f0c6",
   "projectname": "unequal-miniprogram",
   "condition": {},
   "editorSetting": { "tabIndent": "insertSpaces", "tabSize": 2 },
