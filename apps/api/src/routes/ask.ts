@@ -44,6 +44,32 @@ const MOCK_ANSWER =
 
 export const askRoute = {
   async POST(request: Request, env: Env): Promise<Response> {
+    // dev-mode mock shortcut: 提前到 token 校验之前。
+    // 三连击保险：development env + env.ADMIN_TOKEN 是 sentinel 值 + q startsWith "mock:"。
+    //   - 生产环境 ENVIRONMENT !== "development" → 永远不触发
+    //   - 生产 env.ADMIN_TOKEN 必不是 sentinel（生产 wrangler secret 必换）→ 永远不触发
+    // 无 token 的客户端（如 miniprogram 调试）也能调 mock-mode；普通 q 仍需走 token + 真路径
+    if (env.ENVIRONMENT === "development" && env.ADMIN_TOKEN === DEV_MOCK_TOKEN) {
+      try {
+        const mockBody = (await request.clone().json()) as { q?: unknown };
+        const mockQ = typeof mockBody?.q === "string" ? mockBody.q.trim() : "";
+        if (mockQ.startsWith(MOCK_PREFIX)) {
+          const disclaimer = DISCLAIMER_TEXT;
+          const answer = MOCK_ANSWER.includes(disclaimer)
+            ? MOCK_ANSWER
+            : `${MOCK_ANSWER}\n\n${disclaimer}`;
+          return Response.json({
+            answer,
+            disclaimer,
+            citations: MOCK_CITATIONS,
+            cached: false,
+          });
+        }
+      } catch {
+        /* not JSON / unreadable → fall through to normal flow */
+      }
+    }
+
     const auth = verifyAdminToken(request.headers.get("Authorization"), env.ADMIN_TOKEN);
     if (!auth.ok) {
       return Response.json({ error: auth.message }, { status: auth.status });
@@ -60,24 +86,6 @@ export const askRoute = {
       : "";
     if (!q) {
       return Response.json({ error: "Missing or empty 'q' field" }, { status: 400 });
-    }
-
-    // dev-mode mock shortcut: dev env + dev sentinel token + "mock:" 前缀 → 绕过 Vectorize / LLM
-    if (
-      env.ENVIRONMENT === "development" &&
-      env.ADMIN_TOKEN === DEV_MOCK_TOKEN &&
-      q.startsWith(MOCK_PREFIX)
-    ) {
-      const disclaimer = DISCLAIMER_TEXT;
-      const answer = MOCK_ANSWER.includes(disclaimer)
-        ? MOCK_ANSWER
-        : `${MOCK_ANSWER}\n\n${disclaimer}`;
-      return Response.json({
-        answer,
-        disclaimer,
-        citations: MOCK_CITATIONS,
-        cached: false,
-      });
     }
 
     const opts: Parameters<typeof runAsk>[0] = { q, env };
