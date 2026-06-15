@@ -6,8 +6,9 @@ import { chunkText } from "@unequal/shared/chunking";
 import { createMiniMaxEmbedder } from "@unequal/shared/embedding";
 import type { TrustLevel } from "@unequal/shared/types";
 
-// MVP 阶段只有 1 个用户；与 seed-user 的默认 nickname 对齐
-const DEFAULT_USER_ID = "default";
+// MVP 阶段只有 1 个用户；与 seed-user 的默认 ULID 占位对齐
+// (user.id FK 引用此值；先 POST /seed-user 注入该行后再 /upload)
+const DEFAULT_USER_ID = "01H0000000000000000000000";
 
 // 上传阶段把源/文档/chunk 一次性持久化的事务构造常量
 const CHUNK_MAX_TOKENS = 400;
@@ -164,10 +165,12 @@ export const uploadRoute = {
         id: c.id,
         values: vectors[i]!,
         metadata: {
+          chunk_id: c.id,
           user_id: userId,
           source_id: sourceId,
           document_id: documentId,
           trust_level: trustLevel,
+          is_cached: false,
         },
       }))
     );
