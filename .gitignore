@@ -8,6 +8,7 @@ dist/
 .DS_Store
 coverage/
 .worktrees/
+.claude/worktrees/
 
 # Miniflare integration test build output
 # (apps/api/test/integration.test.ts bundles src/index.ts here at suite-setup
