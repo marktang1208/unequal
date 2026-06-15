@@ -4,6 +4,7 @@ import Sources from "./pages/Sources.js";
 import Documents from "./pages/Documents.js";
 import SearchTest from "./pages/SearchTest.js";
 import AskTest from "./pages/AskTest.js";
+import ChatSim from "./pages/ChatSim.js";
 
 export default function App() {
   return (
@@ -27,6 +28,9 @@ export default function App() {
             <Link to="/ask" className="text-gray-600 hover:text-gray-900">
               问答测试
             </Link>
+            <Link to="/chat-sim" className="text-gray-600 hover:text-gray-900">
+              Chat Sim
+            </Link>
           </nav>
         </div>
       </header>
@@ -38,6 +42,7 @@ export default function App() {
           <Route path="/documents" element={<Documents />} />
           <Route path="/search" element={<SearchTest />} />
           <Route path="/ask" element={<AskTest />} />
+          <Route path="/chat-sim" element={<ChatSim />} />
           <Route path="*" element={<Upload />} />
         </Routes>
       </main>
