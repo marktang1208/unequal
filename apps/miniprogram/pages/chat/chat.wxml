@@ -1,0 +1,47 @@
+<view class="chat-page">
+  <scroll-view
+    class="message-list"
+    scroll-y
+    scroll-into-view="{{lastMsgId}}"
+    enhanced
+    show-scrollbar="{{false}}"
+  >
+    <view
+      wx:for="{{messages}}"
+      wx:key="id"
+      id="msg-{{item.id}}"
+    >
+      <message-bubble
+        role="{{item.role}}"
+        text="{{item.text}}"
+        cached="{{item.cached}}"
+        citations="{{item.citations}}"
+      />
+    </view>
+    <view class="loading" wx:if="{{submitting}}">
+      <text>正在思考…</text>
+    </view>
+  </scroll-view>
+
+  <view class="error-bar" wx:if="{{error}}">
+    <text>{{error}}</text>
+  </view>
+
+  <view class="input-bar">
+    <textarea
+      class="input"
+      value="{{q}}"
+      bindinput="onQInput"
+      placeholder="请输入育儿问题…"
+      auto-height
+      maxlength="500"
+      confirm-type="send"
+      bindconfirm="onSubmit"
+    />
+    <button
+      class="btn-send"
+      bindtap="onSubmit"
+      disabled="{{submitting || !q}}"
+    >提问</button>
+  </view>
+</view>
