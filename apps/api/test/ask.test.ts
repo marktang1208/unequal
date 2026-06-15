@@ -271,3 +271,132 @@ describe("/ask integration (Miniflare + undici MockAgent + __hits DI)", () => {
     expect(body.citations).toEqual([]); // cache 命中不返回 citations（按 plan §5.2）
   });
 });
+
+/**
+ * M3 Task: dev-mode mock-mode 分支。
+ *
+ * 独立 Miniflare 实例（bindings: ADMIN_TOKEN="test-token-please-change" + ENVIRONMENT="development"），
+ * 验证 /ask 在 dev sentinel 三连击命中时绕过 Vectorize / LLM 返回固定 AskResponse。
+ *
+ * 设计：
+ * - 不污染上面 7 个生产路径测试（生产路径需要 ENVIRONMENT="test" 才能注入 __hits/__cacheHit）
+ * - 单独 bundle 路径避免与 integration.test.ts / 上方 suite 并行 race condition
+ * - mock-mode 走硬编码分支，不依赖 Miniflare D1 migrations / Vectorize binding
+ */
+describe("/ask mock-mode dev shortcut (M3)", () => {
+  let mf: Miniflare;
+
+  const MOCK_BUNDLE_DIR = resolve(__dirname, "../.test-bundle-mock-mode");
+  const MOCK_BUNDLE_PATH = join(MOCK_BUNDLE_DIR, "worker.mjs");
+
+  beforeAll(async () => {
+    await rm(MOCK_BUNDLE_DIR, { recursive: true, force: true });
+    await mkdir(MOCK_BUNDLE_DIR, { recursive: true });
+
+    const NODE_BUILTINS = new Set([
+      "fs",
+      "http",
+      "https",
+      "url",
+      "path",
+      "stream",
+      "buffer",
+      "crypto",
+      "zlib",
+      "os",
+      "util",
+      "events",
+    ]);
+    const externalNodePlugin = {
+      name: "external-node-builtins",
+      setup(b: import("esbuild").PluginBuild) {
+        b.onResolve({ filter: /^node:/ }, (args) => ({
+          path: args.path,
+          external: true,
+        }));
+        b.onResolve({ filter: /^[a-z]+$/ }, (args) => {
+          if (NODE_BUILTINS.has(args.path)) {
+            return { path: args.path, external: true };
+          }
+          return null;
+        });
+      },
+    };
+    await build({
+      entryPoints: [SRC_ENTRY],
+      outfile: MOCK_BUNDLE_PATH,
+      bundle: true,
+      format: "esm",
+      platform: "browser",
+      target: "es2022",
+      resolveExtensions: [".ts", ".js", ".mjs"],
+      plugins: [externalNodePlugin],
+      external: ["node:*"],
+      sourcemap: "inline",
+      logLevel: "warning",
+    });
+
+    // dev sentinel 三连击：development + test-token-please-change + q startsWith "mock:"
+    mf = new Miniflare({
+      scriptPath: MOCK_BUNDLE_PATH,
+      modules: true,
+      compatibilityFlags: ["nodejs_compat"],
+      compatibilityDate: "2025-01-01",
+      d1Databases: ["DB"],
+      d1Persist: false,
+      r2Buckets: ["R2"],
+      bindings: {
+        ADMIN_TOKEN: "test-token-please-change",
+        MINIMAX_API_KEY: "test-key",
+        MINIMAX_BASE_URL: "http://mock-minimax.local",
+        ENVIRONMENT: "development",
+        ALLOWED_ORIGIN: "*",
+      },
+    } as unknown as ConstructorParameters<typeof Miniflare>[0]);
+  }, 60_000);
+
+  afterAll(async () => {
+    if (mf) await mf.dispose();
+    await rm(MOCK_BUNDLE_DIR, { recursive: true, force: true });
+  });
+
+  it("dev mode + dev token + 'mock:xxx' → 200 + mock AskResponse, 绕过 Vectorize", async () => {
+    const res = await mf.dispatchFetch("http://localhost/ask", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer test-token-please-change",
+      },
+      body: JSON.stringify({ q: "mock:5个月宝宝发烧38.5" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      answer: string;
+      citations: Array<{ n: number }>;
+      cached: boolean;
+      disclaimer: string;
+    };
+    expect(body.answer).toContain("[来源 1]");
+    expect(body.answer).toContain("[来源 3]");
+    expect(body.answer).toContain("不构成医疗建议");
+    expect(body.citations.map((c) => c.n).sort()).toEqual([1, 3]);
+    expect(body.cached).toBe(false);
+    expect(body.disclaimer).toContain("不构成医疗建议");
+  });
+
+  it("dev mode + dev token + 普通 q（无 mock: 前缀）→ 走真路径, Vectorize binding 缺失 500", async () => {
+    // mock-first 局限: Miniflare 没装 Vectorize binding → runAsk 调 searchChunks 抛错 → 500
+    // 这是 mock-mode 设计意图之外的预期失败 (mock-mode 只接 mock: 前缀)
+    const res = await mf.dispatchFetch("http://localhost/ask", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer test-token-please-change",
+      },
+      body: JSON.stringify({ q: "5个月宝宝发烧" }),
+    });
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("internal");
+  });
+});
