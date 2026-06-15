@@ -1,5 +1,6 @@
 import { verifyAdminToken } from "../lib/auth.js";
 import { runAsk } from "../lib/ask.js";
+import type { SearchResult } from "@unequal/shared/retrieval";
 import type { Env } from "../types.js";
 
 export const askRoute = {
@@ -22,8 +23,17 @@ export const askRoute = {
       return Response.json({ error: "Missing or empty 'q' field" }, { status: 400 });
     }
 
+    const opts: Parameters<typeof runAsk>[0] = { q, env };
+    if (env.ENVIRONMENT === "test") {
+      const hits = (body as { __hits?: unknown }).__hits;
+      if (Array.isArray(hits)) {
+        // 类型断言：test-only，生产不接
+        opts.searchFn = async () => hits as SearchResult[];
+      }
+    }
+
     try {
-      const result = await runAsk({ q, env });
+      const result = await runAsk(opts);
       return Response.json(result);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

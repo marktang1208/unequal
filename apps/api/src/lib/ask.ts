@@ -8,10 +8,13 @@ import type { Env } from "../types.js";
 
 const DEFAULT_USER_ID = "01H0000000000000000000000";
 
+export type SearchFn = (qEmbedding: number[]) => Promise<SearchResult[]>;
+
 export interface RunAskOptions {
   q: string;
   env: Env;
   fetchImpl?: typeof fetch;
+  searchFn?: SearchFn;
   cacheRead?: (qEmbedding: number[]) => Promise<AskResult | null>;
   cacheWrite?: (qEmbedding: number[], result: AskResult) => Promise<void>;
 }
@@ -42,12 +45,14 @@ export async function runAsk(opts: RunAskOptions): Promise<AskResult> {
     if (cached) return { ...cached, cached: true };
   }
 
-  const rawHits = await searchChunks({
-    vectorize: env.VECTORIZE,
-    userId: DEFAULT_USER_ID,
-    queryVector: qEmbedding,
-    topK: 20,
-  });
+  const rawHits = opts.searchFn
+    ? await opts.searchFn(qEmbedding)
+    : await searchChunks({
+        vectorize: env.VECTORIZE,
+        userId: DEFAULT_USER_ID,
+        queryVector: qEmbedding,
+        topK: 20,
+      });
 
   const top5: SearchResult[] = rawHits.slice(0, 5);
 
