@@ -175,6 +175,55 @@ pnpm -F admin dev → 访问 http://localhost:5173/crawl
 - **真接 Cloudflare Vectorize**（CP-5）：`wrangler vectorize create unequal-chunks --dimensions=1024 --metric=cosine`
 - **小红书 / 微信公众号抓取**（M5 范围）：这两个平台需要登录态 / 反爬严格，独立 scope
 
+## M5 状态
+
+跑通：小红书 + 微信公众号两个 source adapter（cheerio parser）+ admin 2 个抓取页（`/crawl/xiaohongshu` + `/crawl/wechat-mp`）+ localStorage URL 去重。19 crawler 用例 + 4 admin dedupe 用例全绿。
+
+mock-first 实现：抓取器单测用 fixture HTML + mock fetch；admin 抓取页接 `/mock-crawl/{platform}.json`（Vite 静态服务 3 fixture URL）；真接 Cloudflare 后改 `apps/admin/src/lib/api.ts` 即可。
+
+### 小红书 / 微信公众号 抓取器用法
+
+CLI：
+
+```bash
+node --experimental-strip-types apps/crawler/src/main.ts \
+  --url "https://xiaohongshu.com/explore/abc123" \
+  --source-type xiaohongshu --no-ingest
+```
+
+admin：
+
+```bash
+pnpm dev:admin → 访问 http://localhost:5173/crawl/xiaohongshu
+                → 访问 http://localhost:5173/crawl/wechat-mp
+```
+
+### M5 测试矩阵
+
+- `pnpm -F crawler test` — 19 用例（webpage 4 + ingest 3 + parser 4 + xiaohongshu 4 + wechat-mp 4）
+- `pnpm -F admin test` — 4 用例（dedupe 4）
+- `pnpm -r typecheck` — 5 包全绿（api / admin / shared / crawler / miniprogram）
+- `pnpm -F admin build` — 成功（含 XiaohongshuCrawlPage + WechatMpCrawlPage）
+
+### M5 限制（mock-first 已知）
+
+- ❌ **不抓真网**：admin 抓取页只命中 fixture，未在 fixture 的 URL 报 `fixture_miss`
+- ❌ **无登录态自动抓账号**：用户需手动复制 URL 列表；自动抓账号推 v2+/M5.5
+- ❌ **无反爬策略**：真接时需代理 IP / UA 轮换 / 验证码识别（v2+）
+- ❌ **无 Cron 定时**：手动触发（CLI 或 admin）；Cloudflare Cron Triggers v2+
+- ❌ **/ingest 调远端 Vectorize binding 500**：mock-first 无真 Vectorize index → CP-5 真接后正常
+
+### 未做（推到 v2+ / M5.5）
+
+- 登录态自动抓账号（小红书 App 抓包 / 公众号 cookie 注入）
+- 代理 IP 池 / User-Agent 轮换
+- Cron 定时抓取
+- robots.txt 自动遵守（生产前必做）
+- 真接 Cloudflare Vectorize（CP-5）
+- 按 content hash 去重
+
+详细 v2+ 路线见 `docs/platform-crawler-setup.md`。
+
 ## 开发
 
 ```bash

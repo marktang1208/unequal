@@ -5,6 +5,8 @@ import Documents from "./pages/Documents.js";
 import SearchTest from "./pages/SearchTest.js";
 import AskTest from "./pages/AskTest.js";
 import CrawlPage from "./pages/CrawlPage.js";
+import XiaohongshuCrawlPage from "./pages/XiaohongshuCrawlPage.js";
+import WechatMpCrawlPage from "./pages/WechatMpCrawlPage.js";
 import ChatSim from "./pages/ChatSim.js";
 
 export default function App() {
@@ -35,6 +37,12 @@ export default function App() {
             <Link to="/crawl" className="text-gray-600 hover:text-gray-900">
               网页抓取
             </Link>
+            <Link to="/crawl/xiaohongshu" className="text-gray-600 hover:text-gray-900">
+              小红书
+            </Link>
+            <Link to="/crawl/wechat-mp" className="text-gray-600 hover:text-gray-900">
+              微信公众号
+            </Link>
           </nav>
         </div>
       </header>
@@ -48,6 +56,8 @@ export default function App() {
           <Route path="/ask" element={<AskTest />} />
           <Route path="/chat-sim" element={<ChatSim />} />
           <Route path="/crawl" element={<CrawlPage />} />
+          <Route path="/crawl/xiaohongshu" element={<XiaohongshuCrawlPage />} />
+          <Route path="/crawl/wechat-mp" element={<WechatMpCrawlPage />} />
           <Route path="*" element={<Upload />} />
         </Routes>
       </main>
