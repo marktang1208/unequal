@@ -115,6 +115,66 @@ mock-first 实现：AppID 用占位字符串（真机联调前用户需到 mp.we
 - `pnpm -F miniprogram typecheck` — 绿（容忍 types 警告，types 包 v2+ 补）
 - `pnpm -F admin build` — 成功（含 ChatSim 页）
 
+## M4 状态
+
+跑通：网页抓取（curl + cheerio → /ingest）端到端 + admin `/crawl` 抓取页可视化。13 task 全绿，CP-1/2/3/4 四个 checkpoint 全部 done。
+
+mock-first 实现：抓取器用 cheerio（零浏览器依赖），admin 抓取页直接 fetch `apps/api` 的 `/api/crawl` endpoint（mock-first 模式下未实现，预期 404）。真抓真网 / 配 Cron / 限速 / 反爬推 v2+。
+
+### 新增
+
+- **`apps/crawler` 包** — 5 个源文件 + 11 个单测 + fixture HTML
+  - `src/types.ts` — `CrawledDocument` + `IngestPayload` 类型
+  - `src/parser.ts` — cheerio HTML → 段落数组 + `totalChars`
+  - `src/sources/webpage.ts` — `fetchUrl(url)` → `CrawledDocument`
+  - `src/ingest.ts` — `buildIngestPayload` + `submitToIngest`
+  - `src/main.ts` — CLI 入口（解析 argv + 调 fetchUrl + 可选 /ingest）
+  - `test/parser.test.ts` (4) + `test/webpage.test.ts` (4) + `test/ingest.test.ts` (3) + `test/fixtures/sample-article.html`
+- **admin `CrawlPage.tsx` 页** — URL 输入 + trust level 下拉 + 抓取按钮 + 结果展示（title / fetchedAt / content 前 500 字 / ingested 状态 / sourceId / documentId / chunkCount）+ 错误红框
+- **admin 路由集成** — `App.tsx` 加 `/crawl` 路由 + nav 栏「网页抓取」链接
+- **`docs/webpage-crawler-setup.md`** — CLI / admin 用法 + 真人操作 checklist + 故障排查表
+
+### 抓取器用法
+
+```bash
+# CLI（dry-run：只抓不调 /ingest）
+node apps/crawler/src/main.ts --url "https://example.com/article" --no-ingest
+
+# CLI（真接 /ingest：需要本地 wrangler dev 跑着 + ADMIN_TOKEN）
+node apps/crawler/src/main.ts --url "https://example.com/article" \
+  --user-id 01H0000000000000000000000 \
+  --token "$ADMIN_TOKEN" \
+  --trust 2
+
+# admin UI
+pnpm -F admin dev → 访问 http://localhost:5173/crawl
+```
+
+详细参数、trust level 含义、真人操作 checklist 见 `docs/webpage-crawler-setup.md`。
+
+### M4 测试矩阵
+
+- `pnpm -F crawler test` — 11 用例（parser 4 + webpage 4 + ingest 3）
+- `pnpm -r typecheck` — 5 包全绿（api / admin / shared / crawler / miniprogram）
+- `pnpm -F admin build` — 成功（含 CrawlPage 页）
+
+### M4 限制（mock-first 已知）
+
+- ❌ **不支持 JS SPA**：cheerio 只能解析 SSR HTML，客户端渲染的 React/Vue 页面解析后段落为空 → v2+ 接 Playwright 或 Cloudflare Browser Rendering
+- ❌ **无反爬策略**：Cloudflare anti-bot / 验证码 → v2+
+- ❌ **无 Cron 定时**：v1 范围手工触发（CLI 或 admin）→ v2+ launchd / Cloudflare Cron Triggers
+- ❌ **admin `/api/crawl` endpoint 未实现**：mock-first 模式下 `apps/api` 没加 `/api/crawl` 路由，admin 直接 fetch 会 404 → 预期行为；CP-5 真接 Cloudflare 时补 thin proxy
+- ❌ **/ingest 调远端 Vectorize binding 500**：mock-first 无真 Vectorize index → CP-5 真接后正常返回 chunks > 0
+
+### 未做（推到 v2+ / CP-5）
+
+- **代理 IP 池**（v2+）：避免单 IP 被封
+- **User-Agent 轮换**（v2+）：目标站 UA 校验
+- **Cron 定时抓取**（v2+）：launchd / Cloudflare Cron Triggers
+- **robots.txt 自动遵守**（生产前必做）：v1 手动审查
+- **真接 Cloudflare Vectorize**（CP-5）：`wrangler vectorize create unequal-chunks --dimensions=1024 --metric=cosine`
+- **小红书 / 微信公众号抓取**（M5 范围）：这两个平台需要登录态 / 反爬严格，独立 scope
+
 ## 开发
 
 ```bash
