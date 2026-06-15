@@ -3,6 +3,7 @@ import Upload from "./pages/Upload.js";
 import Sources from "./pages/Sources.js";
 import Documents from "./pages/Documents.js";
 import SearchTest from "./pages/SearchTest.js";
+import AskTest from "./pages/AskTest.js";
 
 export default function App() {
   return (
@@ -23,6 +24,9 @@ export default function App() {
             <Link to="/search" className="text-gray-600 hover:text-gray-900">
               检索测试
             </Link>
+            <Link to="/ask" className="text-gray-600 hover:text-gray-900">
+              问答测试
+            </Link>
           </nav>
         </div>
       </header>
@@ -33,6 +37,7 @@ export default function App() {
           <Route path="/sources" element={<Sources />} />
           <Route path="/documents" element={<Documents />} />
           <Route path="/search" element={<SearchTest />} />
+          <Route path="/ask" element={<AskTest />} />
           <Route path="*" element={<Upload />} />
         </Routes>
       </main>
