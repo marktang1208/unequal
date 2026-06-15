@@ -1,0 +1,97 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: #f7f7f7;
+  box-sizing: border-box;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24rpx 32rpx;
+  background: #ffffff;
+  border-bottom: 1rpx solid #e5e7eb;
+}
+
+.header-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #111827;
+}
+
+.btn-clear {
+  margin: 0;
+  padding: 0 20rpx;
+  height: 56rpx;
+  line-height: 56rpx;
+  font-size: 24rpx;
+  color: #dc2626;
+  background: #fef2f2;
+  border-radius: 12rpx;
+}
+
+.btn-clear::after {
+  border: none;
+}
+
+.empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9ca3af;
+  font-size: 28rpx;
+  padding: 120rpx 0;
+}
+
+.entry-list {
+  padding: 16rpx 24rpx;
+}
+
+.entry {
+  background: #ffffff;
+  border-radius: 16rpx;
+  padding: 24rpx;
+  margin-bottom: 16rpx;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+}
+
+.entry .q {
+  font-size: 28rpx;
+  font-weight: 500;
+  color: #111827;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.entry .meta {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-top: 12rpx;
+  font-size: 22rpx;
+  color: #9ca3af;
+}
+
+.entry .cite-count {
+  color: #6b7280;
+}
+
+.entry .cached {
+  background: #d1fae5;
+  color: #065f46;
+  padding: 2rpx 10rpx;
+  border-radius: 6rpx;
+  font-size: 20rpx;
+}
+
+.entry .ts {
+  color: #d1d5db;
+  margin-left: auto;
+}
