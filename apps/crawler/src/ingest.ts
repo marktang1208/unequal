@@ -65,7 +65,7 @@ export async function submitToIngest(
   }
 
   const body = (await res.json()) as { ok?: boolean; sourceId?: string; documentId?: string };
-  return { ok: body.ok ?? true, sourceId: body.sourceId, documentId: body.documentId };
+  return { ok: true, sourceId: body.sourceId, documentId: body.documentId };
 }
 
 /** 26 hex chars — 简化版 ulid 替代 */
