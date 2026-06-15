@@ -11,9 +11,11 @@ import { fixtureResponse, type FixtureName } from "./llm-fixtures.js";
 import { splitSqlIntoStatements } from "./sql-split.js";
 import type { SearchResult } from "@unequal/shared/retrieval";
 
-// undici 装在 pnpm 根 node_modules；用 createRequire 避开 api 包 module resolution
+// 必须用 miniflare 内置的 undici@5（其 fetchMock zod schema 校验 instanceof MockAgent）。
+// 若从 pnpm root resolve 会拿到 undici@6（另一份 class），instanceof 失败 → "Input not instance of MockAgent"。
 const require = createRequire(import.meta.url);
-const undici: any = require("undici");
+const miniflareRequire = createRequire(require.resolve("miniflare"));
+const undici: any = miniflareRequire("undici");
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = resolve(__dirname, "../migrations");
