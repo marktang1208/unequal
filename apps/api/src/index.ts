@@ -4,6 +4,7 @@ import { healthRoute } from "./routes/health.js";
 import { seedUserRoute } from "./routes/seed-user.js";
 import { uploadRoute } from "./routes/upload.js";
 import { ingestRoute } from "./routes/ingest.js";
+import { searchRoute } from "./routes/search.js";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -15,6 +16,7 @@ app.post("/seed-user", (c) => seedUserRoute.POST(c.req.raw, c.env));
 // 鉴权：admin token（Bearer）；在路由内部用 verifyAdminToken
 app.post("/upload", (c) => uploadRoute.POST(c.req.raw, c.env));
 app.post("/ingest", (c) => ingestRoute.POST(c.req.raw, c.env));
+app.get("/search", (c) => searchRoute.GET(c.req.raw, c.env));
 
 app.notFound((c) => c.text("Not found", 404));
 
