@@ -1,6 +1,9 @@
 {
   "description": "不等号 / unequal 微信小程序配置。已配置真 AppID wxf5b8ce05a977f0c6，等待 Cloudflare 资源 + 微信开发者工具真机预览。",
-  "packOptions": { "ignore": [], "include": [] },
+  "packOptions": {
+    "ignore": [],
+    "include": []
+  },
   "setting": {
     "urlCheck": false,
     "es6": true,
@@ -36,13 +39,33 @@
     "disableUseStrict": false,
     "minifyWXML": true,
     "showES6CompileOption": false,
-    "useCompilerPlugins": false
+    "useCompilerPlugins": ["typescript"],
+    "typescriptCompilerOptions": {
+      "target": "es2020",
+      "module": "esnext",
+      "lib": ["esnext"],
+      "strict": false,
+      "experimentalDecorators": true,
+      "skipLibCheck": true,
+      "allowJs": false,
+      "noImplicitAny": false,
+      "noEmitOnError": false
+    },
+    "compileWorklet": false,
+    "localPlugins": false,
+    "condition": false,
+    "swc": false,
+    "disableSWC": true
   },
   "compileType": "miniprogram",
   "libVersion": "3.5.0",
   "appid": "wxf5b8ce05a977f0c6",
   "projectname": "unequal-miniprogram",
   "condition": {},
-  "editorSetting": { "tabIndent": "insertSpaces", "tabSize": 2 },
-  "miniprogramRoot": "./"
+  "editorSetting": {
+    "tabIndent": "insertSpaces",
+    "tabSize": 2
+  },
+  "miniprogramRoot": "./",
+  "simulatorPluginLibVersion": {}
 }
