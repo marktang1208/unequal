@@ -5,7 +5,8 @@
   "description": "unequal webpage crawler (curl + cheerio)",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "dev": "node --experimental-strip-types src/main.ts"
   },
   "dependencies": {
     "cheerio": "1.0.0"
