@@ -34,6 +34,21 @@ app.post("/ingest", (c) => ingestRoute.POST(c.req.raw, c.env));
 app.get("/search", (c) => searchRoute.GET(c.req.raw, c.env));
 app.post("/ask", (c) => askRoute.POST(c.req.raw, c.env));
 
+// Test-only endpoint: 注入 Vectorize fixture 用于集成测试
+// 仅在 ENVIRONMENT === "test" 时挂载；生产构建不会触发（wrangler.var ENVIRONMENT 设为 "production"）
+// 接受 POST { vectors: VectorizeVector[] } 返回 { ok: true, count: N }
+app.post("/test/seed-vectorize", async (c) => {
+  if (c.env.ENVIRONMENT !== "test") {
+    return c.json({ error: "test_only" }, 403);
+  }
+  const body = (await c.req.json()) as { vectors?: VectorizeVector[] };
+  if (!Array.isArray(body.vectors)) {
+    return c.json({ error: "vectors array required" }, 400);
+  }
+  await c.env.VECTORIZE.upsert(body.vectors);
+  return c.json({ ok: true, count: body.vectors.length });
+});
+
 app.notFound((c) => c.text("Not found", 404));
 
 export default app;
