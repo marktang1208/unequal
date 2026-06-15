@@ -48,8 +48,14 @@ export interface AskPrompt {
 }
 
 export function buildAskPrompt(q: string, ctx: AskContext): AskPrompt {
-  // 实现留给 Task 3
-  void q;
-  void ctx;
-  throw new Error("not implemented");
+  const chunkLines = ctx.chunks
+    .sort((a, b) => a.n - b.n)
+    .map(
+      (c) =>
+        `[${c.n}] 《${c.title}》/ "${c.snippet}" (信源等级: ${TRUST_LABELS[c.trustLevel]})`,
+    )
+    .join("\n");
+
+  const system = ASK_SYSTEM_TEMPLATE.replace("{{CHUNKS}}", chunkLines);
+  return { system, user: q };
 }
