@@ -1,0 +1,8 @@
+<view class="citation-card" bindtap="onTap">
+  <view class="header">
+    <text class="num">[{{citation.n}}]</text>
+    <text class="title">{{citation.title}}</text>
+    <text class="trust">L{{citation.trustLevel}}</text>
+  </view>
+  <view class="snippet">{{citation.snippet}}</view>
+</view>
