@@ -81,4 +81,21 @@ describe("miniprogram ensureJwt (mock wx + mock fetch)", () => {
       /wx.login/,
     );
   });
+
+  it("/auth/wx-login 5xx → ensureJwt 抛 Error（caller 透传给 fetchWithRefresh，wrapper 返原 401）", async () => {
+    // 验证 ensureJwt 在 /auth/wx-login server error 路径也正确 throw（不吞）
+    // fetchWithRefresh 的 catch 块依赖此 throw 来触发"原 401 透传"行为
+    mockWx.login.mockImplementation(({ success }: any) => {
+      success({ code: "valid_code_but_server_down" });
+    });
+    const fakeFetch = vi.fn(async () =>
+      new Response(JSON.stringify({ error: "internal", detail: "boom" }), { status: 500 }),
+    ) as unknown as typeof fetch;
+
+    await expect(ensureJwt("http://localhost:8787", fakeFetch)).rejects.toThrow(
+      /\/auth\/wx-login 500.*internal/,
+    );
+    // 5xx 时 ensureJwt 不应写 storage（避免后续 ensureJwt 直接返 500 token）
+    expect(storage["unequal:jwt"]).toBeUndefined();
+  });
 });
