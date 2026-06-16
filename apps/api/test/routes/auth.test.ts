@@ -272,4 +272,97 @@ describe("/auth route (Miniflare + D1 + mock fetchImpl)", () => {
     const body = (await res.json()) as { error: string };
     expect(body.error).toBe("MISSING_CODE");
   });
+
+  // ---------- M6.3a wx-login rate limit (INVALID_CODE 路径) ----------
+
+  it("POST /auth/wx-login 429: 5 次同 code INVALID_CODE 后第 6 次 → 429 RATE_LIMITED", async () => {
+    const d1 = await mf.getD1Database("DB");
+    // 注入 mock：返 errcode → 抛 INVALID_CODE
+    const invalidCodeFetch: typeof fetch = (async (
+      url: string | URL | Request,
+    ): Promise<Response> => {
+      const u = typeof url === "string" ? new URL(url) : new URL((url as Request).url);
+      if (u.hostname === "api.weixin.qq.com" && u.pathname === "/sns/jscode2session") {
+        return new Response(
+          JSON.stringify({ errcode: 40029, errmsg: "invalid code" }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response("not mocked", { status: 404 });
+    }) as unknown as typeof fetch;
+    const env = {
+      ADMIN_TOKEN,
+      JWT_SECRET,
+      WX_APP_ID: "wx_test_id",
+      WX_APP_SECRET: "wx_test_secret",
+      DB: d1,
+      fetchImpl: invalidCodeFetch,
+    } as unknown as Env;
+
+    const { authRoute } = await import("../../src/routes/auth.js");
+    const BAD_CODE = "bad_code_5xx";
+    // 5 次 INVALID_CODE
+    for (let i = 0; i < 5; i++) {
+      const failRes = await authRoute.WX_LOGIN(
+        new Request("https://do/auth/wx-login", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ code: BAD_CODE }),
+        }),
+        env,
+      );
+      expect(failRes.status).toBe(401);
+      const fb = (await failRes.json()) as { error: string };
+      expect(fb.error).toBe("INVALID_CODE");
+    }
+    // 第 6 次同 code → 应被 rate limit pre-check 拦截
+    const blocked = await authRoute.WX_LOGIN(
+      new Request("https://do/auth/wx-login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: BAD_CODE }),
+      }),
+      env,
+    );
+    expect(blocked.status).toBe(429);
+    const blockedBody = (await blocked.json()) as {
+      error: string;
+      retry_after: number;
+      message: string;
+    };
+    expect(blockedBody.error).toBe("RATE_LIMITED");
+    expect(blockedBody.retry_after).toBeGreaterThan(0);
+    expect(blockedBody.retry_after).toBeLessThanOrEqual(900);
+  });
+
+  it("POST /auth/wx-login 200 happy path: 成功不记 failed attempt（不污染 rate limit 计数）", async () => {
+    const d1 = await mf.getD1Database("DB");
+    const env = {
+      ADMIN_TOKEN,
+      JWT_SECRET,
+      WX_APP_ID: "wx_test_id",
+      WX_APP_SECRET: "wx_test_secret",
+      DB: d1,
+      fetchImpl: mockFetch, // 返 openid 的 happy path mock
+    } as unknown as Env;
+
+    const { authRoute } = await import("../../src/routes/auth.js");
+    // 连发 10 次 happy path（同 code 不会撞 5/15min 上限 — 成功路径不计数）
+    for (let i = 0; i < 10; i++) {
+      const res = await authRoute.WX_LOGIN(
+        new Request("https://do/auth/wx-login", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ code: "happy_code_xyz" }),
+        }),
+        env,
+      );
+      expect(res.status).toBe(200);
+    }
+    // 验证 login_attempt 表 0 行（spec §5.2：成功路径不记 attempt）
+    const countRow = await d1
+      .prepare("SELECT COUNT(*) AS c FROM login_attempt")
+      .first<{ c: number }>();
+    expect(countRow?.c ?? 0).toBe(0);
+  });
 });

@@ -81,13 +81,39 @@ export const authRoute = {
         );
       }
 
+      // M6.3a wx rate limit pre-check（spec §5.2 + plan §4 Task 4）：
+      // identifier = sha256(code).slice(0, 16)，type='wx_code'
+      // 微信 code 5min TTL，hash 撞概率 2^-64 可忽略；同 code 重试 5 次后拦截
+      const codeIdentifier = await sha256Identifier(code);
+      const rateCheck = await checkRateLimit(env.DB, codeIdentifier, "wx_code");
+      if (rateCheck.locked) {
+        return Response.json(
+          {
+            error: "RATE_LIMITED",
+            message: "Too many failed wx login attempts. Try again later.",
+            retry_after: rateCheck.retry_after,
+          },
+          { status: 429 },
+        );
+      }
+
       // 调 jscode2session（spec §3.5），fetchImpl 走 env 注入
-      const wxRes = await jscode2session({
-        code,
-        appId: env.WX_APP_ID ?? "",
-        appSecret: env.WX_APP_SECRET ?? "",
-        ...(env.fetchImpl ? { fetchImpl: env.fetchImpl } : {}),
-      });
+      let wxRes: { openid: string; session_key: string; unionid?: string };
+      try {
+        wxRes = await jscode2session({
+          code,
+          appId: env.WX_APP_ID ?? "",
+          appSecret: env.WX_APP_SECRET ?? "",
+          ...(env.fetchImpl ? { fetchImpl: env.fetchImpl } : {}),
+        });
+      } catch (err) {
+        // M6.3a：jscode2session 抛 INVALID_CODE 时记 failed attempt
+        // 其它错误（502 WX_API_ERROR / 500 INFRA_MISSING）不计（避免把网络问题当刷攻击）
+        if (err instanceof HttpError && err.code === "INVALID_CODE") {
+          await recordAttempt(env.DB, codeIdentifier, "wx_code", false);
+        }
+        throw err;
+      }
 
       // upsert user
       const { user, isNew } = await findOrCreateUser(env.DB, wxRes.openid);
@@ -97,6 +123,8 @@ export const authRoute = {
         { userId: user.id, isAdmin: false },
         env.JWT_SECRET ?? "",
       );
+
+      // M6.3a：成功路径不记 attempt（spec §5.2 — 避免 race condition 设计）
 
       const response: WxLoginResponse = {
         token,
