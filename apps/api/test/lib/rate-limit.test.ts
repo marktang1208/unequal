@@ -92,9 +92,9 @@ function makeFakeDB(opts: FakeDBOptions = {}) {
             }
             // 默认：实现 INSERT login_attempt
             if (/INSERT INTO login_attempt/i.test(sql)) {
-              // M6.6 Task 2 改 recordAttempt 签名后会变 6 列；Task 1 阶段保持 5 列
-              const [id, identifier, attempt_type, succeeded, created_at] = params as [string, string, string, number, number];
-              rows.push({ id, identifier, attempt_type, succeeded, created_at });
+              // M6.6 Task 2 改 recordAttempt 签名后变 6 列
+              const [id, identifier, attempt_type, succeeded, client_ip, created_at] = params as [string, string, string, number, string, number];
+              rows.push({ id, identifier, client_ip, attempt_type, succeeded, created_at });
             }
           },
         };
@@ -126,7 +126,7 @@ describe("rate-limit.checkRateLimit / recordAttempt (spy-style fake D1)", () => 
 
   it("4 次失败不锁（< MAX_FAILURES=5）", async () => {
     for (let i = 0; i < 4; i++) {
-      await recordAttempt(d1, "tokenhash", "admin", false, 1_000_000 + i);
+      await recordAttempt(d1, "tokenhash", "admin", false, "ip1hash", 1_000_000 + i);
     }
     const result = await checkRateLimit(d1, "tokenhash", "admin", 1_000_000);
     expect(result.locked).toBe(false);
@@ -136,7 +136,7 @@ describe("rate-limit.checkRateLimit / recordAttempt (spy-style fake D1)", () => 
   it("5 次失败锁 + retry_after > 0", async () => {
     const now = 1_000_000;
     for (let i = 0; i < 5; i++) {
-      await recordAttempt(d1, "tokenhash", "admin", false, now + i);
+      await recordAttempt(d1, "tokenhash", "admin", false, "ip1hash", now + i);
     }
     const result = await checkRateLimit(d1, "tokenhash", "admin", now);
     expect(result.locked).toBe(true);
@@ -147,7 +147,7 @@ describe("rate-limit.checkRateLimit / recordAttempt (spy-style fake D1)", () => 
     const startTime = 1_000_000;
     // 5 次失败记录在 startTime 时刻
     for (let i = 0; i < 5; i++) {
-      await recordAttempt(d1, "tokenhash", "admin", false, startTime + i);
+      await recordAttempt(d1, "tokenhash", "admin", false, "ip1hash", startTime + i);
     }
     // 16min 后 — 5 个 attempts 全部出窗口
     const after16min = startTime + WINDOW_MS + 1;
@@ -159,7 +159,7 @@ describe("rate-limit.checkRateLimit / recordAttempt (spy-style fake D1)", () => 
   it("wx_code 独立计数：admin 失败 5 不影响 wx_code 阈值", async () => {
     const now = 1_000_000;
     for (let i = 0; i < 5; i++) {
-      await recordAttempt(d1, "adminhash", "admin", false, now + i);
+      await recordAttempt(d1, "adminhash", "admin", false, "ip1hash", now + i);
     }
     // admin 已锁
     const adminResult = await checkRateLimit(d1, "adminhash", "admin", now);
@@ -172,11 +172,11 @@ describe("rate-limit.checkRateLimit / recordAttempt (spy-style fake D1)", () => 
   it("retry_after = ceil((oldest + WINDOW - now) / 1000)", async () => {
     const oldest = 1_000_000;
     // oldest 时刻 + 后续 4 个 attempts
-    await recordAttempt(d1, "t", "admin", false, oldest);
-    await recordAttempt(d1, "t", "admin", false, oldest + 1_000);
-    await recordAttempt(d1, "t", "admin", false, oldest + 2_000);
-    await recordAttempt(d1, "t", "admin", false, oldest + 3_000);
-    await recordAttempt(d1, "t", "admin", false, oldest + 4_000);
+    await recordAttempt(d1, "t", "admin", false, "ip1hash", oldest);
+    await recordAttempt(d1, "t", "admin", false, "ip1hash", oldest + 1_000);
+    await recordAttempt(d1, "t", "admin", false, "ip1hash", oldest + 2_000);
+    await recordAttempt(d1, "t", "admin", false, "ip1hash", oldest + 3_000);
+    await recordAttempt(d1, "t", "admin", false, "ip1hash", oldest + 4_000);
     // now = oldest + 10_000 → retry_after = ceil((oldest + 900_000 - (oldest + 10_000)) / 1000) = 890
     const now = oldest + 10_000;
     const result = await checkRateLimit(d1, "t", "admin", now);
@@ -224,12 +224,12 @@ describe("rate-limit.checkRateLimit (M6.4) config 注入", () => {
     const now = 1_000_000;
     const config = { maxFailures: 2, windowMs: WINDOW_MS };
     // 1 次失败 → 不锁
-    await recordAttempt(d1, "t", "admin", false, now);
+    await recordAttempt(d1, "t", "admin", false, "ip1hash", now);
     const r1 = await checkRateLimit(d1, "t", "admin", now, config);
     expect(r1.locked).toBe(false);
 
     // 2 次失败 → 锁
-    await recordAttempt(d1, "t", "admin", false, now + 1);
+    await recordAttempt(d1, "t", "admin", false, "ip1hash", now + 1);
     const r2 = await checkRateLimit(d1, "t", "admin", now + 1, config);
     expect(r2.locked).toBe(true);
   });
@@ -238,7 +238,7 @@ describe("rate-limit.checkRateLimit (M6.4) config 注入", () => {
     const now = 1_000_000;
     // 4 次失败 → 不锁（default maxFailures=5）
     for (let i = 0; i < 4; i++) {
-      await recordAttempt(d1, "t", "admin", false, now + i);
+      await recordAttempt(d1, "t", "admin", false, "ip1hash", now + i);
     }
     const r = await checkRateLimit(d1, "t", "admin", now);   // 不传 config
     expect(r.locked).toBe(false);

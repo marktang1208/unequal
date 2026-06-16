@@ -214,19 +214,25 @@ export async function checkRateLimitDual(
 
 /**
  * 记一条 login attempt（成功或失败都记 — 失败用于 rate limit 窗口计数）。
+ *
+ * M6.6 改签名：加 clientIpHash 第 5 必填参数（per-IP 限流数据源）。
+ * - clientIpHash：来自 getClientIp(req) → sha256ClientIp(ip)；缺 header 传 UNKNOWN_IP_HASH
+ * - 不设默认值：调用方必须显式表达"已知 IP"或"unknown"
+ * - INSERT SQL 加 client_ip 列（M6.6 migration 0008 加列）
  */
 export async function recordAttempt(
   d1: D1Database,
   identifier: string,
   type: AttemptType,
   succeeded: boolean,
+  clientIpHash: string,
   now: number = Date.now(),
 ): Promise<void> {
   await d1
     .prepare(
-      `INSERT INTO login_attempt (id, identifier, attempt_type, succeeded, created_at)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO login_attempt (id, identifier, attempt_type, succeeded, client_ip, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
     )
-    .bind(ulid(), identifier, type, succeeded ? 1 : 0, now)
+    .bind(ulid(), identifier, type, succeeded ? 1 : 0, clientIpHash, now)
     .run();
 }

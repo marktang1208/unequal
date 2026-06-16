@@ -20,9 +20,11 @@ import { signJwt } from "../lib/auth-jwt.js";
 import { jscode2session } from "../lib/wx.js";
 import { findOrCreateUser, updateUserSessionKey } from "../lib/user.js";
 import {
-  checkRateLimit,
+  checkRateLimitDual,
   recordAttempt,
   sha256Identifier,
+  sha256ClientIp,
+  getClientIp,
   readRateLimitConfig,
 } from "../lib/rate-limit.js";
 import type { Env } from "../types.js";
@@ -85,8 +87,14 @@ export const authRoute = {
       // M6.3a wx rate limit pre-check（spec §5.2 + plan §4 Task 4）：
       // identifier = sha256(code).slice(0, 16)，type='wx_code'
       // 微信 code 5min TTL，hash 撞概率 2^-64 可忽略；同 code 重试 5 次后拦截
+      //
+      // M6.6：加 per-IP 维度（双层独立）。clientIpHash = sha256(CF-Connecting-IP).slice(0, 16)
+      // 任一维度锁即整体锁（attacker 换 wrong-code N 次绕过 5/15min 的攻击面被封堵）
       const codeIdentifier = await sha256Identifier(code);
-      const rateCheck = await checkRateLimit(env.DB, codeIdentifier, "wx_code", Date.now(), readRateLimitConfig(env));
+      const clientIpHash = await sha256ClientIp(getClientIp(request));
+      const rateCheck = await checkRateLimitDual(
+        env.DB, codeIdentifier, clientIpHash, "wx_code", Date.now(), readRateLimitConfig(env),
+      );
       if (rateCheck.locked) {
         return Response.json(
           {
@@ -111,7 +119,7 @@ export const authRoute = {
         // M6.3a：jscode2session 抛 INVALID_CODE 时记 failed attempt
         // 其它错误（502 WX_API_ERROR / 500 INFRA_MISSING）不计（避免把网络问题当刷攻击）
         if (err instanceof HttpError && err.code === "INVALID_CODE") {
-          await recordAttempt(env.DB, codeIdentifier, "wx_code", false);
+          await recordAttempt(env.DB, codeIdentifier, "wx_code", false, clientIpHash);
         }
         throw err;
       }
@@ -167,8 +175,13 @@ export const authRoute = {
       }
       // M6.3a rate limit pre-check（spec §5.1）：在 verifyAdminToken 之前拦截
       // identifier = sha256(admin_token).hex().slice(0, 16)
+      //
+      // M6.6：加 per-IP 维度（双层独立）。attacker 换 wrong-token N 次绕过 5/15min 的攻击面被封堵
       const adminIdentifier = await sha256Identifier(adminToken);
-      const rateCheck = await checkRateLimit(env.DB, adminIdentifier, "admin", Date.now(), readRateLimitConfig(env));
+      const clientIpHash = await sha256ClientIp(getClientIp(request));
+      const rateCheck = await checkRateLimitDual(
+        env.DB, adminIdentifier, clientIpHash, "admin", Date.now(), readRateLimitConfig(env),
+      );
       if (rateCheck.locked) {
         // 显式 return（带 retry_after），不走 throw HttpError
         return Response.json(
@@ -186,14 +199,14 @@ export const authRoute = {
       );
       // M6.3a：无论成功失败都记 attempt（spec §5.1 step 4）
       if (!auth.ok) {
-        await recordAttempt(env.DB, adminIdentifier, "admin", false);
+        await recordAttempt(env.DB, adminIdentifier, "admin", false, clientIpHash);
         throw new HttpError(401, "INVALID_ADMIN_TOKEN", auth.message);
       }
       const token = await signJwt(
         { userId: DEFAULT_ADMIN_USER_ID, isAdmin: true },
         env.JWT_SECRET ?? "",
       );
-      await recordAttempt(env.DB, adminIdentifier, "admin", true);
+      await recordAttempt(env.DB, adminIdentifier, "admin", true, clientIpHash);
       const response: AdminLoginResponse = {
         token,
         user_id: DEFAULT_ADMIN_USER_ID,
