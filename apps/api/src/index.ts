@@ -12,6 +12,7 @@ import { sessionsRoute } from "./routes/sessions.js";
 import { authRoute } from "./routes/auth.js";
 import { userRoute } from "./routes/user.js";
 import { cronRoute } from "./routes/cron.js";
+import { statsRoute } from "./routes/stats.js";
 import { scheduled } from "./scheduled.js";
 
 const app = new Hono<{ Bindings: Env }>();
@@ -56,6 +57,9 @@ app.patch("/user/nickname", (c) => userRoute.UPDATE_NICKNAME(c.req.raw, c.env));
 
 // M6.4: cron 清理 login_attempt（M6.5 起 scheduled handler 主路径，HTTP 备用）
 app.post("/cron/cleanup-login-attempts", (c) => cronRoute.CLEANUP_LOGIN_ATTEMPTS(c.req.raw, c.env));
+
+// M6.5: login_attempt 可视化（admin JWT 鉴权）
+app.get("/stats/login-attempts", (c) => statsRoute.GET_LOGIN_ATTEMPTS(c.req.raw, c.env));
 
 app.notFound((c) => c.text("Not found", 404));
 
