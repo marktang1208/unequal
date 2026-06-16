@@ -11,6 +11,7 @@ import XiaohongshuCrawlPage from "./pages/XiaohongshuCrawlPage.js";
 import WechatMpCrawlPage from "./pages/WechatMpCrawlPage.js";
 import ChatSim from "./pages/ChatSim.js";
 import LoginPage from "./pages/LoginPage.js";
+import StatsPage from "./pages/StatsPage.js";
 
 /**
  * 路由级 auth guard：缺 localStorage.admin_token → navigate("/login")。
@@ -60,6 +61,9 @@ export default function App() {
             </Link>
             <Link to="/crawl/wechat-mp" className="text-gray-600 hover:text-gray-900">
               微信公众号
+            </Link>
+            <Link to="/stats" className="text-gray-600 hover:text-gray-900">
+              统计
             </Link>
           </nav>
         </div>
@@ -140,6 +144,16 @@ export default function App() {
             element={
               <RequireAuth>
                 <WechatMpCrawlPage />
+              </RequireAuth>
+            }
+          />
+
+          {/* M6.5: login_attempt 可视化 */}
+          <Route
+            path="/stats"
+            element={
+              <RequireAuth>
+                <StatsPage />
               </RequireAuth>
             }
           />
