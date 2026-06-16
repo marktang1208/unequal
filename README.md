@@ -583,6 +583,78 @@ curl http://localhost:8787/stats/login-attempts
 
 详见 `docs/superpowers/state-m6-5.md`（含 8 个偏差记录 + commit 汇总 + CP-5 真接路径 + 下一步建议）。
 
+## M6.6 状态
+
+跑通：1 项 M6.3a 留口加固 — rate-limit 在 per-token 维度基础上加 per-IP 维度（双层独立计数，任一锁则整体锁），消除 attacker 轮换 wrong-token N 次绕过 5/15min 限流的攻击面。**251 用例全绿**（237 M6.5 收尾 + 14 M6.6 新增）。
+
+mock-first 实现：
+
+- `apps/api/src/lib/rate-limit.ts` 加 5 个新 export：
+  - `getClientIp(req)` — 读 `CF-Connecting-IP` header，缺则 `"unknown"`
+  - `sha256ClientIp(ip)` — 完整 IP sha256 截 16 字符；`"unknown"` 短路返 `UNKNOWN_IP_HASH = "unknown000000000"`
+  - `checkRateLimitByIp(d1, clientIpHash, type, ...)` — 镜像 `checkRateLimit` 签名，SQL `WHERE client_ip = ?`
+  - `checkRateLimitDual(d1, identifier, clientIpHash, type, ...)` — `Promise.all` 并发 + 任一锁即整体锁
+  - `UNKNOWN_IP_HASH` — 缺 header 防御性固定 hash
+- `recordAttempt` 签名加 `clientIpHash` 必填参数（必填：调用方显式表达"已知 IP"或"unknown"）；INSERT SQL 加 `client_ip` 列
+- `apps/api/src/routes/auth.ts` WX_LOGIN + ADMIN_LOGIN 改调 `checkRateLimitDual`，加 `getClientIp` + `sha256ClientIp` 解析客户端 IP
+- `apps/api/migrations/0008_login_attempt_client_ip.sql` 新 — `ALTER TABLE login_attempt ADD COLUMN client_ip TEXT` + `CREATE INDEX idx_login_attempt_client_ip ON login_attempt(client_ip, attempt_type, created_at DESC)`
+- `apps/api/migrations/0008_login_attempt_client_ip.down.sql` 新 — `DROP INDEX`（SQLite < 3.35 不支持 DROP COLUMN；orphan column 无副作用）
+- 2 commit 跨 1 包主线程直接做（M6.5 教训应用，总耗时 ~15 min）
+
+### 双层限流行为（M6.6 后）
+
+```bash
+# 1. per-IP 锁（新场景）：同 IP 5 个不同 wrong-token → 第 6 个 429
+for token in wrong1 wrong2 wrong3 wrong4 wrong5 wrong6; do
+  curl -X POST http://localhost:8787/auth/admin-login \
+    -H "CF-Connecting-IP: 1.2.3.4" \
+    -H "Content-Type: application/json" \
+    -d "{\"admin_token\":\"$token\"}" -w "\n%{http_code}\n"
+done
+# 1-5: 401 INVALID_ADMIN_TOKEN / 6: 429 RATE_LIMITED { retry_after: 900 }
+
+# 2. per-token 锁（回归）：5 同 wrong-token 不同 IP → 第 6 个 429
+for ip in 10.0.0.{1..6}; do
+  curl -X POST http://localhost:8787/auth/admin-login \
+    -H "CF-Connecting-IP: $ip" \
+    -H "Content-Type: application/json" \
+    -d '{"admin_token":"shared-wrong"}' -w "\n%{http_code}\n"
+done
+# 1-5: 401 / 6: 429
+
+# 3. 双层都锁：5 同 IP 同 token → 第 6 个 429（per-token / per-IP 都达 5）
+```
+
+- 合并语义：`checkRateLimitDual` 串两次 SQL（`Promise.all` 并发 < 10ms 总耗时），任一维度锁即整体锁
+- `retry_after`：取锁维度的 retry_after（保守 = 任一先解锁即解锁）
+- `client_ip` 存 sha256 hash（不存明文 IP 防 PII；与 identifier 字段同模式）
+- `clientIpHash` 16 字符 hex（v4/v6 不区分；与 sha256Identifier 16 字符 hex 截断同模式）
+- "unknown" IP 固定 hash = `"unknown000000000"`（缺 header 请求共享 bucket；防御性合并）
+- 0 新 env（IP 来自 `CF-Connecting-IP` header，CF 边缘节点自动注入；client 不可伪造）
+- 0 跨包改动（仅 apps/api）
+
+### M6.6 测试矩阵
+
+- `pnpm -F shared test` — 38 用例（无变化）
+- `pnpm -F api test` — 138 用例（rate-limit 11 + auth 3 + 124 旧 = 138）
+- `pnpm -F miniprogram test` — 32 用例（无变化）
+- `pnpm -F admin test` — 24 用例（无变化）
+- `pnpm -F crawler test` — 19 用例（无变化）
+- `pnpm -r typecheck` — 5 包全绿
+- 累计：**251 用例全绿**（spec 估 14 新增，实际 14 一致）
+
+### M6.6 限制（mock-first 已知）
+
+- 真实 CF 边缘注入 `CF-Connecting-IP` header 未验（miniflare 不模拟；fake req.headers mock）
+- 真实 D1 SQL `checkRateLimitByIp` 索引命中未验（< 5ms 预期；CP-5 真接时 EXPLAIN）
+- 真实 D1 ALTER TABLE + CREATE INDEX 性能未验（mock-first 不验）
+- admin 输 5 次错 token 锁本机 IP 15min UX 真实体验未验（mock-first 只能验逻辑）
+- "unknown" IP bucket 在生产是否真为 0（CF 100% 注入，预期 0 行；CP-5 真接时验）
+- applyMigrations 列表手动维护（auth.test.ts 显式列 0001/0005/0006/0008；M6.7+ 加 migration 需同步更新）
+- 0 production console.log
+
+详见 `docs/superpowers/state-m6-6.md`（含 4 个偏差记录 + commit 汇总 + CP-5 真接路径 + 下一步建议）。
+
 ## M6.1 状态
 
 跑通：多轮会话 + Durable Objects（一个 session 一个 DO instance）+ D1 session 列表 + 小程序双 tab（对话 / 历史）+ admin ChatSim 多 session 切换。130 用例全绿（73 M0-M5 + 57 M6.1）。

@@ -44,10 +44,12 @@ async function applyMigrations(d1: D1Database) {
   const { splitSqlIntoStatements } = await import("../sql-split.js");
   // /auth 需要 0001_init.sql（user 表）+ 0005_login_attempt.sql（M6.3a rate limit）
   // + 0006_user_session_key.sql（M6.3b session_key 落库）
+  // + 0008_login_attempt_client_ip.sql（M6.6 per-IP 限流数据源）
   for (const f of [
     "0001_init.sql",
     "0005_login_attempt.sql",
     "0006_user_session_key.sql",
+    "0008_login_attempt_client_ip.sql",
   ]) {
     const sql = await readFile(resolve(MIGRATIONS_DIR, f), "utf-8");
     for (const stmt of splitSqlIntoStatements(sql)) {
@@ -440,5 +442,93 @@ describe("/auth route (Miniflare + D1 + mock fetchImpl)", () => {
       .prepare("SELECT COUNT(*) AS c FROM user")
       .first<{ c: number }>();
     expect(countRow?.c ?? 0).toBe(0);
+  });
+
+  /* ---------- M6.6 per-IP + per-token 双层限流（end-to-end 走 miniflare D1） ---------- */
+
+  it("POST /auth/admin-login per-IP 锁（M6.6）: 同 IP 5 个不同 wrong-token 失败后第 6 个 → 429", async () => {
+    // 5 次不同 wrong-token（per-token 维度每行不同 hash）但同 CF-Connecting-IP
+    // → per-token 维度永不锁（每行不同 identifier），per-IP 维度累计 5 后锁
+    const IP = "1.2.3.4";
+    for (let i = 0; i < 5; i++) {
+      const failRes = await mf.dispatchFetch("http://localhost/auth/admin-login", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "CF-Connecting-IP": IP,
+        },
+        body: JSON.stringify({ admin_token: `wrong-token-${i}` }),
+      });
+      expect(failRes.status).toBe(401);
+    }
+    // 第 6 次同 IP 不同 token → 应被 per-IP 锁拦截
+    const blocked = await mf.dispatchFetch("http://localhost/auth/admin-login", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "CF-Connecting-IP": IP,
+      },
+      body: JSON.stringify({ admin_token: "wrong-token-6" }),
+    });
+    expect(blocked.status).toBe(429);
+    const blockedBody = (await blocked.json()) as { error: string; retry_after: number };
+    expect(blockedBody.error).toBe("RATE_LIMITED");
+    expect(blockedBody.retry_after).toBeGreaterThan(0);
+  });
+
+  it("POST /auth/admin-login per-token 锁（M6.6 回归）: 同 wrong-token 5 次不同 IP 后第 6 次 → 429", async () => {
+    // 5 次同 wrong-token 但不同 CF-Connecting-IP
+    // → per-IP 维度每行不同 hash，per-token 维度累计 5 后锁（旧行为保留）
+    const WRONG_TOKEN = "shared-wrong-token";
+    for (let i = 0; i < 5; i++) {
+      const failRes = await mf.dispatchFetch("http://localhost/auth/admin-login", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "CF-Connecting-IP": `10.0.0.${i + 1}`,
+        },
+        body: JSON.stringify({ admin_token: WRONG_TOKEN }),
+      });
+      expect(failRes.status).toBe(401);
+    }
+    // 第 6 次同 wrong-token 不同 IP → 应被 per-token 锁拦截（旧行为回归）
+    const blocked = await mf.dispatchFetch("http://localhost/auth/admin-login", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "CF-Connecting-IP": "10.0.0.99",
+      },
+      body: JSON.stringify({ admin_token: WRONG_TOKEN }),
+    });
+    expect(blocked.status).toBe(429);
+    const blockedBody = (await blocked.json()) as { error: string };
+    expect(blockedBody.error).toBe("RATE_LIMITED");
+  });
+
+  it("POST /auth/admin-login 双层未锁（M6.6）: per-token COUNT=2 / per-IP COUNT=2 第 3 次 → 401（不锁）", async () => {
+    // 2 次同 wrong-token + 同 IP（per-token 累计 2 / per-IP 累计 2）
+    // 任何后续只要换 identifier 或换 IP → 双层 COUNT 都不达 5，不锁
+    const IP = "192.168.1.1";
+    for (let i = 0; i < 2; i++) {
+      const failRes = await mf.dispatchFetch("http://localhost/auth/admin-login", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "CF-Connecting-IP": IP,
+        },
+        body: JSON.stringify({ admin_token: "t1" }),
+      });
+      expect(failRes.status).toBe(401);
+    }
+    // 第 3 次：换 identifier + 同 IP → per-token COUNT=0（不累计），per-IP COUNT=2 → not locked
+    const ok = await mf.dispatchFetch("http://localhost/auth/admin-login", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "CF-Connecting-IP": IP,
+      },
+      body: JSON.stringify({ admin_token: "t2" }),
+    });
+    expect(ok.status).toBe(401); // 不是 429（双层未锁，正常 401 INVALID_ADMIN_TOKEN）
   });
 });
