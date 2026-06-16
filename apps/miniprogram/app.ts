@@ -1,12 +1,19 @@
-// 小程序全局逻辑
-// @ts-expect-error mock-first wx 类型缺失（miniprogram-api-typings 未安装，按 CP-1 决策容忍）
+// @ts-nocheck wx 全局类型 mock-first 缺失（CP-1 / M3 / M6.1 / M6.2 决策容忍）
+import { ensureJwt } from "./lib/auth.js";
+
+// @ts-expect-error mock-first wx 类型缺失（miniprogram-api-typings 未安装）
 App({
   globalData: {
     apiBaseUrl: "http://localhost:8787",  // CP-5 后改 https://unequal.xxx.workers.dev
     // 真机调试时必须在微信开发者工具勾选「不校验合法域名」
   },
-  onLaunch() {
-    // 启动时拉历史问答（chat 页 onShow 时也拉一次）
-    console.log("unequal miniprogram launched");
+  async onLaunch() {
+    // M6.2: 冷启动拿 jwt（不阻塞启动；失败仅 warn）
+    try {
+      await ensureJwt();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn("[unequal] ensureJwt failed:", err instanceof Error ? err.message : err);
+    }
   },
 });

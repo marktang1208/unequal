@@ -5,6 +5,7 @@ import type {
   ChatResponse,
   SessionsListResponse,
 } from "./types.js";
+import { getJwtToken } from "./auth.js";
 
 /**
  * 调 /ask endpoint 拿单轮问答。
@@ -71,8 +72,35 @@ function getFetch(opts: ApiOptions): (input: string, init: { method?: string; he
 
 function buildHeaders(opts: ApiOptions): Record<string, string> {
   const headers: Record<string, string> = { "content-type": "application/json" };
-  if (opts.token) headers.authorization = `Bearer ${opts.token}`;
+  // M6.2: 优先 opts.token（admin LoginPage 用），否则用 storage jwt
+  if (opts.token) {
+    headers.authorization = `Bearer ${opts.token}`;
+  } else {
+    const jwt = getJwtToken();
+    if (jwt) headers.authorization = `Bearer ${jwt}`;
+  }
   return headers;
+}
+
+/* ---------- M6.2 admin login ---------- */
+
+/** POST /auth/admin-login → 返 admin jwt。Caller 自己 saveJwt() */
+export async function adminLogin(
+  adminToken: string,
+  opts: ApiOptions = {},
+): Promise<{ token: string; user_id: string; is_admin: boolean; expires_in: number }> {
+  const baseUrl = opts.baseUrl ?? "http://localhost:8787";
+  const f = getFetch(opts);
+  const res = await f(`${baseUrl}/auth/admin-login`, {
+    method: "POST",
+    headers: buildHeaders(opts),
+    body: JSON.stringify({ admin_token: adminToken }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as AskError;
+    throw new Error(`/auth/admin-login ${res.status}: ${body.error ?? "unknown"}`);
+  }
+  return (await res.json()) as { token: string; user_id: string; is_admin: boolean; expires_in: number };
 }
 
 export async function ask(q: string, opts: ApiOptions = {}): Promise<AskResponse> {
