@@ -193,6 +193,31 @@ function handleApiResponse(res: Response): Response {
 
 所有 admin fetch 调用统一包：`handleApiResponse(await fetch(...))`。
 
+### 5.5 admin App.tsx routing changes
+
+9 protected routes + catch-all 全包 RequireAuth，仅 `/login` 公开：
+
+```tsx
+// 公开（已 M6.2 建立）
+<Route path="/login" element={<LoginPage />} />
+
+// 9 protected routes（M6.2 仅包 /chat-sim，M6.3a 全包）
+<Route path="/upload"            element={<RequireAuth><Upload /></RequireAuth>} />
+<Route path="/sources"           element={<RequireAuth><Sources /></RequireAuth>} />
+<Route path="/documents"         element={<RequireAuth><Documents /></RequireAuth>} />
+<Route path="/search"            element={<RequireAuth><SearchTest /></RequireAuth>} />
+<Route path="/ask"               element={<RequireAuth><AskTest /></RequireAuth>} />
+<Route path="/chat-sim"          element={<RequireAuth><ChatSim /></RequireAuth>} />
+<Route path="/crawl"             element={<RequireAuth><CrawlPage /></RequireAuth>} />
+<Route path="/crawl/xiaohongshu" element={<RequireAuth><XiaohongshuCrawlPage /></RequireAuth>} />
+<Route path="/crawl/wechat-mp"   element={<RequireAuth><WechatMpCrawlPage /></RequireAuth>} />
+
+// catch-all — 也包（M6.2 是裸 Upload，M6.3a 加 RequireAuth 避免侧门）
+<Route path="*" element={<RequireAuth><Upload /></RequireAuth>} />
+```
+
+**为什么 catch-all 也包**：M6.2 路由 `path="*"` fallback 到 `<Upload />` 但没包 RequireAuth，等于"任何未知 path → 进 Upload"是个侧门。M6.3a 修复。
+
 ---
 
 ## 6. Data Model
