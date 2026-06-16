@@ -22,6 +22,12 @@ export interface Env {
   LOGIN_WINDOW_MS?: string;
   // M6.4: cron cleanup endpoint 鉴权（M6.4 放 vars；CP-5 真接时改 wrangler secret put）
   CRON_SECRET?: string;
-  // M6.7: envelope encryption KEK（wrangler secret put 注入；KEK 丢失 = 老 user 密文全废，必须备份到密码管理器）
-  KEK_SECRET?: string;
+  // M6.7 + M6.8: envelope encryption KEK
+  // M6.8: 多 env 变量（KEK_SECRET_V1, V2, V3...）支持 KEK 轮换 + fallback 恢复
+  // M6.7 单 KEK_SECRET 改名为 KEK_SECRET_V1（保持兼容老 user data version=1）
+  // KEK 丢失 = 老 user 密文全废，必须备份到密码管理器
+  KEK_SECRET_V1?: string;
+  KEK_SECRET_V2?: string;
+  KEK_SECRET_V3?: string;
+  KEK_CURRENT_VERSION?: string; // M6.8: current KEK version（默认 "1"）
 }

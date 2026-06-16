@@ -732,6 +732,85 @@ pnpm wrangler d1 execute unequal-db --remote \
 
 详见 `docs/superpowers/state-m6-7.md`（含 4 个偏差记录 + commit 汇总 + CP-5 真接路径 + 下一步建议）。
 
+## M6.8 状态
+
+跑通：1 项 M6.7 留口加固 — 加 KEK version 字段 + 多 KEK env 变量（KEK_SECRET_V1, V2, V3, ...）+ fallback 遍历所有 env KEK 试解，解决 M6.7 单 KEK 丢失 HIGH 严重度。**274 用例全绿**（263 M6.7 收尾 + 11 M6.8 新增：envelope 7 + user 4 净增）。
+
+mock-first 实现：
+
+- `apps/api/src/lib/envelope.ts` 改：
+  - 新 `KekEnv = Record<string, string | undefined>` type alias
+  - `deriveKek(env, version)` 加 version 参数；按 `env.KEK_SECRET_V${version}` 取
+  - `encryptEnvelope(plaintext, env, version)` + `decryptEnvelope(ct, dek, env, version)` 签名加 version
+  - 新 `tryDecryptWithAnyKek(ct, dek, env)` 遍历 env 所有 KEK 试解；全失败 throw "all KEKs failed to decrypt"
+  - 新 `getAllKekVersions(env)` 扫描 `KEK_SECRET_V*` 模式
+- `apps/api/src/lib/user.ts` 改：
+  - `updateUserSessionKey` 写 `session_key_kek_version = currentVersion`（env.KEK_CURRENT_VERSION ?? "1"；非法 fallback 1）
+  - `readUserSessionKey` SELECT 加 version；1st try 优先用 row.session_key_kek_version（fast path）；失败 → fallback `tryDecryptWithAnyKek` 遍历
+- `apps/api/src/types.ts` 改：Env interface 改 `KEK_SECRET` → `KEK_SECRET_V1/V2/V3 + KEK_CURRENT_VERSION`（4 字段）
+- `apps/api/migrations/0010_user_session_key_kek_version.sql` 新：`ALTER TABLE user ADD session_key_kek_version INTEGER NOT NULL DEFAULT 1` + `idx_user_kek_version`
+- 1 commit 跨 1 包主线程直接做（M6.7 教训应用，总耗时 ~15 min）
+
+### KEK version + multi-KEK fallback 行为（M6.8 后）
+
+```bash
+# 1. 写：每次 /auth/wx-login 成功后
+#   currentVersion = parseInt(env.KEK_CURRENT_VERSION ?? "1", 10)  // 默认 V1
+#   encryptEnvelope(plaintext, env, currentVersion)  // 用 V1 KEK
+#   D1: UPDATE user SET session_key_ct=base64(nonce+ct), session_key_dek=base64(nonce+wrappedDek),
+#                    session_key_kek_version=currentVersion, session_key=NULL
+
+# 2. 读：1st try 优先用 row.session_key_kek_version → 失败 fallback 遍历
+#   SELECT session_key_ct, session_key_dek, session_key, session_key_kek_version FROM user
+#   1st try: decryptEnvelope(ct, dek, env, row.session_key_kek_version)
+#   fail → 2nd try: tryDecryptWithAnyKek → 遍历 env.KEK_SECRET_V* 试解
+#   全失败 → null + console.error
+
+# 3. 轮换：加新 KEK + 改 currentVersion（admin 流程）
+#   pnpm wrangler secret put KEK_SECRET_V2
+#   pnpm wrangler secret put KEK_CURRENT_VERSION  # 值="2"
+#   # 0 主动重 wrap；老 user 仍 V1，fallback 链 V1 仍可读
+
+# 验证（D1 真接后）
+pnpm wrangler d1 execute unequal-db --remote \
+  --command "SELECT id, session_key_kek_version FROM user LIMIT 5"
+# V1 老 user: session_key_kek_version=1
+# V2 新 user: session_key_kek_version=2
+```
+
+- 合并语义：`tryDecryptWithAnyKek` 串行遍历 env.KEK_SECRET_V*（V1 → V2 → V3）任一解出即返
+- `KEK_CURRENT_VERSION` 决定新数据写入用哪个 KEK（默认 "1"）
+- 写时 `session_key_kek_version` 列记录所用 KEK version
+- 1st try fast path（happy 1 次解密）/ fallback 跨 KEK 不可解（V1 加密的 wrappedDek 用 V2 永远解不开）
+- 0 主动重 wrap DEK 工具（M6.8+ YAGNI）
+- 0 跨包改动（仅 apps/api）
+
+### M6.8 测试矩阵
+
+- `pnpm -F shared test` — 38 用例（无变化）
+- `pnpm -F api test` — 161 用例（envelope 15 + user 16 + auth 14 + 116 旧 = 161；M6.8 新增 11）
+- `pnpm -F miniprogram test` — 32 用例（无变化）
+- `pnpm -F admin test` — 24 用例（无变化）
+- `pnpm -F crawler test` — 19 用例（无变化）
+- `pnpm -r typecheck` — 5 包全绿
+- 累计：**274 用例全绿**（spec 估 9 净增，实际 11 — +2 envelope 边界测试：跨 KEK 不可解 + 跳过非法 version）
+
+### M6.8 限制（mock-first 已知）
+
+- **所有 KEK 都丢 HIGH 严重度**：env.KEK_SECRET_V* 全被删/重生成 → 老 user 数据全不可解
+  - 缓解：KEK 强制密码管理器备份（CP-5 流程 doc 强提示）
+  - 兜底已无：admin 需重设原 KEK 才能恢复
+- fallback 跨 KEK 不可解：V1 加密的 wrappedDek 用 V2 永远解不开（AES-GCM 不可跨 KEK 解密）— 监控必需
+- 真实 CF Workers 注入 `env.KEK_SECRET_V*` 行为未验（miniflare 无 secret 注入）
+- 真实 D1 ALTER TABLE 性能未验（mock-first 不验）
+- 真实多 KEK 轮换流程未验（CP-5 admin 文档演练）
+- 真实老 user（M6.7 上线后）重 login 后 version 升到 currentVersion 未验
+- 派生算法 hardcode SHA-256（未来换 scrypt 需数据迁移；YAGNI）
+- `applyMigrations` 列表手动维护（auth.test.ts 显式列 0001/0005/0006/0008/0009/0010；M6.9+ 加 migration 需同步更新）
+- 0 production console.log（除 envelope fallback console.warn + console.error — 监控必需，**不计入**）
+
+详见 `docs/superpowers/state-m6-8.md`（含 6 个偏差记录 + commit 汇总 + CP-5 真接路径 + 下一步建议）。
+
 ## M6.1 状态
 
 跑通：多轮会话 + Durable Objects（一个 session 一个 DO instance）+ D1 session 列表 + 小程序双 tab（对话 / 历史）+ admin ChatSim 多 session 切换。130 用例全绿（73 M0-M5 + 57 M6.1）。

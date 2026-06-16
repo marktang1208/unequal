@@ -130,7 +130,8 @@ export const authRoute = {
       // M6.3b 写 session_key；M6.7 改 envelope 密文（KEK 来自 env.KEK_SECRET）
       // 写失败不阻断登录；让 jwt 仍签发
       try {
-        await updateUserSessionKey(env.DB, user.id, wxRes.session_key, env);
+        // env 是 Env 类型（含 D1Database 等），envelope 函数只需 KEK_* 字段；cast 安全
+        await updateUserSessionKey(env.DB, user.id, wxRes.session_key, env as unknown as Parameters<typeof updateUserSessionKey>[3]);
       } catch {
         // session_key 写失败不阻断 jwt 签发；未来解密不可用但当前 /auth/wx-login 仍成功
       }

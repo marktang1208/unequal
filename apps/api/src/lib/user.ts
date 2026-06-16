@@ -1,6 +1,11 @@
 import { ulid } from "ulid";
 import type { D1Database } from "@cloudflare/workers-types";
-import { encryptEnvelope, decryptEnvelope } from "./envelope.js";
+import {
+  encryptEnvelope,
+  tryDecryptWithAnyKek,
+  decryptEnvelope,
+  type KekEnv,
+} from "./envelope.js";
 
 export interface UserRow {
   id: string;
@@ -59,33 +64,41 @@ export async function findOrCreateUser(
 
 /**
  * M6.3b 写 session_key（spec §1/§5/§6）。
- * M6.7 改：写 envelope 密文（session_key_ct + session_key_dek）；旧 session_key 列置 NULL。
+ * M6.7 改：写 envelope 密文（session_key_ct + session_key_dek + session_key=NULL）。
+ * M6.8 改：写 session_key_kek_version（默认 1，env.KEK_CURRENT_VERSION 可改）。
  * 写失败不阻断（auth.ts try/catch 兜底）。
  *
  * 错误：
  * - sessionKey 空字符串 → skip（微信偶尔返空，不写）
- * - KEK_SECRET 缺失 → throw "KEK_SECRET not configured"（auth.ts 透传，不阻断）
+ * - env.KEK_SECRET_V{version} 缺失 → throw "KEK_SECRET_V{N} not configured"（auth.ts 透传）
  * - encrypt / D1 错误 → 透传
  */
 export async function updateUserSessionKey(
   d1: D1Database,
   userId: string,
   sessionKey: string,
-  env: { KEK_SECRET?: string },
+  env: KekEnv,
 ): Promise<void> {
   if (!sessionKey) return;
-  const { ciphertext, wrappedDek } = await encryptEnvelope(sessionKey, env);
+  // M6.8: 解析 currentVersion（默认 1；非法 fallback 1）
+  const currentVersion = parseInt(env.KEK_CURRENT_VERSION ?? "1", 10);
+  const version = Number.isFinite(currentVersion) && currentVersion >= 1 ? currentVersion : 1;
+  const { ciphertext, wrappedDek } = await encryptEnvelope(sessionKey, env, version);
   await d1
     .prepare(
-      `UPDATE user SET session_key_ct = ?, session_key_dek = ?, session_key = NULL
+      `UPDATE user SET
+        session_key_ct = ?, session_key_dek = ?,
+        session_key_kek_version = ?,
+        session_key = NULL
        WHERE id = ?`,
     )
-    .bind(ciphertext, wrappedDek, userId)
+    .bind(ciphertext, wrappedDek, version, userId)
     .run();
 }
 
 /**
  * M6.7 读 session_key（透明兼容明文，spec §6.2）。
+ * M6.8 改：1st try 优先用 row.session_key_kek_version（fast path）；失败 fallback `tryDecryptWithAnyKek` 遍历所有 env KEK。
  *
  * 新 user：解 envelope 返 plaintext。
  * 老 user（session_key_ct=NULL）：fallback 旧明文 row.session_key（M6.3b 写入）。
@@ -96,11 +109,11 @@ export async function updateUserSessionKey(
 export async function readUserSessionKey(
   d1: D1Database,
   userId: string,
-  env: { KEK_SECRET?: string },
+  env: KekEnv,
 ): Promise<string | null> {
   const row = await d1
     .prepare(
-      `SELECT session_key_ct, session_key_dek, session_key
+      `SELECT session_key_ct, session_key_dek, session_key, session_key_kek_version
        FROM user WHERE id = ?`,
     )
     .bind(userId)
@@ -108,16 +121,28 @@ export async function readUserSessionKey(
       session_key_ct: string | null;
       session_key_dek: string | null;
       session_key: string | null;
+      session_key_kek_version: number | null;
     }>();
   if (!row) return null;
 
   // 新 user：解 envelope
   if (row.session_key_ct && row.session_key_dek) {
     try {
-      return await decryptEnvelope(row.session_key_ct, row.session_key_dek, env);
+      // M6.8: 1st try 优先用 row.session_key_kek_version（fast path）
+      if (row.session_key_kek_version) {
+        try {
+          return await decryptEnvelope(row.session_key_ct, row.session_key_dek, env, row.session_key_kek_version);
+        } catch {
+          console.warn(
+            `[envelope] primary KEK V${row.session_key_kek_version} failed for user ${userId}, trying fallback`,
+          );
+        }
+      }
+      // 2nd try: 遍历 env 所有 KEK（fallback）
+      return await tryDecryptWithAnyKek(row.session_key_ct, row.session_key_dek, env);
     } catch (err) {
-      console.warn(
-        `[envelope] readUserSessionKey decrypt failed for user ${userId}:`,
+      console.error(
+        `[envelope] all KEKs failed for user ${userId}:`,
         err,
       );
       return null;
