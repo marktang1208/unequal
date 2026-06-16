@@ -22,4 +22,6 @@ export interface Env {
   LOGIN_WINDOW_MS?: string;
   // M6.4: cron cleanup endpoint 鉴权（M6.4 放 vars；CP-5 真接时改 wrangler secret put）
   CRON_SECRET?: string;
+  // M6.7: envelope encryption KEK（wrangler secret put 注入；KEK 丢失 = 老 user 密文全废，必须备份到密码管理器）
+  KEK_SECRET?: string;
 }

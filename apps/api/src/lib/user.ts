@@ -1,5 +1,6 @@
 import { ulid } from "ulid";
 import type { D1Database } from "@cloudflare/workers-types";
+import { encryptEnvelope, decryptEnvelope } from "./envelope.js";
 
 export interface UserRow {
   id: string;
@@ -58,22 +59,71 @@ export async function findOrCreateUser(
 
 /**
  * M6.3b 写 session_key（spec §1/§5/§6）。
- *
- * 每次 /auth/wx-login 成功后写入 session_key（推 /auth/wx-user-info 解密用）。
- * 每次重写，不带时间戳（每次都拿最新 session_key；30 天 TTL 足够覆盖所有解密场景）。
+ * M6.7 改：写 envelope 密文（session_key_ct + session_key_dek）；旧 session_key 列置 NULL。
+ * 写失败不阻断（auth.ts try/catch 兜底）。
  *
  * 错误：
  * - sessionKey 空字符串 → skip（微信偶尔返空，不写）
- * - D1 错误 → 透传，路由层决定是否阻断登录
+ * - KEK_SECRET 缺失 → throw "KEK_SECRET not configured"（auth.ts 透传，不阻断）
+ * - encrypt / D1 错误 → 透传
  */
 export async function updateUserSessionKey(
   d1: D1Database,
   userId: string,
   sessionKey: string,
+  env: { KEK_SECRET?: string },
 ): Promise<void> {
   if (!sessionKey) return;
+  const { ciphertext, wrappedDek } = await encryptEnvelope(sessionKey, env);
   await d1
-    .prepare(`UPDATE user SET session_key = ? WHERE id = ?`)
-    .bind(sessionKey, userId)
+    .prepare(
+      `UPDATE user SET session_key_ct = ?, session_key_dek = ?, session_key = NULL
+       WHERE id = ?`,
+    )
+    .bind(ciphertext, wrappedDek, userId)
     .run();
+}
+
+/**
+ * M6.7 读 session_key（透明兼容明文，spec §6.2）。
+ *
+ * 新 user：解 envelope 返 plaintext。
+ * 老 user（session_key_ct=NULL）：fallback 旧明文 row.session_key（M6.3b 写入）。
+ * 失败：try/catch 兜底返 null + console.warn（admin 排查看到 null 即"明文或损坏"）。
+ *
+ * 当前 0 调用方（M6.3b 写而未读）；未来 /auth/wx-user-info 解密用。
+ */
+export async function readUserSessionKey(
+  d1: D1Database,
+  userId: string,
+  env: { KEK_SECRET?: string },
+): Promise<string | null> {
+  const row = await d1
+    .prepare(
+      `SELECT session_key_ct, session_key_dek, session_key
+       FROM user WHERE id = ?`,
+    )
+    .bind(userId)
+    .first<{
+      session_key_ct: string | null;
+      session_key_dek: string | null;
+      session_key: string | null;
+    }>();
+  if (!row) return null;
+
+  // 新 user：解 envelope
+  if (row.session_key_ct && row.session_key_dek) {
+    try {
+      return await decryptEnvelope(row.session_key_ct, row.session_key_dek, env);
+    } catch (err) {
+      console.warn(
+        `[envelope] readUserSessionKey decrypt failed for user ${userId}:`,
+        err,
+      );
+      return null;
+    }
+  }
+
+  // 老 user：fallback 明文（M6.3b 写入的；M6.7 上线前 user）
+  return row.session_key;
 }
