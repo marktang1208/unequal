@@ -4,7 +4,7 @@ import { ensureJwt } from "./lib/auth.js";
 // @ts-expect-error mock-first wx 类型缺失（miniprogram-api-typings 未安装）
 App({
   globalData: {
-    apiBaseUrl: "http://localhost:8787",  // CP-5 后改 https://unequal.xxx.workers.dev
+    apiBaseUrl: "https://unequal-api.yydsnews.workers.dev",  // CP-5 真接后 (was http://localhost:8787)
     // 真机调试时必须在微信开发者工具勾选「不校验合法域名」
   },
   async onLaunch() {
