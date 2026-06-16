@@ -15,6 +15,7 @@
   "dependencies": {
     "@unequal/shared": "workspace:*",
     "hono": "^4.5.0",
+    "jose": "^4.15.9",
     "mammoth": "^1.12.0",
     "pdf-parse": "1.1.1",
     "ulid": "^3.0.2",
