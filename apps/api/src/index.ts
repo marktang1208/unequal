@@ -7,6 +7,8 @@ import { uploadRoute } from "./routes/upload.js";
 import { ingestRoute } from "./routes/ingest.js";
 import { searchRoute } from "./routes/search.js";
 import { askRoute } from "./routes/ask.js";
+import { chatRoute } from "./routes/chat.js";
+import { sessionsRoute } from "./routes/sessions.js";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -18,7 +20,7 @@ app.use("*", cors({
     if (!allowed || allowed === "*") return "*";
     return allowed;
   },
-  allowMethods: ["GET", "POST", "OPTIONS"],
+  allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
   allowHeaders: ["Content-Type", "Authorization"],
   maxAge: 86400,
 }));
@@ -33,6 +35,13 @@ app.post("/upload", (c) => uploadRoute.POST(c.req.raw, c.env));
 app.post("/ingest", (c) => ingestRoute.POST(c.req.raw, c.env));
 app.get("/search", (c) => searchRoute.GET(c.req.raw, c.env));
 app.post("/ask", (c) => askRoute.POST(c.req.raw, c.env));
+
+// M6.1: 多轮会话 + Durable Objects
+app.post("/chat", (c) => chatRoute.POST(c.req.raw, c.env));
+app.get("/sessions", (c) => sessionsRoute.LIST(c.req.raw, c.env));
+app.get("/sessions/:id", (c) => sessionsRoute.GET(c.req.raw, c.env, c.req.param("id")!));
+app.patch("/sessions/:id", (c) => sessionsRoute.PATCH(c.req.raw, c.env, c.req.param("id")!));
+app.delete("/sessions/:id", (c) => sessionsRoute.DELETE(c.req.raw, c.env, c.req.param("id")!));
 
 app.notFound((c) => c.text("Not found", 404));
 

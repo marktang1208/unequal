@@ -8,7 +8,8 @@
 
   "vars": {
     "ENVIRONMENT": "development",
-    "ALLOWED_ORIGIN": "*"
+    "ALLOWED_ORIGIN": "*",
+    "AUTH_MODE": "admin_token"
   },
 
   "d1_databases": [
@@ -32,5 +33,15 @@
       "binding": "R2",
       "bucket_name": "unequal-storage"
     }
+  ],
+
+  "durable_objects": {
+    "bindings": [
+      { "name": "SESSION_DO", "class_name": "ChatSessionDO" }
+    ]
+  },
+
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["ChatSessionDO"] }
   ]
 }
