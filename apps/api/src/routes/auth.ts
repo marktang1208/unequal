@@ -18,7 +18,7 @@ import {
 } from "../lib/auth.js";
 import { signJwt } from "../lib/auth-jwt.js";
 import { jscode2session } from "../lib/wx.js";
-import { findOrCreateUser } from "../lib/user.js";
+import { findOrCreateUser, updateUserSessionKey } from "../lib/user.js";
 import {
   checkRateLimit,
   recordAttempt,
@@ -117,6 +117,13 @@ export const authRoute = {
 
       // upsert user
       const { user, isNew } = await findOrCreateUser(env.DB, wxRes.openid);
+
+      // M6.3b：写 session_key（写失败不阻断登录；让 jwt 仍签发）
+      try {
+        await updateUserSessionKey(env.DB, user.id, wxRes.session_key);
+      } catch {
+        // session_key 写失败不阻断 jwt 签发；未来解密不可用但当前 /auth/wx-login 仍成功
+      }
 
       // 签 JWT
       const token = await signJwt(
