@@ -361,6 +361,61 @@ pnpm wrangler d1 execute unequal-db --remote \
 
 详见 `docs/superpowers/state-m6-3b.md`（含 commit 汇总 + 主线程接管原因 + 3 个偏差记录）。
 
+## M6.3c 状态
+
+跑通：miniprogram 端用 2024 微信主推 `nickname-input` 组件收集 nickname（替代已 deprecated 2022 的 `wx.getUserProfile`），server 端新增 PATCH /user/nickname 写 user.nickname。**205 用例全绿**（194 M6.3b 收尾 + 11 M6.3c 新增）。
+
+mock-first 实现：
+
+- server `routes/user.ts` 新 `userRoute.UPDATE_NICKNAME` — 验 jwt + 验 nickname 1-20 字符 + UPDATE
+- miniprogram `lib/api.ts` 新 `updateNickname` helper（401 自动 wx.login + retry via `fetchWithRefresh`）
+- miniprogram `lib/chat-storage.ts` 新 `hasShownNicknameModal` / `setShownNicknameModal` + `__setNicknameModalStorageImpl`
+- miniprogram `pages/chat/chat.ts` onLoad 触发首次 modal（`wx.showModal({ editable: true, cancelText: "跳过" })`）
+- 0 avatar 字段 / 0 wx.getUserProfile 集成 / 0 AES-CBC 解密 / 0 settings 页（推 M6.3c+）
+- 4 task 跨 2 包主线程直接做（M6.3b stall 教训应用）
+
+### Nickname 行为（M6.3c 后）
+
+```bash
+# 1. miniprogram 启动 → chat 页 onLoad → 弹 modal 引导填昵称
+# 2. user 填 "张三" + confirm
+# 3. updateNickname("张三") → PATCH /user/nickname 带 jwt
+# 4. server verifyAuth → UPDATE user SET nickname = "张三" WHERE id = ?
+# 5. 200 返 { nickname: "张三" } + wx.showToast "昵称已保存"
+# 6. storage flag = true（不论填/跳过/PATCH 失败/成功，永远 true）
+
+# 真接 Cloudflare 后用 wrangler d1 execute 验证
+pnpm wrangler d1 execute unequal-db --remote \
+  --command "SELECT id, wx_openid, nickname FROM user LIMIT 5"
+# nickname 字段应 = user 填的昵称
+```
+
+- 触发时机：仅 chat 页首次进入（storage flag false）
+- 跳过行为：cancel / 留空 → setShownNicknameModal() 仍调（避免反复弹）
+- PATCH 失败：showToast 失败 + flag 仍 true（不做 settings 页 retry）
+- admin 模式：isAdmin=true → 400 ADMIN_CANNOT_SET_NICKNAME
+- nickname 限制：1-20 字符，trim 后空 → 400 NICKNAME_EMPTY
+
+### M6.3c 测试矩阵
+
+- `pnpm -F shared test` — 38 用例（无变化）
+- `pnpm -F api test` — 98 用例（user 5 + 93 旧 = 98）
+- `pnpm -F miniprogram test` — 29 用例（api 2 + storage 3 + chat 1 + 23 旧 = 29）
+- `pnpm -F admin test` — 21 用例（无变化）
+- `pnpm -F crawler test` — 19 用例（无变化）
+- `pnpm -r typecheck` — 5 包全绿
+- 累计：**205 用例全绿**（spec 估 9 新增，+11 取中）
+
+### M6.3c 限制（mock-first 已知）
+
+- 改昵称 / settings 页未做（user 改主意想再填 → 推 M6.3c+）
+- avatar 字段未做（nickname-input 组件不返 avatar，默认灰头）
+- PATCH 失败但 flag true（不阻断 + 不 retry）
+- chat Page lifecycle 测试用 smoke test（真实触发推 CP-5 微信真机）
+- 0 production console.log
+
+详见 `docs/superpowers/state-m6-3c.md`（含 commit 汇总 + 主线程接管原因 + 5 个偏差记录）。
+
 ## M6.1 状态
 
 跑通：多轮会话 + Durable Objects（一个 session 一个 DO instance）+ D1 session 列表 + 小程序双 tab（对话 / 历史）+ admin ChatSim 多 session 切换。130 用例全绿（73 M0-M5 + 57 M6.1）。
