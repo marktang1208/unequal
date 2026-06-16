@@ -22,8 +22,9 @@ export function getToken(): string {
  * M6.3a 401 handler：清除 admin_token + 强刷跳 /login（spec §5.4 / §7.3）。
  * 强刷绕过 react-router，避免 RequireAuth race。
  *
- * 当前 admin 仅有 adminLogin 一个 fetch 端点（LoginPage 已显式 catch 401/429），
- * handleApiResponse 作为 lib 备件保留，待后续 admin 接入新 fetch 时统一调用。
+ * 所有 admin 端认证 fetch（uploadFile / search / ask / authedJson / crawlUrl）
+ * 必须在 `await fetch(...)` 外层包 `handleApiResponse(...)`，这样 jwt 24h 过期后
+ * 401 自动清 token + 跳 /login，用户无需手动重登。
  */
 export function handleApiResponse(res: Response): Response {
   if (res.status === 401) {
@@ -92,11 +93,13 @@ export async function uploadFile(
   form.append("file", file);
   form.append("trust_level", String(trustLevel));
 
-  const resp = await fetch(`${API_BASE}/upload`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${getToken()}` },
-    body: form,
-  });
+  const resp = handleApiResponse(
+    await fetch(`${API_BASE}/upload`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${getToken()}` },
+      body: form,
+    }),
+  );
   if (!resp.ok) {
     const text = await resp.text();
     throw new Error(`upload failed: ${resp.status} ${text}`);
@@ -106,10 +109,12 @@ export async function uploadFile(
 
 export async function search(q: string, topK = 5): Promise<SearchResponse> {
   const params = new URLSearchParams({ q, topK: String(topK) });
-  const resp = await fetch(`${API_BASE}/search?${params.toString()}`, {
-    method: "GET",
-    headers: { Authorization: `Bearer ${getToken()}` },
-  });
+  const resp = handleApiResponse(
+    await fetch(`${API_BASE}/search?${params.toString()}`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${getToken()}` },
+    }),
+  );
   if (!resp.ok) {
     const text = await resp.text();
     throw new Error(`search failed: ${resp.status} ${text}`);
@@ -138,11 +143,13 @@ export async function ask(q: string): Promise<AskResponse> {
   const headers: Record<string, string> = { "content-type": "application/json" };
   const token = getToken();
   if (token) headers.authorization = `Bearer ${token}`;
-  const res = await fetch("/api/ask", {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ q }),
-  });
+  const res = handleApiResponse(
+    await fetch("/api/ask", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ q }),
+    }),
+  );
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`/ask ${res.status}: ${text}`);
@@ -186,7 +193,9 @@ async function authedJson<T>(path: string, init: RequestInit = {}): Promise<T> {
   };
   const token = getToken();
   if (token) headers.authorization = `Bearer ${token}`;
-  const res = await fetch(`/api${path}`, { ...init, headers });
+  const res = handleApiResponse(
+    await fetch(`/api${path}`, { ...init, headers }),
+  );
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`${init.method ?? "GET"} ${path} ${res.status}: ${text}`);
@@ -241,10 +250,12 @@ export async function crawlUrl(
   const headers: Record<string, string> = { "content-type": "application/json" };
   const token = getToken();
   if (token) headers.authorization = `Bearer ${token}`;
-  const res = await fetch(`/api/crawl?url=${encodeURIComponent(url)}&trust_level=${trustLevel}`, {
-    method: "POST",
-    headers,
-  });
+  const res = handleApiResponse(
+    await fetch(`/api/crawl?url=${encodeURIComponent(url)}&trust_level=${trustLevel}`, {
+      method: "POST",
+      headers,
+    }),
+  );
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`/crawl ${res.status}: ${text}`);
