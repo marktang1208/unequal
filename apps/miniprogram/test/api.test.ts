@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { ask, chat, listSessions, renameSession, deleteSession, adminLogin } from "../lib/api.js";
+import { ask, chat, listSessions, renameSession, deleteSession, adminLogin, updateNickname } from "../lib/api.js";
 import { fetchWithRefresh } from "../lib/api.js";
 import { __setJwtStorageImpl } from "../lib/chat-storage.js";
 import type { AskResponse, ChatResponse, SessionsListResponse } from "../lib/types.js";
@@ -143,6 +143,27 @@ describe("renameSession() / deleteSession()", () => {
       return new Response(JSON.stringify({ ok: true }), { status: 200 });
     };
     await expect(deleteSession("01HSESSIONID000000000000", { fetchImpl: fetchMock })).resolves.toBeUndefined();
+  });
+});
+
+describe("updateNickname() (M6.3c)", () => {
+  it("PATCH /user/nickname 200 → 返 ok", async () => {
+    const fetchMock: typeof fetch = async (input, init) => {
+      expect(input).toBe("http://localhost:8787/user/nickname");
+      expect(init?.method).toBe("PATCH");
+      expect(JSON.parse(init?.body as string)).toEqual({ nickname: "张三" });
+      return new Response(JSON.stringify({ nickname: "张三" }), { status: 200 });
+    };
+    await expect(updateNickname("张三", { fetchImpl: fetchMock })).resolves.toBeUndefined();
+  });
+
+  it("PATCH /user/nickname 400 NICKNAME_TOO_LONG → 抛 Error", async () => {
+    const fetchMock: typeof fetch = async () => {
+      return new Response(JSON.stringify({ error: "NICKNAME_TOO_LONG" }), { status: 400 });
+    };
+    await expect(updateNickname("a".repeat(21), { fetchImpl: fetchMock })).rejects.toThrow(
+      /400.*NICKNAME_TOO_LONG/,
+    );
   });
 });
 
