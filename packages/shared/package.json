@@ -11,7 +11,9 @@
     "./embedding": "./src/embedding.ts",
     "./retrieval": "./src/retrieval.ts",
     "./cite-verify": "./src/cite-verify.ts",
-    "./prompt": "./src/prompt.ts"
+    "./prompt": "./src/prompt.ts",
+    "./multiturn": "./src/multiturn.ts",
+    "./chat-types": "./src/chat-types.ts"
   },
   "scripts": {
     "test": "vitest run",

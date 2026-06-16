@@ -1,6 +1,6 @@
 # 微信小程序真机联调指南
 
-> M3 mock-first 阶段产物。本文档是**真人操作 checklist**，覆盖从「零」到「手机上跑通 /ask」的全流程。
+> M3 mock-first 阶段产物 + M6.1 增补。本文档是**真人操作 checklist**，覆盖从「零」到「手机上跑通 /ask + /chat 多轮 + /sessions 历史」的全流程。
 >
 > 目标读者：项目作者本人（非团队 — 所有微信平台账号、AppID、付费认证都是个人主体）。
 >
@@ -218,6 +218,63 @@ pnpm dev:admin
 | 卡片点击跳转 | ✅ source-detail 页 |
 | 后端日志 | `wrangler dev` 终端能看到 `[ask] q="..." citations=N cached=false` |
 | admin ChatSim 同时跑 | ✅ 返回同样的 answer |
+
+---
+
+## 7A. M6.1 联调 /chat 多轮 + /sessions 历史
+
+> M6.1 新增：双 tab（对话 / 历史）+ 多轮上下文 + session 列表 + 重命名 / 删除。
+
+### 7A.1 验证多轮上下文
+
+1. 手机小程序 → chat tab（默认）
+2. 输入：`5个月宝宝发烧38.5怎么办？` → 发送
+3. 再输入：`那 38.5 以下呢？` → 发送
+4. **期望**：第二条 LLM 回复**知道**第一条的"5个月宝宝"上下文（不是答非所问）
+
+**对应后端日志**：
+```bash
+# wrangler dev 终端能看到
+[chat] user=u1 session=01H... q="5个月宝宝发烧38.5怎么办？"
+[chat] user=u1 session=01H... q="那 38.5 以下呢？"  # 同一 session
+# DO 写：append user + append assistant（每个 q 各 2 次）
+```
+
+### 7A.2 验证 session 持久化（关掉重开继续上一轮）
+
+1. 上面多轮完后，按 Home 键回桌面
+2. 重新打开小程序
+3. **期望**：自动恢复上一轮对话（`wx.setStorageSync('unequal:currentSessionId')` 持久化）
+
+### 7A.3 验证历史 tab
+
+1. 点底部「历史」tab
+2. **期望**：列出刚才创建的 session（标题 = "5个月宝宝发烧" 默认 q 前 10 字）
+3. 长按一个 session → 弹「重命名 / 删除」操作表
+4. 点「重命名」→ 弹输入框 → 改标题「宝宝发烧退热指南」→ 确认
+5. 点「删除」→ 弹确认 → 确认 → session 从列表消失
+
+### 7A.4 验证切 session
+
+1. 历史 tab 点击另一个 session
+2. **期望**：自动切到 chat tab + 显示该 session 的历史（简化版：messages 清空；M6.2 加 history 加载）
+
+### 7A.5 验证新建 session
+
+1. chat tab 长按消息 → 弹「新建会话」确认
+2. 确认 → **期望**：messages 清空 + session_id 重置（下次 q 创建新 session）
+
+### 7A.6 验证 checklist
+
+| 项 | 期望 |
+|----|------|
+| 多轮上下文 | ✅ 第二问接住第一问上下文 |
+| 关掉重开继续 | ✅ 仍在上轮 session |
+| 历史 tab 拉列表 | ✅ 显示所有 session |
+| 重命名 | ✅ title 更新到 UI |
+| 删除 | ✅ session 从列表消失（server 软删 degraded_at=now）|
+| 切 session | ✅ chat 页 sessionId 更新 |
+| 新建 session | ✅ chat 页 sessionId 清空 |
 
 ---
 

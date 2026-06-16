@@ -33,3 +33,41 @@ export interface HistoryEntry {
   response: AskResponse;
   createdAt: number;    // ms
 }
+
+/* ---------- M6.1 多轮会话类型（与 api 端 ChatRequest / ChatResponse 对齐） ---------- */
+
+export interface ChatRequest {
+  q: string;
+  session_id?: string;
+}
+
+export interface ChatCitation {
+  n: number;
+  title: string;
+  trust_level: 0 | 1 | 2 | 3;
+  chunk_id: string;
+}
+
+export interface ChatResponse {
+  answer: string;
+  disclaimer?: string;
+  citations: ChatCitation[];
+  session_id: string;
+  session_title: string | null;
+  is_new_session: boolean;
+  cached: boolean;
+  degraded: boolean;
+}
+
+export interface ChatSessionRow {
+  id: string;            // ULID
+  user_id: string;
+  title: string | null;
+  created_at: number;
+  last_active_at: number;
+  degraded_at: number | null;
+}
+
+export interface SessionsListResponse {
+  sessions: ChatSessionRow[];
+}

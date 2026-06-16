@@ -1,4 +1,10 @@
-import type { AskResponse, AskError } from "./types.js";
+import type {
+  AskResponse,
+  AskError,
+  ChatRequest,
+  ChatResponse,
+  SessionsListResponse,
+} from "./types.js";
 
 /**
  * 调 /ask endpoint 拿单轮问答。
@@ -13,7 +19,7 @@ import type { AskResponse, AskError } from "./types.js";
  * - 其它（admin / 浏览器）：原生 fetch
  */
 
-export interface AskOptions {
+export interface ApiOptions {
   baseUrl?: string;
   token?: string;
   fetchImpl?: typeof fetch;
@@ -56,26 +62,98 @@ function wxRequestAsFetch(input: string, init: { method?: string; headers?: Reco
   });
 }
 
-export async function ask(q: string, opts: AskOptions = {}): Promise<AskResponse> {
-  const baseUrl = opts.baseUrl ?? "http://localhost:8787";
-  const f: (input: string, init: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<ResponseLike> =
-    opts.fetchImpl
-    // @ts-expect-error wx 全局类型 mock-first 缺失
-    ?? (typeof wx !== "undefined" && typeof wx.request === "function" ? wxRequestAsFetch : fetch);
+function getFetch(opts: ApiOptions): (input: string, init: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<ResponseLike> {
+  if (opts.fetchImpl) return opts.fetchImpl as never;
+  // @ts-expect-error wx 全局类型 mock-first 缺失
+  if (typeof wx !== "undefined" && typeof wx.request === "function") return wxRequestAsFetch as never;
+  return fetch as never;
+}
 
+function buildHeaders(opts: ApiOptions): Record<string, string> {
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (opts.token) headers.authorization = `Bearer ${opts.token}`;
+  return headers;
+}
 
+export async function ask(q: string, opts: ApiOptions = {}): Promise<AskResponse> {
+  const baseUrl = opts.baseUrl ?? "http://localhost:8787";
+  const f = getFetch(opts);
   const res = await f(`${baseUrl}/ask`, {
     method: "POST",
-    headers,
+    headers: buildHeaders(opts),
     body: JSON.stringify({ q }),
   });
-
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as AskError;
     throw new Error(`/ask ${res.status}: ${body.error ?? "unknown"}`);
   }
-
   return (await res.json()) as AskResponse;
+}
+
+/* ---------- M6.1 多轮会话 + session CRUD ---------- */
+
+/**
+ * /chat 多轮问答。sessionId 缺 → 服务端新建；sessionId 有 → 复用。
+ * 失败降级：网络/5xx 抛 Error（含 status + code），让 caller 决定 retry / mock-first fallback。
+ */
+export async function chat(req: ChatRequest, opts: ApiOptions = {}): Promise<ChatResponse> {
+  const baseUrl = opts.baseUrl ?? "http://localhost:8787";
+  const f = getFetch(opts);
+  const res = await f(`${baseUrl}/chat`, {
+    method: "POST",
+    headers: buildHeaders(opts),
+    body: JSON.stringify({
+      q: req.q,
+      ...(req.session_id ? { session_id: req.session_id } : {}),
+    }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as AskError;
+    throw new Error(`/chat ${res.status}: ${body.error ?? "unknown"}`);
+  }
+  return (await res.json()) as ChatResponse;
+}
+
+/** GET /sessions → 返 server-side session 列表（最近 50） */
+export async function listSessions(opts: ApiOptions = {}): Promise<SessionsListResponse> {
+  const baseUrl = opts.baseUrl ?? "http://localhost:8787";
+  const f = getFetch(opts);
+  const res = await f(`${baseUrl}/sessions`, {
+    method: "GET",
+    headers: buildHeaders(opts),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as AskError;
+    throw new Error(`/sessions ${res.status}: ${body.error ?? "unknown"}`);
+  }
+  return (await res.json()) as SessionsListResponse;
+}
+
+/** PATCH /sessions/:id → 改 title */
+export async function renameSession(sessionId: string, title: string, opts: ApiOptions = {}): Promise<void> {
+  const baseUrl = opts.baseUrl ?? "http://localhost:8787";
+  const f = getFetch(opts);
+  const res = await f(`${baseUrl}/sessions/${encodeURIComponent(sessionId)}`, {
+    method: "PATCH",
+    headers: buildHeaders(opts),
+    body: JSON.stringify({ title }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as AskError;
+    throw new Error(`/sessions PATCH ${res.status}: ${body.error ?? "unknown"}`);
+  }
+}
+
+/** DELETE /sessions/:id → 服务端软删（标 degraded_at） */
+export async function deleteSession(sessionId: string, opts: ApiOptions = {}): Promise<void> {
+  const baseUrl = opts.baseUrl ?? "http://localhost:8787";
+  const f = getFetch(opts);
+  const res = await f(`${baseUrl}/sessions/${encodeURIComponent(sessionId)}`, {
+    method: "DELETE",
+    headers: buildHeaders(opts),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as AskError;
+    throw new Error(`/sessions DELETE ${res.status}: ${body.error ?? "unknown"}`);
+  }
 }
