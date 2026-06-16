@@ -10,4 +10,8 @@ export interface Env {
   // M6.1: Durable Object binding + 鉴权模式
   SESSION_DO?: DurableObjectNamespace;
   AUTH_MODE?: string;
+  // M6.2: JWT 签发 + 微信小程序登录
+  JWT_SECRET?: string;
+  WX_APP_ID?: string;
+  WX_APP_SECRET?: string;
 }

@@ -50,7 +50,16 @@ export async function verifyAuth(req: Request, env: EnvLike): Promise<AuthIdenti
     return { userId: DEFAULT_ADMIN_USER_ID, isAdmin: true };
   }
   if (mode === "jwt") {
-    throw new HttpError(501, "NOT_IMPLEMENTED", "JWT auth available in M6.2");
+    // M6.2 实现（M6.1 阶段抛 501 留口）
+    const header = req.headers.get("Authorization");
+    if (!header?.startsWith("Bearer ")) {
+      throw new HttpError(401, "MISSING_BEARER", "Authorization header must be 'Bearer <jwt>'");
+    }
+    const token = header.slice(7);
+    const { verifyJwt } = await import("./auth-jwt.js");
+    // 动态 import 避免 jwt 路径在 admin_token 模式被 boot（chat.ts 166-180 同模式）
+    const payload = await verifyJwt(token, env.JWT_SECRET ?? "");
+    return { userId: payload.userId, isAdmin: payload.isAdmin };
   }
   throw new HttpError(400, "BAD_AUTH_MODE", `Unsupported AUTH_MODE: ${mode}`);
 }
@@ -59,6 +68,9 @@ export async function verifyAuth(req: Request, env: EnvLike): Promise<AuthIdenti
 export interface EnvLike {
   AUTH_MODE?: string;
   ADMIN_TOKEN: string;
+  /** M6.2 新增：JWT 签发/验签密钥。AUTH_MODE='jwt' 时必填，admin_token 模式可缺省。
+   *  缺省时 verifyJwt 走空 secret（签名不匹配 → INVALID_JWT），不 throw 崩。 */
+  JWT_SECRET?: string;
 }
 
 /** M6.1 阶段 admin token 模式下的固定 userId —— 与 upload.ts / search.ts DEFAULT_USER_ID 对齐 */
