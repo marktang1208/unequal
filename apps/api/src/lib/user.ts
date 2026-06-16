@@ -55,3 +55,25 @@ export async function findOrCreateUser(
     isNew: true,
   };
 }
+
+/**
+ * M6.3b 写 session_key（spec §1/§5/§6）。
+ *
+ * 每次 /auth/wx-login 成功后写入 session_key（推 /auth/wx-user-info 解密用）。
+ * 每次重写，不带时间戳（每次都拿最新 session_key；30 天 TTL 足够覆盖所有解密场景）。
+ *
+ * 错误：
+ * - sessionKey 空字符串 → skip（微信偶尔返空，不写）
+ * - D1 错误 → 透传，路由层决定是否阻断登录
+ */
+export async function updateUserSessionKey(
+  d1: D1Database,
+  userId: string,
+  sessionKey: string,
+): Promise<void> {
+  if (!sessionKey) return;
+  await d1
+    .prepare(`UPDATE user SET session_key = ? WHERE id = ?`)
+    .bind(sessionKey, userId)
+    .run();
+}
