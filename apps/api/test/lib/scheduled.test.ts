@@ -56,7 +56,7 @@ describe("scheduled handler (M6.5)", () => {
   });
 
   it("happy: 调 cleanupLoginAttempts(env, DEFAULT_CUTOFF_MS=86_400_000) + console.log 'deleted=N'", async () => {
-    mockCleanup.mockResolvedValue({ deleted: 5 });
+    mockCleanup.mockResolvedValue({ deleted: 5, cutoff: Date.now() - 86_400_000 });
 
     const fakeEvent = {
       cron: "0 3 * * *",
