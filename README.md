@@ -416,6 +416,84 @@ pnpm wrangler d1 execute unequal-db --remote \
 
 详见 `docs/superpowers/state-m6-3c.md`（含 commit 汇总 + 主线程接管原因 + 5 个偏差记录）。
 
+## M6.4 状态
+
+跑通：3 项 M6.3a/b/c 阶段已发现的 mock-first 已知 limitation 收口 — (1) `fetchWithRefresh` 共享 inflight promise（同 baseUrl 并发 401 → 1 次 wx.login）；(2) rate-limit 阈值提取到 wrangler vars；(3) `login_attempt` 表 cron 清理 + 单列 created_at 索引。**219 用例全绿**（205 M6.3c 收尾 + 14 M6.4 新增）。
+
+mock-first 实现：
+
+- `apps/miniprogram/lib/api.ts` 模块级 `inflightEnsureJwt: Map<string, Promise<string>>` + `__clearInflightEnsureJwt` + 改 `fetchWithRefresh` 用 `.finally(() => delete)` 清缓存
+- `apps/api/src/lib/rate-limit.ts` 新 `RateLimitConfig` + `DEFAULT_RATE_LIMIT_CONFIG` + `readRateLimitConfig(env)` + 改 `checkRateLimit` 签名（now 第 4 / config 第 5，向后兼容）
+- `apps/api/src/routes/auth.ts` 2 处 `checkRateLimit` 调用加 `readRateLimitConfig(env)` 参数
+- `apps/api/src/types.ts` Env 加 3 可选字段（LOGIN_MAX_ATTEMPTS / LOGIN_WINDOW_MS / CRON_SECRET）
+- `apps/api/wrangler.jsonc` vars 块加 3 个 var + 注释
+- `apps/api/migrations/0007_login_attempt_created_at_index.sql` 新（CREATE INDEX 单列 created_at）
+- `apps/api/src/routes/cron.ts` 新 `cronRoute.CLEANUP_LOGIN_ATTEMPTS` handler（Bearer CRON_SECRET 验证 + DELETE 24h 前 attempts）
+- `apps/api/src/index.ts` 挂 `app.post("/cron/cleanup-login-attempts", ...)`
+- 3 task 跨 2 包主线程直接做（M6.3c 教训应用，总耗时 ~30 min）
+
+### Inflight 行为（M6.4 后）
+
+```bash
+# user 24h 后首次打开小程序 → 3 个 API 并发
+# → 全部 401 → 第 1 个 fetchWithRefresh 调 ensureJwt 创建 inflight promise
+# → 第 2 / 3 个 fetchWithRefresh 复用同一 promise（wx.login 只调 1 次）
+# → inflight 完成（saveJwt）→ 3 个 fetchWithRefresh 各自 retry
+# → .finally 清缓存，下次 401 重新触发
+```
+
+### Rate-limit 配置行为（M6.4 后）
+
+```bash
+# wrangler.jsonc vars 块（dev 默认；prod 可调）
+"LOGIN_MAX_ATTEMPTS": "5",
+"LOGIN_WINDOW_MS": "900000"
+
+# 非法 env fallback
+LOGIN_MAX_ATTEMPTS="abc" → fallback 5（不 throw）
+LOGIN_MAX_ATTEMPTS="0"  → fallback 5（≤0 视为非法）
+LOGIN_MAX_ATTEMPTS 不设  → fallback default
+```
+
+### Cron cleanup 行为（M6.4 后）
+
+```bash
+# 手动触发（CP-5 接 scheduled handler / external cron）
+curl -X POST http://localhost:8787/cron/cleanup-login-attempts \
+  -H "Authorization: Bearer $CRON_SECRET"
+# → 200 { "deleted": N, "cutoff": timestamp }
+
+# 401: 缺 / 错 Authorization
+curl -X POST http://localhost:8787/cron/cleanup-login-attempts
+# → 401 { "error": "UNAUTHORIZED", "message": "Invalid or missing CRON_SECRET" }
+```
+
+- 触发时机：CP-5 由用户决定（方案 A scheduled handler / 方案 B external cron）
+- 清理范围：24h 前 attempts（保留 rate-limit 窗口 15min × ~100 倍分析余量）
+- 24h 阈值硬编码（YAGNI 不抽 env）
+- CRON_SECRET M6.4 放 vars（CP-5 真接升级到 wrangler secret put）
+
+### M6.4 测试矩阵
+
+- `pnpm -F shared test` — 38 用例（无变化）
+- `pnpm -F api test` — 109 用例（rate-limit 7 + cron 4 + 98 旧 = 109）
+- `pnpm -F miniprogram test` — 32 用例（inflight 3 + 29 旧 = 32）
+- `pnpm -F admin test` — 21 用例（无变化）
+- `pnpm -F crawler test` — 19 用例（无变化）
+- `pnpm -r typecheck` — 5 包全绿
+- 累计：**219 用例全绿**（spec 估 8 新增，+14 取中：readRateLimitConfig 5 覆盖更全 + cron 表空 edge 1）
+
+### M6.4 限制（mock-first 已知）
+
+- Cloudflare scheduled handler wrap 未做（M6.4 范围聚焦清理逻辑；CP-5 由用户决定接 scheduled handler 还是 external cron）
+- CRON_SECRET 放 vars（M6.4 mock-first 可接受；CP-5 升级到 wrangler secret put）
+- cron 24h 阈值硬编码未抽 env（YAGNI）
+- inflight map key 用 baseUrl 而非 user（防御性，baseUrl 最多 1-2 个）
+- readRateLimitConfig 走 env 对象字面量测试（真 wrangler vars 注入推 CP-5）
+- 0 production console.log
+
+详见 `docs/superpowers/state-m6-4.md`（含 commit 汇总 + 主线程接管原因 + 5 个偏差记录 + CP-5 真接路径）。
+
 ## M6.1 状态
 
 跑通：多轮会话 + Durable Objects（一个 session 一个 DO instance）+ D1 session 列表 + 小程序双 tab（对话 / 历史）+ admin ChatSim 多 session 切换。130 用例全绿（73 M0-M5 + 57 M6.1）。

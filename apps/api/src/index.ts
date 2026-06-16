@@ -11,6 +11,7 @@ import { chatRoute } from "./routes/chat.js";
 import { sessionsRoute } from "./routes/sessions.js";
 import { authRoute } from "./routes/auth.js";
 import { userRoute } from "./routes/user.js";
+import { cronRoute } from "./routes/cron.js";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -51,6 +52,9 @@ app.post("/auth/admin-login", (c) => authRoute.ADMIN_LOGIN(c.req.raw, c.env));
 
 // M6.3c: miniprogram nickname-input 组件触发的 nickname 写入（spec §5）
 app.patch("/user/nickname", (c) => userRoute.UPDATE_NICKNAME(c.req.raw, c.env));
+
+// M6.4: cron 清理 login_attempt（CP-5 接 scheduled handler 或 external cron）
+app.post("/cron/cleanup-login-attempts", (c) => cronRoute.CLEANUP_LOGIN_ATTEMPTS(c.req.raw, c.env));
 
 app.notFound((c) => c.text("Not found", 404));
 

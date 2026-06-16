@@ -18,6 +18,8 @@ import {
   sha256Identifier,
   checkRateLimit,
   recordAttempt,
+  readRateLimitConfig,
+  DEFAULT_RATE_LIMIT_CONFIG,
   WINDOW_MS,
 } from "../../src/lib/rate-limit.js";
 
@@ -171,5 +173,65 @@ describe("rate-limit.checkRateLimit / recordAttempt (spy-style fake D1)", () => 
     const result = await checkRateLimit(d1, "t", "admin", now);
     expect(result.locked).toBe(true);
     expect(result.retry_after).toBe(Math.ceil((oldest + WINDOW_MS - now) / 1000));
+  });
+});
+
+/* ---------- M6.4 readRateLimitConfig + checkRateLimit config 注入 ---------- */
+
+describe("rate-limit.readRateLimitConfig (M6.4)", () => {
+  it("env 缺省 → fallback DEFAULT_RATE_LIMIT_CONFIG", () => {
+    expect(readRateLimitConfig({})).toEqual(DEFAULT_RATE_LIMIT_CONFIG);
+  });
+
+  it("env 注入 LOGIN_MAX_ATTEMPTS='3' → maxFailures=3（windowMs 不变）", () => {
+    const config = readRateLimitConfig({ LOGIN_MAX_ATTEMPTS: "3" });
+    expect(config.maxFailures).toBe(3);
+    expect(config.windowMs).toBe(DEFAULT_RATE_LIMIT_CONFIG.windowMs);
+  });
+
+  it("env 注入 LOGIN_MAX_ATTEMPTS='abc'（非法）→ fallback 5", () => {
+    expect(readRateLimitConfig({ LOGIN_MAX_ATTEMPTS: "abc" }).maxFailures).toBe(5);
+  });
+
+  it("env 注入 LOGIN_MAX_ATTEMPTS='0'（≤0）→ fallback 5（不 throw）", () => {
+    expect(readRateLimitConfig({ LOGIN_MAX_ATTEMPTS: "0" }).maxFailures).toBe(5);
+  });
+
+  it("env 注入 LOGIN_WINDOW_MS='60000' → windowMs=60000", () => {
+    expect(readRateLimitConfig({ LOGIN_WINDOW_MS: "60000" }).windowMs).toBe(60000);
+  });
+});
+
+describe("rate-limit.checkRateLimit (M6.4) config 注入", () => {
+  let fakeDB: ReturnType<typeof makeFakeDB>;
+  let d1: D1Database;
+
+  beforeEach(() => {
+    fakeDB = makeFakeDB();
+    d1 = fakeDB.db;
+  });
+
+  it("config maxFailures=2 → 1 次失败不锁 / 2 次失败锁", async () => {
+    const now = 1_000_000;
+    const config = { maxFailures: 2, windowMs: WINDOW_MS };
+    // 1 次失败 → 不锁
+    await recordAttempt(d1, "t", "admin", false, now);
+    const r1 = await checkRateLimit(d1, "t", "admin", now, config);
+    expect(r1.locked).toBe(false);
+
+    // 2 次失败 → 锁
+    await recordAttempt(d1, "t", "admin", false, now + 1);
+    const r2 = await checkRateLimit(d1, "t", "admin", now + 1, config);
+    expect(r2.locked).toBe(true);
+  });
+
+  it("不传 config → 用 DEFAULT_RATE_LIMIT_CONFIG（向后兼容）", async () => {
+    const now = 1_000_000;
+    // 4 次失败 → 不锁（default maxFailures=5）
+    for (let i = 0; i < 4; i++) {
+      await recordAttempt(d1, "t", "admin", false, now + i);
+    }
+    const r = await checkRateLimit(d1, "t", "admin", now);   // 不传 config
+    expect(r.locked).toBe(false);
   });
 });
