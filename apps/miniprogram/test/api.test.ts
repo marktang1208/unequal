@@ -1,6 +1,16 @@
-import { describe, it, expect } from "vitest";
-import { ask, chat, listSessions, renameSession, deleteSession } from "../lib/api.js";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { ask, chat, listSessions, renameSession, deleteSession, adminLogin } from "../lib/api.js";
+import { __setJwtStorageImpl } from "../lib/chat-storage.js";
 import type { AskResponse, ChatResponse, SessionsListResponse } from "../lib/types.js";
+
+// Mock wx 全局（miniflare/node 没 wx；chat-storage.ts 默认 impl 调 wx.getStorageSync）
+(globalThis as { wx?: unknown }).wx = {
+  login: vi.fn(),
+  request: vi.fn(),
+  getStorageSync: vi.fn(),
+  setStorageSync: vi.fn(),
+  removeStorageSync: vi.fn(),
+};
 
 describe("ask()", () => {
   const happy: AskResponse = {
@@ -132,5 +142,102 @@ describe("renameSession() / deleteSession()", () => {
       return new Response(JSON.stringify({ ok: true }), { status: 200 });
     };
     await expect(deleteSession("01HSESSIONID000000000000", { fetchImpl: fetchMock })).resolves.toBeUndefined();
+  });
+});
+
+/* ---------- M6.2 admin login + jwt header injection ---------- */
+
+describe("adminLogin() (miniprogram 端)", () => {
+  it("POST /auth/admin-login 200 → 返 { token, user_id, is_admin: true }", async () => {
+    const fetchMock: typeof fetch = async (input, init) => {
+      expect(input).toBe("http://localhost:8787/auth/admin-login");
+      expect(JSON.parse(init?.body as string)).toEqual({ admin_token: "test-token-please-change" });
+      return new Response(
+        JSON.stringify({ token: "eyJ.admin.jwt", user_id: "01H0000000000000000000000", is_admin: true, expires_in: 86400 }),
+        { status: 200 },
+      );
+    };
+    const res = await adminLogin("test-token-please-change", { fetchImpl: fetchMock });
+    expect(res.is_admin).toBe(true);
+    expect(res.token).toBe("eyJ.admin.jwt");
+  });
+});
+
+describe("ask() 带 jwt（storage 自动注入 Authorization）", () => {
+  let storage: Record<string, string> = {};
+  beforeEach(() => {
+    storage = {};
+    __setJwtStorageImpl(
+      (k) => storage[k] ?? "",
+      (k, v) => { storage[k] = v; },
+    );
+  });
+
+  it("storage 有 jwt → Authorization header 含 Bearer jwt", async () => {
+    storage["unequal:jwt"] = "stored_jwt_token";
+    let capturedAuth: string | null = null;
+    const fetchMock: typeof fetch = async (_input, init) => {
+      capturedAuth = (init?.headers as Record<string, string>)?.authorization ?? null;
+      return new Response(
+        JSON.stringify({ answer: "ok", disclaimer: "", citations: [], cached: false }),
+        { status: 200 },
+      );
+    };
+    await ask("test", { fetchImpl: fetchMock });
+    expect(capturedAuth).toBe("Bearer stored_jwt_token");
+  });
+
+  it("storage 无 jwt → 无 Authorization header（mock-first 行为）", async () => {
+    let capturedAuth: string | null = "placeholder";
+    const fetchMock: typeof fetch = async (_input, init) => {
+      capturedAuth = (init?.headers as Record<string, string>)?.authorization ?? null;
+      return new Response(
+        JSON.stringify({ answer: "ok", disclaimer: "", citations: [], cached: false }),
+        { status: 200 },
+      );
+    };
+    await ask("test", { fetchImpl: fetchMock });
+    expect(capturedAuth).toBeNull();
+  });
+});
+
+describe("chat() 带 jwt", () => {
+  let storage: Record<string, string> = {};
+  beforeEach(() => {
+    storage = {};
+    __setJwtStorageImpl(
+      (k) => storage[k] ?? "",
+      (k, v) => { storage[k] = v; },
+    );
+  });
+
+  it("storage 有 jwt → Authorization header 含 Bearer jwt", async () => {
+    storage["unequal:jwt"] = "stored_jwt_token";
+    let capturedAuth: string | null = null;
+    const fetchMock: typeof fetch = async (_input, init) => {
+      capturedAuth = (init?.headers as Record<string, string>)?.authorization ?? null;
+      return new Response(
+        JSON.stringify({
+          answer: "ok",
+          citations: [],
+          session_id: "01H",
+          session_title: "t",
+          is_new_session: true,
+          cached: false,
+          degraded: false,
+        }),
+        { status: 200 },
+      );
+    };
+    await chat({ q: "test" }, { fetchImpl: fetchMock });
+    expect(capturedAuth).toBe("Bearer stored_jwt_token");
+  });
+});
+
+describe("401 from /ask → throw 让 caller 决定（M6.2 暂不重试）", () => {
+  it("ask() 401 → throw Error 含 401 + error code", async () => {
+    const fetchMock: typeof fetch = async () =>
+      new Response(JSON.stringify({ error: "UNAUTHORIZED" }), { status: 401 });
+    await expect(ask("test", { fetchImpl: fetchMock })).rejects.toThrow(/401.*UNAUTHORIZED/);
   });
 });

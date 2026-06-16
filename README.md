@@ -175,6 +175,91 @@ pnpm -F admin dev → 访问 http://localhost:5173/crawl
 - **真接 Cloudflare Vectorize**（CP-5）：`wrangler vectorize create unequal-chunks --dimensions=1024 --metric=cosine`
 - **小红书 / 微信公众号抓取**（M5 范围）：这两个平台需要登录态 / 反爬严格，独立 scope
 
+## M6.2 状态
+
+跑通：wx.login + JWT (HS256 24h) + admin 登录页 + 小程序冷启动自动登录。164 用例全绿（73 M0-M5 + 57 M6.1 + 34 M6.2）。
+
+mock-first 实现：
+- `verifyAuth()` 加 `jwt` 分支（替换 M6.1 的 501 留口）— AUTH_MODE 切 `admin_token` ↔ `jwt`，**M6.1 留的 3 个切换点全打通**
+- jose 库（HS256 同步算法，~50KB）真跑签发 + 验签
+- jscode2session 走 fetchImpl 注入 mock（生产换真 wx.login）
+- admin 登录页 1 个 form（admin_token + submit）+ localStorage 持久化 jwt + RequireAuth HOC 路由 guard
+- 小程序 onLaunch 调 `wx.login` + `/auth/wx-login` + `wx.setStorageSync('unequal:jwt')` 持久化
+- 不存 session_key（M6.3+ 再加）
+
+### 鉴权用法（M6.2 后）
+
+**M6.1 切到 M6.2 路径**（CP-5 备查）：
+```bash
+# wrangler.jsonc
+vars.AUTH_MODE = "jwt"   # 从 "admin_token" 改 "jwt"
+
+# 配 4 个 secret
+pnpm wrangler secret put ADMIN_TOKEN        # 仅 admin_login 端点验
+pnpm wrangler secret put JWT_SECRET        # M6.2 新增（32+ 字节）
+pnpm wrangler secret put WX_APP_SECRET      # M6.2 新增（敏感）
+# WX_APP_ID 走 vars 即可
+```
+
+**admin 登录**（dev + 真接都走 /login）：
+```bash
+# 浏览器访问 http://localhost:5173/login
+# → 输入 admin_token "test-token-please-change"（dev sentinel）
+# → 提交 → 写 localStorage("admin_token", jwt) → 跳 /chat-sim
+# → /chat-sim 调 /chat 时 header = "Authorization: Bearer <jwt>"
+
+# 真接 Cloudflare：输入真 admin token（wrangler secret put 设的）
+```
+
+**小程序冷启动登录**（自动）：
+```ts
+// apps/miniprogram/app.ts onLaunch（SA5 task 10 加）
+await ensureJwt();  // wx.login + /auth/wx-login + 存 storage
+// 后续 ask() / chat() / listSessions() 自动带 Bearer jwt header
+```
+
+**API 端**：
+```bash
+# admin 登录
+curl -X POST http://localhost:8787/auth/admin-login \
+  -H "Content-Type: application/json" \
+  -d '{"admin_token":"test-token-please-change"}'
+# → { token: "eyJ.jwt", user_id, is_admin: true, expires_in: 86400 }
+
+# 小程序登录（code 由 wx.login 拿）
+curl -X POST http://localhost:8787/auth/wx-login \
+  -H "Content-Type: application/json" \
+  -d '{"code":"mock_test_code_081H1z"}'
+# → { token: "eyJ.jwt", user_id, is_new_user: true, expires_in: 86400 }
+
+# 鉴权调用（任何受保护路由都走 verifyAuth）
+curl -X POST http://localhost:8787/chat \
+  -H "Authorization: Bearer <jwt>" \
+  -H "Content-Type: application/json" \
+  -d '{"q":"5个月宝宝发烧38.5"}'
+```
+
+### M6.2 测试矩阵
+
+- `pnpm -F shared test` — 38 用例（无变化）
+- `pnpm -F api test` — 77 用例（auth-jwt 4 + wx 4 + user 4 + auth 4 + auth route 5 + 56 旧回归 = 77）
+- `pnpm -F miniprogram test` — 18 用例（auth 4 + api 14 旧 = 18）
+- `pnpm -F admin test` — 12 用例（LoginPage 4 + ChatSim 4 + dedupe 4 = 12）
+- `pnpm -F crawler test` — 19 用例（无变化）
+- `pnpm -r typecheck` — 5 包全绿
+- `pnpm -F admin build` — 成功（194.56 kB JS / 14.33 kB CSS）
+- 累计：**164 用例全绿**
+
+### M6.2 限制（mock-first 已知）
+
+- 不真接 Cloudflare / 不接 wx.login 真机扫码 — 推到 CP-5
+- 不存 session_key（不调 wx.getUserInfo 拿 nickname/avatar）— M6.3
+- 不加 refresh token（24h 后强制重 login）— M6.4+
+- admin 8 路由只有 /chat-sim 加 RequireAuth，其他保留 M3 dev fallback — 单独 task
+- /auth/wx-login 401 不自动 refresh — M6.3
+
+详见 `docs/superpowers/state-m6-2.md`（含 ECC 组件 + 真接路径 + commit 汇总）。
+
 ## M6.1 状态
 
 跑通：多轮会话 + Durable Objects（一个 session 一个 DO instance）+ D1 session 列表 + 小程序双 tab（对话 / 历史）+ admin ChatSim 多 session 切换。130 用例全绿（73 M0-M5 + 57 M6.1）。

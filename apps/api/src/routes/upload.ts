@@ -1,6 +1,6 @@
 import { ulid } from "ulid";
 import type { Env } from "../types.js";
-import { verifyAdminToken } from "../lib/auth.js";
+import { verifyAuth, HttpError } from "../lib/auth.js";
 import { detectFileType, parseFile, type FileType } from "../lib/parsers/index.js";
 import { chunkText } from "@unequal/shared/chunking";
 import { createMiniMaxEmbedder } from "@unequal/shared/embedding";
@@ -36,9 +36,13 @@ function parseTrustLevel(raw: string | null): TrustLevel {
 
 export const uploadRoute = {
   async POST(request: Request, env: Env): Promise<Response> {
-    const auth = verifyAdminToken(request.headers.get("Authorization"), env.ADMIN_TOKEN);
-    if (!auth.ok) {
-      return Response.json({ error: auth.message }, { status: auth.status });
+    try {
+      await verifyAuth(request, env);
+    } catch (err) {
+      if (err instanceof HttpError) {
+        return Response.json({ error: err.code, message: err.message }, { status: err.status });
+      }
+      throw err;
     }
 
     let form: FormData;

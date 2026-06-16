@@ -8,6 +8,7 @@
  */
 
 const STORAGE_KEY = "unequal:currentSessionId";
+const JWT_STORAGE_KEY = "unequal:jwt";
 
 let getImpl: (key: string) => string = (k) => {
   // @ts-expect-error wx 全局类型 mock-first 缺失
@@ -25,6 +26,42 @@ export function __setSessionStorageImpl(
 ): void {
   getImpl = g;
   setImpl = s;
+}
+
+/* ---------- M6.2 jwt storage（M6.1 同样注入模式） ---------- */
+
+let jwtGetImpl: (key: string) => string = (k) => {
+  // @ts-expect-error wx 全局类型 mock-first 缺失
+  const raw = wx.getStorageSync(k);
+  return typeof raw === "string" ? raw : "";
+};
+let jwtSetImpl: (key: string, value: string) => void = (k, v) => {
+  // @ts-expect-error wx 全局类型 mock-first 缺失
+  wx.setStorageSync(k, v);
+};
+
+export function __setJwtStorageImpl(
+  g: (key: string) => string,
+  s: (key: string, value: string) => void,
+): void {
+  jwtGetImpl = g;
+  jwtSetImpl = s;
+}
+
+/** 读当前 jwt 字符串。无 → 返 null */
+export function loadJwt(): string | null {
+  const v = jwtGetImpl(JWT_STORAGE_KEY).trim();
+  return v ? v : null;
+}
+
+/** 存 jwt 字符串。null/空 → 清空 storage entry（与 saveCurrentSessionId 同样模式） */
+export function saveJwt(token: string | null): void {
+  if (!token) {
+    // @ts-expect-error wx 全局类型 mock-first 缺失
+    wx.removeStorageSync?.(JWT_STORAGE_KEY);
+    return;
+  }
+  jwtSetImpl(JWT_STORAGE_KEY, token);
 }
 
 /** 读当前 session_id。无 → 返 null（caller 决定新建 / 不传 session_id） */

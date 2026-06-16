@@ -9,6 +9,7 @@ import { searchRoute } from "./routes/search.js";
 import { askRoute } from "./routes/ask.js";
 import { chatRoute } from "./routes/chat.js";
 import { sessionsRoute } from "./routes/sessions.js";
+import { authRoute } from "./routes/auth.js";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -42,6 +43,10 @@ app.get("/sessions", (c) => sessionsRoute.LIST(c.req.raw, c.env));
 app.get("/sessions/:id", (c) => sessionsRoute.GET(c.req.raw, c.env, c.req.param("id")!));
 app.patch("/sessions/:id", (c) => sessionsRoute.PATCH(c.req.raw, c.env, c.req.param("id")!));
 app.delete("/sessions/:id", (c) => sessionsRoute.DELETE(c.req.raw, c.env, c.req.param("id")!));
+
+// M6.2: 鉴权 + JWT 签发（spec §3.3 + §3.4）
+app.post("/auth/wx-login", (c) => authRoute.WX_LOGIN(c.req.raw, c.env));
+app.post("/auth/admin-login", (c) => authRoute.ADMIN_LOGIN(c.req.raw, c.env));
 
 app.notFound((c) => c.text("Not found", 404));
 

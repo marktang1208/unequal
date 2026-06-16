@@ -1,4 +1,6 @@
-import { Link, Route, Routes } from "react-router-dom";
+import { useEffect } from "react";
+import type { ReactElement } from "react";
+import { Link, Route, Routes, useNavigate } from "react-router-dom";
 import Upload from "./pages/Upload.js";
 import Sources from "./pages/Sources.js";
 import Documents from "./pages/Documents.js";
@@ -8,6 +10,22 @@ import CrawlPage from "./pages/CrawlPage.js";
 import XiaohongshuCrawlPage from "./pages/XiaohongshuCrawlPage.js";
 import WechatMpCrawlPage from "./pages/WechatMpCrawlPage.js";
 import ChatSim from "./pages/ChatSim.js";
+import LoginPage from "./pages/LoginPage.js";
+
+/**
+ * 路由级 auth guard：缺 localStorage.admin_token → navigate("/login")。
+ * 包裹受保护路由（M6.2 起 /chat-sim）。
+ */
+function RequireAuth({ children }: { children: ReactElement }) {
+  const navigate = useNavigate();
+  useEffect(() => {
+    const token = localStorage.getItem("admin_token");
+    if (!token) {
+      navigate("/login", { replace: true });
+    }
+  }, [navigate]);
+  return children;
+}
 
 export default function App() {
   return (
@@ -49,12 +67,20 @@ export default function App() {
 
       <main className="mx-auto max-w-5xl px-6 py-8">
         <Routes>
+          <Route path="/login" element={<LoginPage />} />
           <Route path="/upload" element={<Upload />} />
           <Route path="/sources" element={<Sources />} />
           <Route path="/documents" element={<Documents />} />
           <Route path="/search" element={<SearchTest />} />
           <Route path="/ask" element={<AskTest />} />
-          <Route path="/chat-sim" element={<ChatSim />} />
+          <Route
+            path="/chat-sim"
+            element={
+              <RequireAuth>
+                <ChatSim />
+              </RequireAuth>
+            }
+          />
           <Route path="/crawl" element={<CrawlPage />} />
           <Route path="/crawl/xiaohongshu" element={<XiaohongshuCrawlPage />} />
           <Route path="/crawl/wechat-mp" element={<WechatMpCrawlPage />} />

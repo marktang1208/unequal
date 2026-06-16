@@ -1,3 +1,15 @@
-ADMIN_TOKEN=dev-token-change-me
+# M6.2 鉴权切换：dev 默认 admin_token 模式；真接 Cloudflare 后改 AUTH_MODE="jwt"
+AUTH_MODE=admin_token
+
+# 现有 dev secret（M0-M2 沿用）
+ADMIN_TOKEN=test-token-please-change
 MINIMAX_API_KEY=sk-MiniMax-placeholder
 MINIMAX_BASE_URL=https://api.MiniMax.chat/v1
+
+# M6.2 新增（dev mock 值；生产必须 wrangler secret put 覆盖）
+# 32+ 字节随机字符串；用 `openssl rand -hex 32` 生成
+JWT_SECRET=dev-jwt-secret-please-change-in-production-min-32-bytes
+# 微信小程序 AppID（公开值；生产从 mp.weixin.qq.com 开发管理拿）
+WX_APP_ID=wx_development_placeholder
+# 微信小程序 AppSecret（敏感；生产必须 wrangler secret put WX_APP_SECRET 覆盖）
+WX_APP_SECRET=dev-wx-app-secret-please-change-in-production
