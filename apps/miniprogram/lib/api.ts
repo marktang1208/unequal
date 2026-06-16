@@ -5,7 +5,7 @@ import type {
   ChatResponse,
   SessionsListResponse,
 } from "./types.js";
-import { getJwtToken } from "./auth.js";
+import { getJwtToken, ensureJwt } from "./auth.js";
 
 /**
  * 调 /ask endpoint 拿单轮问答。
@@ -68,6 +68,39 @@ function getFetch(opts: ApiOptions): (input: string, init: { method?: string; he
   // @ts-expect-error wx 全局类型 mock-first 缺失
   if (typeof wx !== "undefined" && typeof wx.request === "function") return wxRequestAsFetch as never;
   return fetch as never;
+}
+
+/* ---------- M6.3a 401 transparent refresh wrapper ---------- */
+
+/**
+ * 包一层：401 触发 ensureJwt 拿新 jwt → 用新 jwt 重发原 request 1 次。
+ * - 第二次仍 401 → 拒死循环（isRetry flag 强制最多 1 次）
+ * - wx.login 或 /auth/wx-login 失败 → 原 401 透传给 caller（caller 决定 mock-first fallback）
+ *
+ * M6.2 adminLogin 走独立路径（无 jwt header），保留直 getFetch 不变。
+ */
+/** @internal 导出仅用于单测；生产代码不直接调 */
+export async function fetchWithRefresh(
+  url: string,
+  init: { method?: string; headers?: Record<string, string>; body?: string },
+  opts: ApiOptions,
+  isRetry = false,
+): Promise<ResponseLike> {
+  const f = getFetch(opts);
+  const res = await f(url, init);
+  if (res.status !== 401 || isRetry) return res;
+  // 401 + 非 retry → 触发 refresh
+  try {
+    const newJwt = await ensureJwt(opts.baseUrl ?? "http://localhost:8787", opts.fetchImpl);
+    const newInit: typeof init = {
+      ...init,
+      headers: { ...init.headers, authorization: `Bearer ${newJwt}` },
+    };
+    return await fetchWithRefresh(url, newInit, opts, true);
+  } catch {
+    // wx.login 失败或 /auth/wx-login 失败 → 原 401 透传
+    return res;
+  }
 }
 
 function buildHeaders(opts: ApiOptions): Record<string, string> {

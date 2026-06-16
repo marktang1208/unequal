@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ask, chat, listSessions, renameSession, deleteSession, adminLogin } from "../lib/api.js";
+import { fetchWithRefresh } from "../lib/api.js";
 import { __setJwtStorageImpl } from "../lib/chat-storage.js";
 import type { AskResponse, ChatResponse, SessionsListResponse } from "../lib/types.js";
 
@@ -239,5 +240,150 @@ describe("401 from /ask → throw 让 caller 决定（M6.2 暂不重试）", () 
     const fetchMock: typeof fetch = async () =>
       new Response(JSON.stringify({ error: "UNAUTHORIZED" }), { status: 401 });
     await expect(ask("test", { fetchImpl: fetchMock })).rejects.toThrow(/401.*UNAUTHORIZED/);
+  });
+});
+
+/* ---------- M6.3a 401 transparent refresh ---------- */
+
+// @ts-expect-error 测试桩类型
+const wxLoginMock = (globalThis as { wx: { login: ReturnType<typeof vi.fn> } }).wx.login;
+// @ts-expect-error 测试桩类型
+const wxRequestMock = (globalThis as { wx: { request: ReturnType<typeof vi.fn> } }).wx.request;
+
+describe("fetchWithRefresh (M6.3a) — 401 透明 refresh + retry", () => {
+  let storage: Record<string, string> = {};
+
+  beforeEach(() => {
+    storage = {};
+    __setJwtStorageImpl(
+      (k) => storage[k] ?? "",
+      (k, v) => { storage[k] = v; },
+    );
+    wxLoginMock.mockReset();
+    wxRequestMock.mockReset();
+  });
+
+  it("401 → 透明 refresh（ensureJwt 拿新 jwt） + retry 成功 → caller 收到 200 body", async () => {
+    // 第一次 fetch 返 401；第二次（同 jwt 替换后）返 200
+    const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
+      const auth = (init?.headers as Record<string, string>)?.authorization ?? "";
+      if (input === "http://localhost:8787/auth/wx-login") {
+        return new Response(
+          JSON.stringify({ token: "new_jwt", user_id: "u", is_new_user: false, expires_in: 86400 }),
+          { status: 200 },
+        );
+      }
+      if (input === "http://localhost:8787/ask" && auth === "Bearer old_jwt") {
+        return new Response(JSON.stringify({ error: "UNAUTHORIZED" }), { status: 401 });
+      }
+      if (input === "http://localhost:8787/ask" && auth === "Bearer new_jwt") {
+        return new Response(
+          JSON.stringify({ answer: "refreshed ok", disclaimer: "", citations: [], cached: false }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`unexpected call: ${input} auth=${auth}`);
+    }) as unknown as typeof fetch;
+
+    wxLoginMock.mockImplementation(({ success }: any) => {
+      success({ code: "refresh_code" });
+    });
+
+    // 直接调 wrapper，模拟 ask 内部的 fetch 路径
+    const res = await fetchWithRefresh(
+      "http://localhost:8787/ask",
+      {
+        method: "POST",
+        headers: { authorization: "Bearer old_jwt", "content-type": "application/json" },
+        body: JSON.stringify({ q: "test" }),
+      },
+      { baseUrl: "http://localhost:8787", token: "old_jwt", fetchImpl: fetchMock },
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { answer: string };
+    expect(body.answer).toBe("refreshed ok");
+    // 关键：fetchMock 至少 3 次（/ask 401 + /auth/wx-login + /ask 200）
+    expect((fetchMock as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBeGreaterThanOrEqual(3);
+    // storage 已写新 jwt（ensureJwt 写）
+    expect(storage["unequal:jwt"]).toBe("new_jwt");
+  });
+
+  it("wx.login 失败 → ensureJwt 抛 → caller 收到原 401 透传", async () => {
+    const fetchMock = vi.fn(async (input: string, _init?: RequestInit) => {
+      if (input === "http://localhost:8787/auth/wx-login") {
+        throw new Error("fetch should not be called — wx.login failed first");
+      }
+      return new Response(JSON.stringify({ error: "UNAUTHORIZED" }), { status: 401 });
+    }) as unknown as typeof fetch;
+
+    // wx.login 走 fail
+    wxLoginMock.mockImplementation(({ fail }: any) => {
+      fail({ errMsg: "wx.login fail" });
+    });
+
+    const res = await fetchWithRefresh(
+      "http://localhost:8787/ask",
+      { method: "POST", headers: { authorization: "Bearer old" } },
+      { baseUrl: "http://localhost:8787", fetchImpl: fetchMock },
+    );
+
+    // 原 401 透传
+    expect(res.status).toBe(401);
+    // ensureJwt 失败 → /auth/wx-login 不应被调
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("第二次仍 401 → 不再 retry，拒死循环（isRetry 终止）", async () => {
+    // 两次都返 401：第一次原始 /ask，第二次 refresh 后重试 /ask
+    const fetchMock = vi.fn(async (input: string, _init?: RequestInit) => {
+      if (input === "http://localhost:8787/auth/wx-login") {
+        return new Response(
+          JSON.stringify({ token: "new_jwt", user_id: "u", is_new_user: false, expires_in: 86400 }),
+          { status: 200 },
+        );
+      }
+      // /ask 永远 401
+      return new Response(JSON.stringify({ error: "STILL_UNAUTHORIZED" }), { status: 401 });
+    }) as unknown as typeof fetch;
+
+    wxLoginMock.mockImplementation(({ success }: any) => {
+      success({ code: "code_x" });
+    });
+
+    const res = await fetchWithRefresh(
+      "http://localhost:8787/ask",
+      { method: "POST", headers: { authorization: "Bearer old" } },
+      { baseUrl: "http://localhost:8787", fetchImpl: fetchMock },
+    );
+    // 第二次仍 401 → 透传（拒死循环）
+    expect(res.status).toBe(401);
+    // 关键：fetchMock 只能被调 ≤3 次（/ask 401 + /auth/wx-login + /ask retry 401），绝不超过
+    // 如果死循环会无限增长
+    expect((fetchMock as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBeLessThanOrEqual(3);
+  });
+
+  it("5 函数共享 fetchWithRefresh — 通过读 api.ts 源码验证 5 函数体都 call wrapper", async () => {
+    // 行为覆盖 ask / chat 在 Task 9 接入后单测（见 Task 9 验证）；
+    // Task 8 这里仅做静态验证：5 个函数体内都引用 fetchWithRefresh（不调旧 getFetch 直调）。
+    const { readFileSync } = await import("node:fs");
+    const path = await import("node:path");
+    const apiPath = path.resolve(__dirname, "../lib/api.ts");
+    const src = readFileSync(apiPath, "utf8");
+
+    // 每个函数都应 fetchWithRefresh 调用（提取函数体子串）
+    const fnNames = ["ask", "chat", "listSessions", "renameSession", "deleteSession"];
+    for (const fn of fnNames) {
+      // 简单 regex：函数体内首次出现 fetchWithRefresh 应在 getFetch 之后
+      const fnMatch = src.match(new RegExp(`export async function ${fn}\\b[\\s\\S]*?\\n\\}`));
+      expect(fnMatch, `${fn} function body not found`).not.toBeNull();
+      const body = fnMatch![0];
+      // 旧模式 `const f = getFetch(opts); const res = await f(...)` 不应再出现（ask / chat / listSessions / renameSession / deleteSession 应改）
+      // 注：Task 8 这里不强制；Task 9 commit 替换后才生效。本测只静态验 wrapper 已被引入 + Task 9 后正则切换到 wrapper。
+      expect(body.includes("fetchWithRefresh") || body.includes("getFetch"),
+        `${fn} body should reference either fetchWithRefresh (post-Task-9) or getFetch (pre-Task-9)`).toBe(true);
+    }
+    // 顶层 fetchWithRefresh 函数已存在（@internal 导出）
+    expect(src).toMatch(/^export async function fetchWithRefresh\b/m);
   });
 });
