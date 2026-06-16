@@ -14,6 +14,7 @@ import { userRoute } from "./routes/user.js";
 import { cronRoute } from "./routes/cron.js";
 import { statsRoute } from "./routes/stats.js";
 import { scheduled } from "./scheduled.js";
+import { ChatSessionDO } from "./do/chat-session.js";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -69,3 +70,6 @@ export default {
   fetch: app.fetch.bind(app),
   scheduled,
 };
+
+// wrangler build 要求 entrypoint re-export Durable Object 类（与 M6.1 同模式）
+export { ChatSessionDO };

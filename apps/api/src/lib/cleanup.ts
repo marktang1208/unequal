@@ -12,6 +12,8 @@ import type { Env } from "../types.js";
 
 export interface CleanupResult {
   deleted: number;
+  /** cutoff unix ms (实际 DELETE 比较的值) */
+  cutoff: number;
 }
 
 export const DEFAULT_CUTOFF_MS = 24 * 60 * 60 * 1000; // 24h，与 M6.4 cron.ts 一致
@@ -24,5 +26,5 @@ export async function cleanupLoginAttempts(
   const result = await env.DB.prepare(
     `DELETE FROM login_attempt WHERE created_at < ?`
   ).bind(cutoff).run();
-  return { deleted: result.meta?.changes ?? 0 };
+  return { deleted: result.meta?.changes ?? 0, cutoff };
 }

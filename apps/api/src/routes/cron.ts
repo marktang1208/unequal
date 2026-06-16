@@ -31,7 +31,7 @@ export const cronRoute = {
       const result = await cleanupLoginAttempts(env, DEFAULT_CUTOFF_MS);
       return Response.json({
         deleted: result.deleted,
-        cutoff: Date.now() - DEFAULT_CUTOFF_MS,
+        cutoff: result.cutoff,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
