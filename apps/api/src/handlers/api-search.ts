@@ -1,18 +1,93 @@
 /**
- * api-search handler（CP-6 Phase 2 stub → Phase 4 完整实现）
+ * api-search handler（CP-6 Phase 4 完整实现）
  * GET /api-search?q=...
+ *
+ * admin auth + MiniMax embedding + brute-force cosine via shared/retrieval
  */
+
 import {
   errorResponse,
+  getQuery,
+  jsonResponse,
   optionsResponse,
   type HttpTriggerEvent,
   type HttpTriggerResponse,
 } from "../lib/handler-utils.js";
 import { getEnv } from "../lib/env.js";
+import { verifyJwt } from "../lib/jwt.js";
+import { createMiniMaxEmbedder } from "@unequal/shared/embedding";
+import { searchChunks, type ChunkWithEmbedding } from "@unequal/shared/retrieval";
+import { COLLECTIONS, type CollectionName } from "../lib/collections.js";
+import { getAllByFilter } from "../lib/db.js";
+import type { Chunk } from "@unequal/shared/types";
+
+async function verifyAdmin(token: string, env: ReturnType<typeof getEnv>): Promise<boolean> {
+  if (token === env.ADMIN_TOKEN) return true;
+  try {
+    const payload = await verifyJwt({ token, secret: env.JWT_SECRET });
+    return payload.scope === "admin";
+  } catch {
+    return false;
+  }
+}
 
 export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse> {
   const env = getEnv();
   if (event.httpMethod === "OPTIONS") return optionsResponse(env.ALLOWED_ORIGIN);
-  // TODO Phase 4: MiniMax embedding + brute-force cosine search + trust weighting
-  return errorResponse("NOT_IMPLEMENTED", "api-search stub (CP-6 Phase 2)", 501);
+
+  // admin auth
+  const authHeader = event.headers.authorization || event.headers.Authorization || "";
+  const token = authHeader.replace(/^Bearer\s+/i, "");
+  if (!await verifyAdmin(token, env)) {
+    return errorResponse("AUTH_FAILED", "Not admin", 401);
+  }
+
+  const q = getQuery(event, "q");
+  if (!q) {
+    return errorResponse("INVALID_REQUEST", "Missing 'q' query param", 400);
+  }
+
+  const topK = parseInt(getQuery(event, "topK") ?? "10", 10);
+
+  // embed query
+  const embed = createMiniMaxEmbedder({
+    apiKey: env.MINIMAX_API_KEY,
+    baseUrl: env.MINIMAX_BASE_URL,
+    model: "MiniMax-embeddings",
+  });
+  const queryVec = (await embed.embed([q]))[0] ?? [];
+
+  // fetch chunks for user
+  const chunks = await getAllByFilter<Chunk>(
+    COLLECTIONS.chunk as CollectionName,
+    { userId: env.DEFAULT_USER_ID },
+  );
+  const chunksWithEmb: ChunkWithEmbedding[] = chunks.map((c) => ({
+    id: c.id,
+    documentId: c.documentId,
+    sourceId: c.sourceId,
+    userId: c.userId,
+    idx: c.idx,
+    content: c.content,
+    embedding: c.embedding,
+    tokenCount: c.tokenCount,
+    trustLevel: c.trustLevel,
+    createdAt: c.createdAt,
+  }));
+
+  const results = await searchChunks({
+    fetchChunksByUser: async () => chunksWithEmb,
+    userId: env.DEFAULT_USER_ID,
+    queryVector: queryVec,
+    topK,
+  });
+
+  return jsonResponse({
+    query: q,
+    results: results.map((r) => ({
+      chunkId: r.chunkId,
+      score: r.finalScore,
+      trustLevel: r.trustLevel,
+    })),
+  });
 }
