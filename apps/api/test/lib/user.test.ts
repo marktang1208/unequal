@@ -5,7 +5,7 @@
  * 4 用例覆盖 spec §3.6 数据流：find existing / create new / 多 user 去重 / 空 openid 守门。
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { findOrCreateUser } from "../../src/lib/user.js";
+import { findOrCreateUser, updateUserSessionKey } from "../../src/lib/user.js";
 
 /* ---------- spy-style fake D1 ---------- */
 
@@ -114,5 +114,57 @@ describe("user.findOrCreateUser (spy-style fake D1)", () => {
     await expect(findOrCreateUser(d1, "")).rejects.toThrow(/non-empty/);
     // 不应调 DB
     expect(fakeDB.calls).toHaveLength(0);
+  });
+});
+
+/**
+ * M6.3b updateUserSessionKey 测试套件（spec §5/§6/§9.1）。
+ *
+ * 4 用例覆盖：写入 / 覆盖 / 空 skip / D1 throw 透传。
+ */
+describe("user.updateUserSessionKey (spy-style fake D1)", () => {
+  let fakeDB: ReturnType<typeof makeFakeDB>;
+  let d1: D1Database;
+
+  beforeEach(() => {
+    fakeDB = makeFakeDB();
+    d1 = fakeDB.db;
+  });
+
+  it("写入：updateUserSessionKey 调 1 次 UPDATE user SET session_key", async () => {
+    await updateUserSessionKey(d1, "user_1", "new_session_key_abc");
+    const updates = fakeDB.calls.filter(
+      (c) => c.op === "run" && c.sql.includes("UPDATE user SET session_key"),
+    );
+    expect(updates).toHaveLength(1);
+    expect(updates[0]!.params).toEqual(["new_session_key_abc", "user_1"]);
+  });
+
+  it("覆盖：先写 A 再写 B → 终值 B", async () => {
+    await updateUserSessionKey(d1, "user_1", "old_key");
+    await updateUserSessionKey(d1, "user_1", "new_key");
+    const updates = fakeDB.calls.filter(
+      (c) => c.op === "run" && c.sql.includes("UPDATE user SET session_key"),
+    );
+    expect(updates).toHaveLength(2);
+    expect(updates[0]!.params[0]).toBe("old_key");
+    expect(updates[1]!.params[0]).toBe("new_key");
+  });
+
+  it("空 sessionKey → skip（不调 DB）", async () => {
+    await updateUserSessionKey(d1, "user_1", "");
+    expect(fakeDB.calls).toHaveLength(0);
+  });
+
+  it("D1 throw → 透传（不吞）", async () => {
+    fakeDB = makeFakeDB({
+      run: async () => {
+        throw new Error("D1 IO error");
+      },
+    });
+    d1 = fakeDB.db;
+    await expect(updateUserSessionKey(d1, "user_1", "any_key")).rejects.toThrow(
+      /D1 IO error/,
+    );
   });
 });

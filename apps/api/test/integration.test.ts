@@ -219,7 +219,15 @@ describe("Worker integration (Miniflare)", () => {
       resolve(MIGRATIONS_DIR, "0002_dev_seed.sql"),
       "utf-8",
     );
-    for (const stmt of [...splitSqlIntoStatements(sql1), ...splitSqlIntoStatements(sql2)]) {
+    const sql6 = await readFile(
+      resolve(MIGRATIONS_DIR, "0006_user_session_key.sql"),
+      "utf-8",
+    );
+    for (const stmt of [
+      ...splitSqlIntoStatements(sql1),
+      ...splitSqlIntoStatements(sql2),
+      ...splitSqlIntoStatements(sql6),
+    ]) {
       await d1.exec(stmt);
     }
   });
@@ -268,5 +276,22 @@ describe("Worker integration (Miniflare)", () => {
     expect(res.headers.get("Access-Control-Allow-Methods") ?? "").toContain(
       "POST",
     );
+  });
+
+  // M6.3b: 0006_user_session_key.sql ALTER TABLE ADD COLUMN session_key TEXT
+  it("migration 0006: user 表加 session_key 字段（旧 user 字段为 NULL）", async () => {
+    const d1 = await mf.getD1Database("DB");
+    // PRAGMA table_info(user) 返 row 含 name 字段
+    const result = await d1
+      .prepare("PRAGMA table_info(user)")
+      .all<{ name: string; type: string; notnull: number; pk: number }>();
+    const cols = result.results.map((r) => r.name);
+    expect(cols).toContain("session_key");
+    // 旧 user (id=01H0000000000000000000000) session_key 应为 NULL
+    const row = await d1
+      .prepare("SELECT session_key FROM user WHERE id = ?")
+      .bind("01H0000000000000000000000")
+      .first<{ session_key: string | null }>();
+    expect(row?.session_key).toBeNull();
   });
 });

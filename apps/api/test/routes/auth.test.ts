@@ -43,7 +43,12 @@ const FAKE_OPENID = "mock_openid_001";
 async function applyMigrations(d1: D1Database) {
   const { splitSqlIntoStatements } = await import("../sql-split.js");
   // /auth 需要 0001_init.sql（user 表）+ 0005_login_attempt.sql（M6.3a rate limit）
-  for (const f of ["0001_init.sql", "0005_login_attempt.sql"]) {
+  // + 0006_user_session_key.sql（M6.3b session_key 落库）
+  for (const f of [
+    "0001_init.sql",
+    "0005_login_attempt.sql",
+    "0006_user_session_key.sql",
+  ]) {
     const sql = await readFile(resolve(MIGRATIONS_DIR, f), "utf-8");
     for (const stmt of splitSqlIntoStatements(sql)) {
       await d1.exec(stmt);
@@ -362,6 +367,77 @@ describe("/auth route (Miniflare + D1 + mock fetchImpl)", () => {
     // 验证 login_attempt 表 0 行（spec §5.2：成功路径不记 attempt）
     const countRow = await d1
       .prepare("SELECT COUNT(*) AS c FROM login_attempt")
+      .first<{ c: number }>();
+    expect(countRow?.c ?? 0).toBe(0);
+  });
+
+  // ---------- M6.3b session_key 落库（spec §5/§6） ----------
+
+  it("POST /auth/wx-login 200: 成功后 D1 user.session_key 写入 mock session_key", async () => {
+    const d1 = await mf.getD1Database("DB");
+    const env = {
+      ADMIN_TOKEN,
+      JWT_SECRET,
+      WX_APP_ID: "wx_test_id",
+      WX_APP_SECRET: "wx_test_secret",
+      DB: d1,
+      fetchImpl: mockFetch, // mockFetch 返 session_key: "mock_session_key"
+    } as unknown as Env;
+
+    const { authRoute } = await import("../../src/routes/auth.js");
+    const res = await authRoute.WX_LOGIN(
+      new Request("https://do/auth/wx-login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: "session_key_test_code" }),
+      }),
+      env,
+    );
+    expect(res.status).toBe(200);
+    // 验证 D1 user 表 session_key 字段已写入
+    const row = await d1
+      .prepare("SELECT session_key FROM user LIMIT 1")
+      .first<{ session_key: string | null }>();
+    expect(row?.session_key).toBe("mock_session_key");
+  });
+
+  it("POST /auth/wx-login 401 INVALID_CODE: 失败路径不写 session_key（user 表 0 行）", async () => {
+    const d1 = await mf.getD1Database("DB");
+    // 注入 mock：返 errcode → 抛 INVALID_CODE
+    const invalidCodeFetch: typeof fetch = (async (
+      url: string | URL | Request,
+    ): Promise<Response> => {
+      const u = typeof url === "string" ? new URL(url) : new URL((url as Request).url);
+      if (u.hostname === "api.weixin.qq.com" && u.pathname === "/sns/jscode2session") {
+        return new Response(
+          JSON.stringify({ errcode: 40029, errmsg: "invalid code" }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response("not mocked", { status: 404 });
+    }) as unknown as typeof fetch;
+    const env = {
+      ADMIN_TOKEN,
+      JWT_SECRET,
+      WX_APP_ID: "wx_test_id",
+      WX_APP_SECRET: "wx_test_secret",
+      DB: d1,
+      fetchImpl: invalidCodeFetch,
+    } as unknown as Env;
+
+    const { authRoute } = await import("../../src/routes/auth.js");
+    const res = await authRoute.WX_LOGIN(
+      new Request("https://do/auth/wx-login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: "bad_code_never_written" }),
+      }),
+      env,
+    );
+    expect(res.status).toBe(401);
+    // 失败路径不写 user 表任何行（包括 session_key）
+    const countRow = await d1
+      .prepare("SELECT COUNT(*) AS c FROM user")
       .first<{ c: number }>();
     expect(countRow?.c ?? 0).toBe(0);
   });

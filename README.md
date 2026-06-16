@@ -315,6 +315,52 @@ done
 
 详见 `docs/superpowers/state-m6-3a.md`（含 commit 汇总 + ECC 组件 + 真接路径 + 4 个偏差记录）。
 
+## M6.3b 状态
+
+跑通：每次 `/auth/wx-login` 成功后把 `session_key` 写入 D1 `user` 表，给未来的 `/auth/wx-user-info` AES-CBC 解密留口。**194 用例全绿**（187 M6.3a 收尾 + 7 M6.3b 新增）。
+
+mock-first 实现：
+
+- migration 0006 `ALTER TABLE user ADD COLUMN session_key TEXT`（不加时间戳，每次重写 + 30 天 TTL 天然覆盖）
+- `lib/user.ts` 新 `updateUserSessionKey(d1, userId, sessionKey)` — 空字符串 skip / D1 错误透传
+- `/auth/wx-login` 在 findOrCreateUser 后调 updateUserSessionKey，**写失败 try/catch 隔离不阻断 jwt 签发**（未来解密不可用但当前登录仍成功）
+- 0 miniprogram 改动（session_key 不下发 client）
+- 0 admin 改动
+
+### Session key 行为（M6.3b 后）
+
+```bash
+# 真接 Cloudflare 后用 wrangler d1 execute 验证
+pnpm wrangler d1 execute unequal-db --remote \
+  --command "SELECT id, wx_openid, session_key FROM user LIMIT 5"
+# 旧 user（M6.3b 上线前创建）session_key = NULL
+# 新 user（M6.3b 上线后 /auth/wx-login）session_key = 微信最新 session_key
+```
+
+- 写入时机：每次 /auth/wx-login 成功都重写（不增量）
+- 字段类型：TEXT（明文，依赖 Cloudflare D1 encryption at rest）
+- 不下发到 client：response body 不含 session_key（仅 user_id + token + is_new_user + expires_in）
+- 写失败不阻断：用户拿 jwt 仍可调 /chat / /sessions / /ask，仅未来 /auth/wx-user-info 解密不可用
+
+### M6.3b 测试矩阵
+
+- `pnpm -F shared test` — 38 用例（无变化）
+- `pnpm -F api test` — 93 用例（migration 1 + user 4 + auth 2 + 86 旧 = 93）
+- `pnpm -F miniprogram test` — 23 用例（无变化）
+- `pnpm -F admin test` — 21 用例（无变化）
+- `pnpm -F crawler test` — 19 用例（无变化）
+- `pnpm -r typecheck` — 5 包全绿
+- 累计：**194 用例全绿**（spec 估 6-8 新增，+7 取中）
+
+### M6.3b 限制（mock-first 已知）
+
+- session_key 存明文 → 依赖 Cloudflare D1 encryption at rest；M6.4+ envelope encryption
+- ALTER TABLE 在大表慢（user 表当前 0-几千行）→ M6.5+ user 表破 100k 考虑新表
+- migration 0006 down 留空（SQLite < 3.35 不支持 DROP COLUMN）→ orphan column 无副作用
+- 不存 nickname / avatar（YAGNI）→ M6.3c
+
+详见 `docs/superpowers/state-m6-3b.md`（含 commit 汇总 + 主线程接管原因 + 3 个偏差记录）。
+
 ## M6.1 状态
 
 跑通：多轮会话 + Durable Objects（一个 session 一个 DO instance）+ D1 session 列表 + 小程序双 tab（对话 / 历史）+ admin ChatSim 多 session 切换。130 用例全绿（73 M0-M5 + 57 M6.1）。
