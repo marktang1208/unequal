@@ -811,6 +811,64 @@ pnpm wrangler d1 execute unequal-db --remote \
 
 详见 `docs/superpowers/state-m6-8.md`（含 6 个偏差记录 + commit 汇总 + CP-5 真接路径 + 下一步建议）。
 
+## M6.9 状态
+
+跑通：1 项 M6.3a 留口防御性加固 — 同 token 5 并发 admin-login/wx-login 小窗口串行化（in-process Map + `withTokenMutex` helper）。**280 用例全绿**（274 M6.8 收尾 + 6 M6.9 新增：token-mutex 6）。
+
+mock-first 实现：
+
+- `apps/api/src/lib/token-mutex.ts` 新（~30 行）：
+  - `withTokenMutex<T>(identifier, fn) → Promise<T>`
+  - module-level `inflight: Map<string, Promise<unknown>>`
+  - chain 模式：`prev → next`（避免 N 个 await 串成 N 层）
+  - `finally` 释放 mutex + `if (inflight.get(id) === chained)` 防御性检查
+- `apps/api/src/routes/auth.ts` 改 3 处：
+  - WX_LOGIN INVALID_CODE 路径
+  - ADMIN_LOGIN 失败路径
+  - ADMIN_LOGIN 成功路径
+- 1 commit 跨 1 包主线程直接做（M6.8 教训应用，总耗时 ~5 min）
+
+### Mutex 行为（M6.9 后）
+
+```typescript
+// 同 token 5 并发：5 个 fn 串行（~25ms 总耗时，节省 ~5-10ms 并发开销）
+const p1 = withTokenMutex(adminIdentifier, () => recordAttempt(...));
+const p2 = withTokenMutex(adminIdentifier, () => recordAttempt(...));  // 等 p1
+const p3 = withTokenMutex(adminIdentifier, () => recordAttempt(...));  // 等 p2
+// ...
+
+// 不同 token 不阻塞
+const w1 = withTokenMutex(codeIdentifier, () => recordAttempt(...));
+const w2 = withTokenMutex(adminIdentifier, () => recordAttempt(...));  // 与 w1 并行
+```
+
+- 模式：in-process Map（CF Workers 单 isolate 内有效）
+- 失败：fn throw → mutex 释放 + throw 透传
+- 范围：仅 /auth/admin-login + /auth/wx-login（其他鉴权路由不受影响）
+- 0 新依赖 / 0 schema / 0 env 改动
+- 0 跨包改动（仅 apps/api）
+
+### M6.9 测试矩阵
+
+- `pnpm -F shared test` — 38 用例（无变化）
+- `pnpm -F api test` — 167 用例（token-mutex 6 + 161 旧 = 167；M6.9 新增 6）
+- 其他包 — 113 用例（无变化）
+- `pnpm -r typecheck` — 5 包全绿
+- `pnpm -F api build` — wrangler dry-run OK
+- 累计：**280 用例全绿**（spec 估 6 净增，实际 6 — 精确一致）
+
+### M6.9 限制（mock-first 已知）
+
+- **多 isolate 不防**（设计预期）：CF Workers 多 isolate 间不共享 Map mutex
+  - 缓解：M6.3a per-token 5/15min + M6.6 per-IP 5/15min 兜底
+  - 未来 CP-5 观察实际并发后决定是否升级 DO-level mutex
+- 实际价值低（spec §1 价值评估）：5 个 record 仍 5 行 D1 写；只节省 5-10ms 串行耗时
+- 防御性代码：M6.9 是"如果未来并发问题升级时已有基础"
+- 0 production console.log
+- 0 跨包改动
+
+详见 `docs/superpowers/state-m6-9.md`（含 0 偏差记录 + commit 汇总 + CP-5 真接路径 + 下一步建议）。
+
 ## M6.1 状态
 
 跑通：多轮会话 + Durable Objects（一个 session 一个 DO instance）+ D1 session 列表 + 小程序双 tab（对话 / 历史）+ admin ChatSim 多 session 切换。130 用例全绿（73 M0-M5 + 57 M6.1）。

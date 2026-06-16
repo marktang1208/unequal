@@ -27,6 +27,7 @@ import {
   getClientIp,
   readRateLimitConfig,
 } from "../lib/rate-limit.js";
+import { withTokenMutex } from "../lib/token-mutex.js";
 import type { Env } from "../types.js";
 
 const JWT_TTL_SECONDS = 24 * 60 * 60;
@@ -118,9 +119,12 @@ export const authRoute = {
       } catch (err) {
         // M6.3a：jscode2session 抛 INVALID_CODE 时记 failed attempt
         // 其它错误（502 WX_API_ERROR / 500 INFRA_MISSING）不计（避免把网络问题当刷攻击）
-        if (err instanceof HttpError && err.code === "INVALID_CODE") {
-          await recordAttempt(env.DB, codeIdentifier, "wx_code", false, clientIpHash);
-        }
+        // M6.9: 防御性 — 同 code 5 并发 wx-login 小窗口串行化
+        await withTokenMutex(codeIdentifier, async () => {
+          if (err instanceof HttpError && err.code === "INVALID_CODE") {
+            await recordAttempt(env.DB, codeIdentifier, "wx_code", false, clientIpHash);
+          }
+        });
         throw err;
       }
 
@@ -200,15 +204,20 @@ export const authRoute = {
         env.ADMIN_TOKEN,
       );
       // M6.3a：无论成功失败都记 attempt（spec §5.1 step 4）
+      // M6.9: 防御性 — 同 admin_token 5 并发小窗口串行化
       if (!auth.ok) {
-        await recordAttempt(env.DB, adminIdentifier, "admin", false, clientIpHash);
+        await withTokenMutex(adminIdentifier, async () => {
+          await recordAttempt(env.DB, adminIdentifier, "admin", false, clientIpHash);
+        });
         throw new HttpError(401, "INVALID_ADMIN_TOKEN", auth.message);
       }
       const token = await signJwt(
         { userId: DEFAULT_ADMIN_USER_ID, isAdmin: true },
         env.JWT_SECRET ?? "",
       );
-      await recordAttempt(env.DB, adminIdentifier, "admin", true, clientIpHash);
+      await withTokenMutex(adminIdentifier, async () => {
+        await recordAttempt(env.DB, adminIdentifier, "admin", true, clientIpHash);
+      });
       const response: AdminLoginResponse = {
         token,
         user_id: DEFAULT_ADMIN_USER_ID,
