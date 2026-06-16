@@ -4,13 +4,15 @@ import type { TrustLevel } from "@unequal/shared/types";
 const API_BASE = "/api";
 
 export function getToken(): string {
+  // 优先用 localStorage（M6.2 后 admin 都走 /auth/admin-login 拿 jwt 写 localStorage）
   const token = localStorage.getItem("admin_token");
   if (token) return token;
-  // Dev-only fallback so the local dev experience still works
-  // (set localStorage("admin_token", "...") for any non-dev env).
-  // Production builds throw to avoid silent auth.
-  if (import.meta.env.DEV) return "dev-token-change-me";
-  throw new Error("admin_token 未设置：请先在 localStorage 设置 admin_token");
+  // M3 dev fallback：只 dev 环境 + localStorage 没 key → 用 dev sentinel。
+  // 这条让 dev 体验"装好 admin dev 就能用"，不需先访问 /login。
+  // sentinel 值与 server 端 apps/api/src/routes/ask.ts 的 DEV_MOCK_TOKEN 对齐。
+  if (import.meta.env.DEV) return "test-token-please-change";
+  // 生产：无 token → 抛错，路由 RequireAuth 已经 navigate("/login")
+  throw new Error("admin_token 未设置：请访问 /login 登录");
 }
 
 /* ---------- M6.2 admin JWT 登录（spec §3.7） ---------- */
