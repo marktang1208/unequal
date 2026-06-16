@@ -13,6 +13,35 @@ export function getToken(): string {
   throw new Error("admin_token 未设置：请先在 localStorage 设置 admin_token");
 }
 
+/* ---------- M6.2 admin JWT 登录（spec §3.7） ---------- */
+
+export interface AdminLoginResponse {
+  token: string;
+  user_id: string;
+  is_admin: boolean;
+  expires_in: number;
+}
+
+/**
+ * POST /api/auth/admin-login：拿 admin_token 换 jwt。
+ * 服务端（apps/api/src/routes/auth.ts）匹配 ENV.ADMIN_TOKEN → 返 jwt。
+ * 401/403 时抛 Error，message 含状态码 + body 便于诊断。
+ */
+export async function adminLogin(
+  adminToken: string,
+): Promise<AdminLoginResponse> {
+  const res = await fetch("/api/auth/admin-login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ admin_token: adminToken }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`/auth/admin-login ${res.status}: ${text}`);
+  }
+  return (await res.json()) as AdminLoginResponse;
+}
+
 export interface UploadResponse {
   sourceId: string;
   documentId: string;
