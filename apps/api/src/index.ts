@@ -10,6 +10,7 @@ import { askRoute } from "./routes/ask.js";
 import { chatRoute } from "./routes/chat.js";
 import { sessionsRoute } from "./routes/sessions.js";
 import { authRoute } from "./routes/auth.js";
+import { userRoute } from "./routes/user.js";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -47,6 +48,9 @@ app.delete("/sessions/:id", (c) => sessionsRoute.DELETE(c.req.raw, c.env, c.req.
 // M6.2: 鉴权 + JWT 签发（spec §3.3 + §3.4）
 app.post("/auth/wx-login", (c) => authRoute.WX_LOGIN(c.req.raw, c.env));
 app.post("/auth/admin-login", (c) => authRoute.ADMIN_LOGIN(c.req.raw, c.env));
+
+// M6.3c: miniprogram nickname-input 组件触发的 nickname 写入（spec §5）
+app.patch("/user/nickname", (c) => userRoute.UPDATE_NICKNAME(c.req.raw, c.env));
 
 app.notFound((c) => c.text("Not found", 404));
 

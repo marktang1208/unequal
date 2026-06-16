@@ -213,3 +213,25 @@ export async function deleteSession(sessionId: string, opts: ApiOptions = {}): P
     throw new Error(`/sessions DELETE ${res.status}: ${body.error ?? "unknown"}`);
   }
 }
+
+/* ---------- M6.3c nickname (PATCH /user/nickname) ---------- */
+
+/**
+ * PATCH /user/nickname → 写 miniprogram 用户的 nickname（2024 微信 nickname-input 组件触发）。
+ * 401 时 fetchWithRefresh 自动重 wx.login + retry。
+ */
+export async function updateNickname(
+  nickname: string,
+  opts: ApiOptions = {},
+): Promise<void> {
+  const baseUrl = opts.baseUrl ?? "http://localhost:8787";
+  const res = await fetchWithRefresh(`${baseUrl}/user/nickname`, {
+    method: "PATCH",
+    headers: buildHeaders(opts),
+    body: JSON.stringify({ nickname }),
+  }, opts);
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(`/user/nickname ${res.status}: ${body.error ?? "unknown"}`);
+  }
+}

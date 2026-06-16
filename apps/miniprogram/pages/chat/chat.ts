@@ -1,7 +1,7 @@
 // @ts-nocheck wx 全局类型 mock-first 缺失（miniprogram-api-typings 未安装，按 CP-1 决策容忍）
-import { chat } from "../../lib/api.js";
+import { chat, updateNickname } from "../../lib/api.js";
 import { __setStorageImpl } from "../../lib/storage.js";
-import { __setSessionStorageImpl, loadCurrentSessionId, saveCurrentSessionId } from "../../lib/chat-storage.js";
+import { __setSessionStorageImpl, loadCurrentSessionId, saveCurrentSessionId, hasShownNicknameModal, setShownNicknameModal, __setNicknameModalStorageImpl } from "../../lib/chat-storage.js";
 import type { AskResponse, ChatResponse, HistoryEntry } from "../../lib/types.js";
 
 // 注入 wx storage 实现（运行时由小程序 runtime 提供，测试桩 vitest 替换）
@@ -24,6 +24,21 @@ __setStorageImpl(
 
 // 注入 chat-storage 默认 wx 实现（M6.1 持久化当前 session_id）
 __setSessionStorageImpl(
+  // @ts-nocheck wx 全局类型 mock-first 缺失
+  (key: string) => {
+    // @ts-expect-error wx 全局类型 mock-first 缺失
+    const raw = wx.getStorageSync(key);
+    return typeof raw === "string" ? raw : "";
+  },
+  // @ts-nocheck wx 全局类型 mock-first 缺失
+  (key: string, value: string) => {
+    // @ts-expect-error wx 全局类型 mock-first 缺失
+    wx.setStorageSync(key, value);
+  },
+);
+
+// 注入 chat-storage nickname modal 默认 wx 实现（M6.3c）
+__setNicknameModalStorageImpl(
   // @ts-nocheck wx 全局类型 mock-first 缺失
   (key: string) => {
     // @ts-expect-error wx 全局类型 mock-first 缺失
@@ -65,6 +80,39 @@ Page({
     if (sid) {
       this.setData({ sessionId: sid });
     }
+    // M6.3c: 首次昵称 modal（仅弹 1 次；跳过 / 填过都不再弹）
+    if (!hasShownNicknameModal()) {
+      void this.promptNickname();
+    }
+  },
+
+  /**
+   * M6.3c: 弹 modal 让 user 填 nickname。
+   * - 跳过 / 确认都设 hasShown=true（避免反复弹）
+   * - 填了非空 → 调 updateNickname PATCH /user/nickname
+   * - PATCH 失败仅 showToast 提示，flag 仍置 true（M6.3c 不做 settings 页 retry）
+   */
+  // @ts-expect-error 微信 Page method 类型不强制匹配
+  async promptNickname(this: WechatMiniprogram.Page.TrivialInstance): Promise<void> {
+    // @ts-nocheck wx 全局类型 mock-first 缺失
+    const res = await wx.showModal({
+      title: "请输入昵称",
+      editable: true,
+      placeholderText: "1-20 字符（可跳过）",
+      confirmText: "保存",
+      cancelText: "跳过",
+    });
+    if (res.confirm && res.content?.trim()) {
+      try {
+        await updateNickname(res.content.trim());
+        // @ts-nocheck wx 全局类型 mock-first 缺失
+        wx.showToast({ title: "昵称已保存", icon: "success" });
+      } catch {
+        // @ts-nocheck wx 全局类型 mock-first 缺失
+        wx.showToast({ title: "保存失败", icon: "none" });
+      }
+    }
+    setShownNicknameModal();
   },
 
   onShow(): void {
