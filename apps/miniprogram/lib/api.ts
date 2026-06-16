@@ -5,7 +5,7 @@ import type {
   ChatResponse,
   SessionsListResponse,
 } from "./types.js";
-import { getJwtToken } from "./auth.js";
+import { getJwtToken, ensureJwt } from "./auth.js";
 
 /**
  * 调 /ask endpoint 拿单轮问答。
@@ -70,6 +70,39 @@ function getFetch(opts: ApiOptions): (input: string, init: { method?: string; he
   return fetch as never;
 }
 
+/* ---------- M6.3a 401 transparent refresh wrapper ---------- */
+
+/**
+ * 包一层：401 触发 ensureJwt 拿新 jwt → 用新 jwt 重发原 request 1 次。
+ * - 第二次仍 401 → 拒死循环（isRetry flag 强制最多 1 次）
+ * - wx.login 或 /auth/wx-login 失败 → 原 401 透传给 caller（caller 决定 mock-first fallback）
+ *
+ * M6.2 adminLogin 走独立路径（无 jwt header），保留直 getFetch 不变。
+ */
+/** @internal 导出仅用于单测；生产代码不直接调 */
+export async function fetchWithRefresh(
+  url: string,
+  init: { method?: string; headers?: Record<string, string>; body?: string },
+  opts: ApiOptions,
+  isRetry = false,
+): Promise<ResponseLike> {
+  const f = getFetch(opts);
+  const res = await f(url, init);
+  if (res.status !== 401 || isRetry) return res;
+  // 401 + 非 retry → 触发 refresh
+  try {
+    const newJwt = await ensureJwt(opts.baseUrl ?? "http://localhost:8787", opts.fetchImpl);
+    const newInit: typeof init = {
+      ...init,
+      headers: { ...init.headers, authorization: `Bearer ${newJwt}` },
+    };
+    return await fetchWithRefresh(url, newInit, opts, true);
+  } catch {
+    // wx.login 失败或 /auth/wx-login 失败 → 原 401 透传
+    return res;
+  }
+}
+
 function buildHeaders(opts: ApiOptions): Record<string, string> {
   const headers: Record<string, string> = { "content-type": "application/json" };
   // M6.2: 优先 opts.token（admin LoginPage 用），否则用 storage jwt
@@ -105,12 +138,11 @@ export async function adminLogin(
 
 export async function ask(q: string, opts: ApiOptions = {}): Promise<AskResponse> {
   const baseUrl = opts.baseUrl ?? "http://localhost:8787";
-  const f = getFetch(opts);
-  const res = await f(`${baseUrl}/ask`, {
+  const res = await fetchWithRefresh(`${baseUrl}/ask`, {
     method: "POST",
     headers: buildHeaders(opts),
     body: JSON.stringify({ q }),
-  });
+  }, opts);
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as AskError;
     throw new Error(`/ask ${res.status}: ${body.error ?? "unknown"}`);
@@ -126,15 +158,14 @@ export async function ask(q: string, opts: ApiOptions = {}): Promise<AskResponse
  */
 export async function chat(req: ChatRequest, opts: ApiOptions = {}): Promise<ChatResponse> {
   const baseUrl = opts.baseUrl ?? "http://localhost:8787";
-  const f = getFetch(opts);
-  const res = await f(`${baseUrl}/chat`, {
+  const res = await fetchWithRefresh(`${baseUrl}/chat`, {
     method: "POST",
     headers: buildHeaders(opts),
     body: JSON.stringify({
       q: req.q,
       ...(req.session_id ? { session_id: req.session_id } : {}),
     }),
-  });
+  }, opts);
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as AskError;
     throw new Error(`/chat ${res.status}: ${body.error ?? "unknown"}`);
@@ -145,11 +176,10 @@ export async function chat(req: ChatRequest, opts: ApiOptions = {}): Promise<Cha
 /** GET /sessions → 返 server-side session 列表（最近 50） */
 export async function listSessions(opts: ApiOptions = {}): Promise<SessionsListResponse> {
   const baseUrl = opts.baseUrl ?? "http://localhost:8787";
-  const f = getFetch(opts);
-  const res = await f(`${baseUrl}/sessions`, {
+  const res = await fetchWithRefresh(`${baseUrl}/sessions`, {
     method: "GET",
     headers: buildHeaders(opts),
-  });
+  }, opts);
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as AskError;
     throw new Error(`/sessions ${res.status}: ${body.error ?? "unknown"}`);
@@ -160,12 +190,11 @@ export async function listSessions(opts: ApiOptions = {}): Promise<SessionsListR
 /** PATCH /sessions/:id → 改 title */
 export async function renameSession(sessionId: string, title: string, opts: ApiOptions = {}): Promise<void> {
   const baseUrl = opts.baseUrl ?? "http://localhost:8787";
-  const f = getFetch(opts);
-  const res = await f(`${baseUrl}/sessions/${encodeURIComponent(sessionId)}`, {
+  const res = await fetchWithRefresh(`${baseUrl}/sessions/${encodeURIComponent(sessionId)}`, {
     method: "PATCH",
     headers: buildHeaders(opts),
     body: JSON.stringify({ title }),
-  });
+  }, opts);
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as AskError;
     throw new Error(`/sessions PATCH ${res.status}: ${body.error ?? "unknown"}`);
@@ -175,11 +204,10 @@ export async function renameSession(sessionId: string, title: string, opts: ApiO
 /** DELETE /sessions/:id → 服务端软删（标 degraded_at） */
 export async function deleteSession(sessionId: string, opts: ApiOptions = {}): Promise<void> {
   const baseUrl = opts.baseUrl ?? "http://localhost:8787";
-  const f = getFetch(opts);
-  const res = await f(`${baseUrl}/sessions/${encodeURIComponent(sessionId)}`, {
+  const res = await fetchWithRefresh(`${baseUrl}/sessions/${encodeURIComponent(sessionId)}`, {
     method: "DELETE",
     headers: buildHeaders(opts),
-  });
+  }, opts);
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as AskError;
     throw new Error(`/sessions DELETE ${res.status}: ${body.error ?? "unknown"}`);

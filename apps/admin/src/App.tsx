@@ -14,7 +14,7 @@ import LoginPage from "./pages/LoginPage.js";
 
 /**
  * 路由级 auth guard：缺 localStorage.admin_token → navigate("/login")。
- * 包裹受保护路由（M6.2 起 /chat-sim）。
+ * M6.3a 起包 9 个 admin 路由 + catch-all，仅 /login 公开。
  */
 function RequireAuth({ children }: { children: ReactElement }) {
   const navigate = useNavigate();
@@ -67,12 +67,50 @@ export default function App() {
 
       <main className="mx-auto max-w-5xl px-6 py-8">
         <Routes>
+          {/* 公开：仅 /login（M6.2）+ M6.3a 全包 RequireAuth 后的唯一例外 */}
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/upload" element={<Upload />} />
-          <Route path="/sources" element={<Sources />} />
-          <Route path="/documents" element={<Documents />} />
-          <Route path="/search" element={<SearchTest />} />
-          <Route path="/ask" element={<AskTest />} />
+
+          {/* 9 protected routes（M6.2 仅包 /chat-sim，M6.3a 全包） */}
+          <Route
+            path="/upload"
+            element={
+              <RequireAuth>
+                <Upload />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/sources"
+            element={
+              <RequireAuth>
+                <Sources />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/documents"
+            element={
+              <RequireAuth>
+                <Documents />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/search"
+            element={
+              <RequireAuth>
+                <SearchTest />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/ask"
+            element={
+              <RequireAuth>
+                <AskTest />
+              </RequireAuth>
+            }
+          />
           <Route
             path="/chat-sim"
             element={
@@ -81,10 +119,40 @@ export default function App() {
               </RequireAuth>
             }
           />
-          <Route path="/crawl" element={<CrawlPage />} />
-          <Route path="/crawl/xiaohongshu" element={<XiaohongshuCrawlPage />} />
-          <Route path="/crawl/wechat-mp" element={<WechatMpCrawlPage />} />
-          <Route path="*" element={<Upload />} />
+          <Route
+            path="/crawl"
+            element={
+              <RequireAuth>
+                <CrawlPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/crawl/xiaohongshu"
+            element={
+              <RequireAuth>
+                <XiaohongshuCrawlPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/crawl/wechat-mp"
+            element={
+              <RequireAuth>
+                <WechatMpCrawlPage />
+              </RequireAuth>
+            }
+          />
+
+          {/* catch-all 也包（M6.2 是裸 Upload，M6.3a 加 RequireAuth 避免侧门） */}
+          <Route
+            path="*"
+            element={
+              <RequireAuth>
+                <Upload />
+              </RequireAuth>
+            }
+          />
         </Routes>
       </main>
     </div>

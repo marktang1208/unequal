@@ -260,6 +260,61 @@ curl -X POST http://localhost:8787/chat \
 
 详见 `docs/superpowers/state-m6-2.md`（含 ECC 组件 + 真接路径 + commit 汇总）。
 
+## M6.3a 状态
+
+跑通：3 项 M6.2 留的"生产前必须堵的口"全部收口。**187 用例全绿**（164 M6.2 + 23 M6.3a 新增）。
+
+mock-first 实现：
+
+| 子系统 | 交付 | 防什么 |
+|---|---|---|
+| A — server rate limit | `lib/rate-limit.ts` + D1 `login_attempt` 表 + 2 路由改造 | 暴力破解 admin_token（5 次 / 15min 锁定）+ wx code 5min 重复刷 |
+| B — admin RequireAuth 全包 | `App.tsx` 9 路由 + catch-all `*` + `LoginPage` 429 倒计时 + 5 fetch `handleApiResponse` 串接 | jwt 24h 过期后用户操作能自动跳 /login（不再卡在 upload/search/ask/chat/crawl 页面）+ 防爆破倒计时 |
+| C — miniprogram 401 refresh | `fetchWithRefresh` wrapper + 5 函数挂载（chat/sessions/ask/rename/delete）| 小程序用户 24h 后不感知过期，透明 wx.login + retry |
+
+### Rate limit 行为（M6.3a 后）
+
+```bash
+# 5 次错 admin_token → 第 6 次 429 + retry_after
+for i in 1 2 3 4 5 6; do
+  curl -X POST http://localhost:8787/auth/admin-login \
+    -H "Content-Type: application/json" \
+    -d '{"admin_token":"wrong"}' -w "\n%{http_code}\n"
+done
+# 1-5: 401 INVALID_ADMIN_TOKEN
+# 6:   429 { "error": "RATE_LIMITED", "retry_after": 723 }
+```
+
+- 锁定窗口：15 分钟（滑动）
+- 阈值：5 次失败（可调，hardcoded 5，M6.4 提取 wrangler vars）
+- identifier：admin_token 用 `sha256(token).slice(0, 16)`；wx_code 用 `sha256(code).slice(0, 16)`（不存明文）
+
+### 401 refresh 行为
+
+- **admin**：`uploadFile` / `search` / `ask` / `authedJson` / `crawlUrl` 5 个 fetch 调用点 wrap `handleApiResponse` → 401 → 清 token + `window.location.href = "/login"` 强刷
+- **miniprogram**：`chat` / `listSessions` / `renameSession` / `deleteSession` / `ask` 5 函数走 `fetchWithRefresh` → 401 → 自动 `wx.login` 拿新 code → POST /auth/wx-login → 存 jwt → retry 原 request 1 次；wx.login 失败或 refresh 仍 401 → 透传给 caller（不重试避免死循环）
+
+### M6.3a 测试矩阵
+
+- `pnpm -F shared test` — 38 用例（无变化）
+- `pnpm -F api test` — 86 用例（rate-limit 6 + auth route 3 + 77 旧 = 86）
+- `pnpm -F miniprogram test` — 23 用例（api 4 + auth 1 + 18 旧 = 23）
+- `pnpm -F admin test` — 21 用例（App 3 + LoginPage 2 + handleApiResponse 1 + D2 串接 3 + 12 旧 = 21）
+- `pnpm -F crawler test` — 19 用例（无变化）
+- `pnpm -r typecheck` — 5 包全绿
+- `pnpm -F admin build` — 成功（195.67 kB JS / 14.41 kB CSS）
+- 累计：**187 用例全绿**（spec 估 182，+5：admin D2 串接 3 + SA1/SA3 边界扩展 2）
+
+### M6.3a 限制（mock-first 已知）
+
+- admin 5 fetch 串接靠静态 grep 测试守卫 — 未来新增 admin API 需同步加 regex
+- per-token rate limit：attacker 换 wrong-token 即可绕过 → M6.4 加 IP 维度
+- fetchWithRefresh 并发 race：3 并发 401 触发 3 次 wx.login（功能正确但浪费）→ M6.4 共享 inflight promise
+- D1 eventually consistent：同 token 5 并发 admin-login 有小窗口 → M6.4 加 token-level mutex
+- login_attempt 表无清理 → M6.5+ cron
+
+详见 `docs/superpowers/state-m6-3a.md`（含 commit 汇总 + ECC 组件 + 真接路径 + 4 个偏差记录）。
+
 ## M6.1 状态
 
 跑通：多轮会话 + Durable Objects（一个 session 一个 DO instance）+ D1 session 列表 + 小程序双 tab（对话 / 历史）+ admin ChatSim 多 session 切换。130 用例全绿（73 M0-M5 + 57 M6.1）。
