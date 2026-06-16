@@ -7,23 +7,22 @@
   "observability": { "enabled": true },
 
   "vars": {
-    "ENVIRONMENT": "development",
+    "ENVIRONMENT": "production",
     "ALLOWED_ORIGIN": "*",
     "AUTH_MODE": "admin_token",
     "WX_APP_ID": "wx_development_placeholder",
-    "JWT_SECRET": "dev-jwt-secret-change-me-in-production-32-bytes-min",
+    "MINIMAX_BASE_URL": "https://api.MiniMax.chat/v1",
+    "ADMIN_IP_ALLOWLIST": "240e:3b4:38ed:4100:10a1:f77f:f362:d8b0",
     // M6.4: rate limit 配置（可选；缺省走 lib/rate-limit.ts DEFAULT_RATE_LIMIT_CONFIG）
     "LOGIN_MAX_ATTEMPTS": "5",
-    "LOGIN_WINDOW_MS": "900000",
-    // M6.4: cron cleanup endpoint 鉴权（M6.4 放 vars；CP-5 真接时改 wrangler secret put）
-    "CRON_SECRET": "dev-cron-secret-change-me-in-production"
+    "LOGIN_WINDOW_MS": "900000"
   },
 
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "unequal-db",
-      "database_id": "PLACEHOLDER_DATABASE_ID",
+      "database_id": "11617a27-81da-4459-a8f5-c8ab1d7afb52",
       "migrations_dir": "migrations"
     }
   ],
