@@ -28,6 +28,7 @@ import {
   readRateLimitConfig,
 } from "../lib/rate-limit.js";
 import { withTokenMutex } from "../lib/token-mutex.js";
+import { parseAdminIpAllowlist, isAdminIpAllowed } from "../lib/admin-ip-allowlist.js";
 import type { Env } from "../types.js";
 
 const JWT_TTL_SECONDS = 24 * 60 * 60;
@@ -183,11 +184,20 @@ export const authRoute = {
       // identifier = sha256(admin_token).hex().slice(0, 16)
       //
       // M6.6：加 per-IP 维度（双层独立）。attacker 换 wrong-token N 次绕过 5/15min 的攻击面被封堵
+      //
+      // M6.10：admin IP 白名单跳过 per-IP 限流（per-token 仍锁 — 防御 5 错 token）
       const adminIdentifier = await sha256Identifier(adminToken);
-      const clientIpHash = await sha256ClientIp(getClientIp(request));
-      const rateCheck = await checkRateLimitDual(
-        env.DB, adminIdentifier, clientIpHash, "admin", Date.now(), readRateLimitConfig(env),
-      );
+      const clientIp = getClientIp(request);
+      const clientIpHash = await sha256ClientIp(clientIp);
+      const adminAllowlist = parseAdminIpAllowlist(env);
+      const isAdminIp = isAdminIpAllowed(clientIp, adminAllowlist);
+
+      let rateCheck = { locked: false, retry_after: 0 };
+      if (!isAdminIp) {
+        rateCheck = await checkRateLimitDual(
+          env.DB, adminIdentifier, clientIpHash, "admin", Date.now(), readRateLimitConfig(env),
+        );
+      }
       if (rateCheck.locked) {
         // 显式 return（带 retry_after），不走 throw HttpError
         return Response.json(
