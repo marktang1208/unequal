@@ -494,6 +494,95 @@ curl -X POST http://localhost:8787/cron/cleanup-login-attempts
 
 详见 `docs/superpowers/state-m6-4.md`（含 commit 汇总 + 主线程接管原因 + 5 个偏差记录 + CP-5 真接路径）。
 
+## M6.5 状态
+
+跑通：2 项 M6.4 留口的 mock-first 已知 limitation 收口 — (1) `cleanupLoginAttempts` 函数抽取 + worker.scheduled 真接 Cloudflare Cron Triggers（每日 UTC 03:00 触发）；(2) admin `/stats` 页面可视化（数字卡 + by_type + 24/72/168h CSS bars）。**237 用例全绿**（219 M6.4 收尾 + 18 M6.5 新增：api 15 + admin 3）。
+
+mock-first 实现：
+
+- `apps/api/src/lib/cleanup.ts` 新 `cleanupLoginAttempts(env, cutoffMs)` + `DEFAULT_CUTOFF_MS = 86_400_000` + `CleanupResult { deleted, cutoff }`
+- `apps/api/src/routes/cron.ts` 改：inline DELETE SQL 删除，改调 `cleanupLoginAttempts(env, DEFAULT_CUTOFF_MS)`；行为不变（4 测试保留）
+- `apps/api/src/scheduled.ts` 新（独立模块）：scheduled handler 函数（try/catch + console.log 成功 / console.error 失败，不 re-throw）
+- `apps/api/src/index.ts` 改：`export default app` → `export default { fetch: app.fetch.bind(app), scheduled }`；加 `app.get("/stats/login-attempts", ...)`；加 `export { ChatSessionDO }` re-export（wrangler build 需要）
+- `apps/api/wrangler.jsonc` 改：+3 行 `triggers.crons = ["0 3 * * *"]`
+- `apps/api/src/routes/stats.ts` 新 `statsRoute.GET_LOGIN_ATTEMPTS` handler + `clampHours` + `buildStats` + types
+- `apps/admin/src/lib/api.ts` 改：+30 行 `getLoginAttemptStats(hours)` helper + `LoginAttemptStats` interface
+- `apps/admin/src/pages/StatsPage.tsx` 新（~180 行）：4 数字卡 + by_type TypeRow + HourBars CSS bars（无图表库）+ Asia/Shanghai 时区 tooltip
+- `apps/admin/src/App.tsx` 改：+4 行（import + nav `<Link to="/stats">统计` + routes `<Route path="/stats">`）
+- 4 task 跨 2 包主线程直接做（M6.3c/d/4 教训应用，总耗时 ~100 min）
+
+### Scheduled handler 行为（M6.5 后）
+
+```bash
+# CF Cron Triggers 每日 UTC 03:00 自动触发（无需外部 cron）
+# scheduled handler 调 cleanupLoginAttempts(env, DEFAULT_CUTOFF_MS)
+# 成功 → console.log "[cron] cleanup-login-attempts: deleted=N"
+# 失败 → console.error + 不 re-throw（防 worker panic）
+
+# wrangler.jsonc triggers
+"triggers": {
+  "crons": ["0 3 * * *"]
+}
+
+# 临时验证：改 cron 到 */1 * * * *（每分钟），wrangler tail 看日志
+```
+
+### Stats dashboard 行为（M6.5 后）
+
+```bash
+# admin JWT 鉴权
+curl http://localhost:8787/stats/login-attempts?hours=24 \
+  -H "Authorization: Bearer $ADMIN_JWT"
+# → 200 {
+#     "window_hours": 24,
+#     "cutoff": 1718520000000,
+#     "total_failed": 4,
+#     "total_succeeded": 7,
+#     "by_type": {
+#       "admin":   { "failed": 3, "succeeded": 5 },
+#       "wx_code": { "failed": 1, "succeeded": 2 }
+#     },
+#     "by_hour": [
+#       { "hour_ts": 1718491200000, "failed": 0, "succeeded": 0 },
+#       ...
+#     ]  // 长度 === window_hours (24/72/168)
+#   }
+
+# hours clamp 行为（与 spec §6.1 clampHours 一致）
+hours=999  → 168 (clamp 上限)
+hours=0    → 1   (clamp 下限)
+hours=-5   → 1   (clamp 下限)
+hours=abc  → 24  (NaN fallback 默认值)
+hours 缺省  → 24 (默认 24h)
+
+# 401 无效 admin token → UNAUTHORIZED
+curl http://localhost:8787/stats/login-attempts
+# → 401 { "error": "UNAUTHORIZED", "message": "..." }
+```
+
+### M6.5 测试矩阵
+
+- `pnpm -F shared test` — 38 用例（无变化）
+- `pnpm -F api test` — 124 用例（cleanup 6 + scheduled 2 + stats 7 + 109 旧 = 124）
+- `pnpm -F miniprogram test` — 32 用例（无变化）
+- `pnpm -F admin test` — 24 用例（StatsPage 3 + 21 旧 = 24）
+- `pnpm -F crawler test` — 19 用例（无变化）
+- `pnpm -r typecheck` — 5 包全绿
+- `pnpm -r build` — api dry-run OK（1216 KB）+ admin build OK（199 KB）
+- 累计：**237 用例全绿**（spec 估 16 新增，实际 +18：cleanup.test.ts 加 cutoffMs=0 边界 + DEFAULT_CUTOFF_MS 常量验证）
+
+### M6.5 限制（mock-first 已知）
+
+- Cloudflare Cron Triggers 真触发未验（miniflare 不模拟 cron；CP-5 真接验证）
+- 真 D1 SQL `cleanupLoginAttempts` DELETE 性能未验（fakeDB 不执行 SQL；CP-5 验 < 100ms 预期）
+- 真 D1 SQL `statsRoute` aggregation 性能未验（CP-5 验 < 200ms 预期）
+- admin 真浏览器渲染（CSS bars + Asia/Shanghai 时区 + hover tooltip）未验（jsdom 不验 CSS layout；CP-5 真接验）
+- 真 admin JWT 鉴权（jwt 模式）未验（测试用 admin_token 模式简化）
+- scheduled handler 不加 CRON_SECRET 鉴权（CF Cron Triggers 是控制面触发，不暴露公网 — spec §5.5 决策）
+- 0 production console.log（scheduled handler 的 console.log/error 是 CF Worker 日志约定，**不计入**）
+
+详见 `docs/superpowers/state-m6-5.md`（含 8 个偏差记录 + commit 汇总 + CP-5 真接路径 + 下一步建议）。
+
 ## M6.1 状态
 
 跑通：多轮会话 + Durable Objects（一个 session 一个 DO instance）+ D1 session 列表 + 小程序双 tab（对话 / 历史）+ admin ChatSim 多 session 切换。130 用例全绿（73 M0-M5 + 57 M6.1）。
