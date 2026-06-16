@@ -101,6 +101,74 @@ export async function ask(q: string): Promise<AskResponse> {
   return (await res.json()) as AskResponse;
 }
 
+/* ---------- M6.1 多轮会话（spec §3.2 / §3.3） ---------- */
+
+export interface ChatCitation {
+  n: number;
+  title: string;
+  trust_level: 0 | 1 | 2 | 3;
+  chunk_id: string;
+}
+
+export interface ChatResponse {
+  answer: string;
+  disclaimer?: string;
+  citations: ChatCitation[];
+  session_id: string;
+  session_title: string | null;
+  is_new_session: boolean;
+  cached: boolean;
+  degraded: boolean;
+}
+
+export interface ChatSessionRow {
+  id: string;
+  user_id: string;
+  title: string | null;
+  created_at: number;
+  last_active_at: number;
+  degraded_at: number | null;
+}
+
+async function authedJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    ...((init.headers as Record<string, string>) ?? {}),
+  };
+  const token = getToken();
+  if (token) headers.authorization = `Bearer ${token}`;
+  const res = await fetch(`/api${path}`, { ...init, headers });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`${init.method ?? "GET"} ${path} ${res.status}: ${text}`);
+  }
+  return (await res.json()) as T;
+}
+
+export async function chat(q: string, sessionId?: string): Promise<ChatResponse> {
+  return authedJson<ChatResponse>("/chat", {
+    method: "POST",
+    body: JSON.stringify({ q, ...(sessionId ? { session_id: sessionId } : {}) }),
+  });
+}
+
+export async function listSessions(): Promise<{ sessions: ChatSessionRow[] }> {
+  return authedJson<{ sessions: ChatSessionRow[] }>("/sessions", { method: "GET" });
+}
+
+export async function renameSession(sessionId: string, title: string): Promise<void> {
+  await authedJson<{ ok: true }>(`/sessions/${encodeURIComponent(sessionId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ title }),
+  });
+}
+
+export async function deleteSession(sessionId: string): Promise<void> {
+  await authedJson<{ ok: true }>(`/sessions/${encodeURIComponent(sessionId)}`, {
+    method: "DELETE",
+  });
+}
+
 export interface CrawledDocument {
   url: string;
   title: string;
