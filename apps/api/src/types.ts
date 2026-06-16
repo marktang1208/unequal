@@ -17,4 +17,9 @@ export interface Env {
   // M6.2 测试依赖注入：/auth/wx-login 通过 env.fetchImpl 注入 mock fetch（spec §3.5）。
   // 生产路径不传，自动 fallback 到全局 fetch。
   fetchImpl?: typeof fetch;
+  // M6.4: rate limit 配置（可选；缺省走 lib/rate-limit.ts DEFAULT_RATE_LIMIT_CONFIG）
+  LOGIN_MAX_ATTEMPTS?: string;
+  LOGIN_WINDOW_MS?: string;
+  // M6.4: cron cleanup endpoint 鉴权（M6.4 放 vars；CP-5 真接时改 wrangler secret put）
+  CRON_SECRET?: string;
 }

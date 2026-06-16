@@ -23,6 +23,7 @@ import {
   checkRateLimit,
   recordAttempt,
   sha256Identifier,
+  readRateLimitConfig,
 } from "../lib/rate-limit.js";
 import type { Env } from "../types.js";
 
@@ -85,7 +86,7 @@ export const authRoute = {
       // identifier = sha256(code).slice(0, 16)，type='wx_code'
       // 微信 code 5min TTL，hash 撞概率 2^-64 可忽略；同 code 重试 5 次后拦截
       const codeIdentifier = await sha256Identifier(code);
-      const rateCheck = await checkRateLimit(env.DB, codeIdentifier, "wx_code");
+      const rateCheck = await checkRateLimit(env.DB, codeIdentifier, "wx_code", Date.now(), readRateLimitConfig(env));
       if (rateCheck.locked) {
         return Response.json(
           {
@@ -167,7 +168,7 @@ export const authRoute = {
       // M6.3a rate limit pre-check（spec §5.1）：在 verifyAdminToken 之前拦截
       // identifier = sha256(admin_token).hex().slice(0, 16)
       const adminIdentifier = await sha256Identifier(adminToken);
-      const rateCheck = await checkRateLimit(env.DB, adminIdentifier, "admin");
+      const rateCheck = await checkRateLimit(env.DB, adminIdentifier, "admin", Date.now(), readRateLimitConfig(env));
       if (rateCheck.locked) {
         // 显式 return（带 retry_after），不走 throw HttpError
         return Response.json(
