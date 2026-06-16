@@ -1,11 +1,14 @@
 /**
- * M6.2 /auth 路由（spec §3.3 + §3.4）。
+ * M6.2 + M6.3a /auth 路由（spec §3.3 + §3.4 + M6.3a §5.1/§5.2）。
  *
  * 2 endpoint：
  * - POST /auth/wx-login    { code } → 调 jscode2session → findOrCreateUser → signJwt
+ *   M6.3a：jscode2session 抛 INVALID_CODE 时记 failed attempt（identifier=sha256(code).slice(0,16), type='wx_code'）
  * - POST /auth/admin-login { admin_token } → 验 env.ADMIN_TOKEN → signJwt (userId=DEFAULT_ADMIN_USER_ID, isAdmin=true)
+ *   M6.3a：verifyAdminToken 之前做 rate limit pre-check；验后 recordAttempt（无论成功失败）
  *
  * HttpError 走 try/catch 统一映射 status+code（与 chat.ts / sessions.ts 同模式）。
+ * 429 显式 return Response.json（带 retry_after 字段），不走 throw HttpError。
  * jscode2session 走 env.fetchImpl 注入（M6.2 测试依赖）；生产路径不传，自动用全局 fetch。
  */
 import {
@@ -16,6 +19,11 @@ import {
 import { signJwt } from "../lib/auth-jwt.js";
 import { jscode2session } from "../lib/wx.js";
 import { findOrCreateUser } from "../lib/user.js";
+import {
+  checkRateLimit,
+  recordAttempt,
+  sha256Identifier,
+} from "../lib/rate-limit.js";
 import type { Env } from "../types.js";
 
 const JWT_TTL_SECONDS = 24 * 60 * 60;
@@ -121,17 +129,35 @@ export const authRoute = {
           { status: 400 },
         );
       }
+      // M6.3a rate limit pre-check（spec §5.1）：在 verifyAdminToken 之前拦截
+      // identifier = sha256(admin_token).hex().slice(0, 16)
+      const adminIdentifier = await sha256Identifier(adminToken);
+      const rateCheck = await checkRateLimit(env.DB, adminIdentifier, "admin");
+      if (rateCheck.locked) {
+        // 显式 return（带 retry_after），不走 throw HttpError
+        return Response.json(
+          {
+            error: "RATE_LIMITED",
+            message: "Too many failed admin login attempts. Try again later.",
+            retry_after: rateCheck.retry_after,
+          },
+          { status: 429 },
+        );
+      }
       const auth = verifyAdminToken(
         `Bearer ${adminToken}`,
         env.ADMIN_TOKEN,
       );
+      // M6.3a：无论成功失败都记 attempt（spec §5.1 step 4）
       if (!auth.ok) {
+        await recordAttempt(env.DB, adminIdentifier, "admin", false);
         throw new HttpError(401, "INVALID_ADMIN_TOKEN", auth.message);
       }
       const token = await signJwt(
         { userId: DEFAULT_ADMIN_USER_ID, isAdmin: true },
         env.JWT_SECRET ?? "",
       );
+      await recordAttempt(env.DB, adminIdentifier, "admin", true);
       const response: AdminLoginResponse = {
         token,
         user_id: DEFAULT_ADMIN_USER_ID,

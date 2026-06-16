@@ -1,14 +1,18 @@
 /**
- * M6.2 /auth 路由测试（spec §3.3 + §3.4 + §9）。
+ * M6.2 + M6.3a /auth 路由测试（spec §3.3 + §3.4 + M6.3a §5.1/§5.2 + §9.1）。
  *
  * 测试策略（混合 miniflare + unit）：
  * - /auth/admin-login 走 miniflare bundle（不调外网，纯本地逻辑）
  * - /auth/wx-login 走 authRoute.WX_LOGIN 单测（miniflare 不支持把 fetchImpl 注入到 env bindings）
  *   → 测试代码直接构造 env { fetchImpl } 调用 route 处理器
  *
- * 5 用例：
+ * M6.2 5 用例：
  * - admin-login 3：200 happy / 401 错 token / 400 缺 admin_token
  * - wx-login 2：200 happy (单测) / 400 缺 code (单测)
+ *
+ * M6.3a +1 用例：
+ * - admin-login 429：5 次错 token 后第 6 次（即使正确）→ 429 RATE_LIMITED 含 retry_after
+ *   （wx-login 429 2 用例在 Task 4 添加）
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { Miniflare } from "miniflare";
@@ -38,8 +42,8 @@ const FAKE_OPENID = "mock_openid_001";
 
 async function applyMigrations(d1: D1Database) {
   const { splitSqlIntoStatements } = await import("../sql-split.js");
-  // /auth 只需要 0001_init.sql 的 user 表；不走 chat/query_cache
-  for (const f of ["0001_init.sql"]) {
+  // /auth 需要 0001_init.sql（user 表）+ 0005_login_attempt.sql（M6.3a rate limit）
+  for (const f of ["0001_init.sql", "0005_login_attempt.sql"]) {
     const sql = await readFile(resolve(MIGRATIONS_DIR, f), "utf-8");
     for (const stmt of splitSqlIntoStatements(sql)) {
       await d1.exec(stmt);
@@ -130,9 +134,10 @@ describe("/auth route (Miniflare + D1 + mock fetchImpl)", () => {
   });
 
   beforeEach(async () => {
-    // 每个用例前清空 user 表（wx-login 单测 create 走 user）
+    // 每个用例前清空 user 表（wx-login 单测 create 走 user）+ login_attempt（rate limit 状态）
     const d1 = await mf.getD1Database("DB");
     await d1.exec("DELETE FROM user");
+    await d1.exec("DELETE FROM login_attempt");
   });
 
   // ---------- /auth/admin-login (miniflare bundle) ----------
@@ -177,6 +182,35 @@ describe("/auth route (Miniflare + D1 + mock fetchImpl)", () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
     expect(body.error).toBe("MISSING_TOKEN");
+  });
+
+  it("POST /auth/admin-login 429: 5 次同 wrong-token 失败后第 6 次 → 429 RATE_LIMITED 含 retry_after", async () => {
+    // spec §6：identifier = sha256(admin_token).slice(0,16) — per-token rate limit
+    // 5 次用同一 wrong-token → 同一 hash 累计 5 failed
+    const WRONG_TOKEN = "wrong-token-xyz";
+    for (let i = 0; i < 5; i++) {
+      const failRes = await mf.dispatchFetch("http://localhost/auth/admin-login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ admin_token: WRONG_TOKEN }),
+      });
+      expect(failRes.status).toBe(401);
+    }
+    // 第 6 次同 wrong-token → 应被 rate limit 拦截在 verifyAdminToken 之前
+    const blocked = await mf.dispatchFetch("http://localhost/auth/admin-login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ admin_token: WRONG_TOKEN }),
+    });
+    expect(blocked.status).toBe(429);
+    const blockedBody = (await blocked.json()) as {
+      error: string;
+      retry_after: number;
+      message: string;
+    };
+    expect(blockedBody.error).toBe("RATE_LIMITED");
+    expect(blockedBody.retry_after).toBeGreaterThan(0);
+    expect(blockedBody.retry_after).toBeLessThanOrEqual(900);
   });
 
   // ---------- /auth/wx-login (单测 authRoute.WX_LOGIN，env.fetchImpl 注入) ----------
