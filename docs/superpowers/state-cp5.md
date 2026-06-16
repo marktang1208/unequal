@@ -304,6 +304,19 @@ curl -sf $API/stats/login-attempts -H "Authorization: Bearer $TOKEN"
 
 ---
 
+## 12. 附录：v0 封存归档（2026-06-17）
+
+cp-6 CloudBase 全量迁移完成后，v0 CF 部署进入封存状态。
+
+- **git tag**：`v0-cf-archived`（CP-6 收尾 commit 同步打，指向 `f623f66`）
+- **CF 资源保留**：Worker / D1 / Vectorize / R2 均不销毁（cost ¥0/month）
+- **回滚路径**：改 mini-program + admin apiBaseUrl 指回 `https://unequal-api.yydsnews.workers.dev`（5 分钟）
+- **决策点**：v1 稳定运行 1 个月+ 后，让用户决策是否销毁 v0 资源
+
+详见 `docs/superpowers/specs/2026-06-17-cp6-cloudbase-migration-design.md` + `docs/superpowers/state-cp6.md`
+
+---
+
 **🛑 CP-5 收尾待办**：
 - [ ] README 加 CP-5 节
 - [ ] Commit state-cp5.md + app.ts 改动
