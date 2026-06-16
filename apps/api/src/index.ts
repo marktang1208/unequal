@@ -1,29 +1,45 @@
 /**
- * CP-6: HTTP trigger 入口
+ * CP-6: HTTP trigger 统一入口 + 分发
  *
- * 单一函数入口按 event.path 分发到 13 个 handler。
- * CloudBase 推荐每个函数独立部署，本文件作为：
- * - 启动时硬验证入口（validateEmbeddingDim 在模块加载时跑）
- * - 统一分发骨架（Phase 2 填充 13 个 handler）
+ * 部署模式：单一 CloudBase 函数分发到 13 个 handler（spec §2.4 简化方案）。
+ * 推荐：每个 handler 独立部署（spec §2.4 推荐方案）—— 部署期切换到独立入口文件。
  *
- * Phase 2+ 部署模式：
- * - 推荐：每个 handler 独立成云函数（13 个独立部署）
- * - 简化：本文件作为单一入口分发（部署 1 个函数）
+ * Phase 2：13 handler 骨架就位；返 501 NOT_IMPLEMENTED
+ * Phase 3-7：按 phase 填充
  *
- * 当前 Phase 1：骨架 + 硬验证，分发返 501。
+ * 启动时硬验证（spec §7.3）：
+ * - validateEmbeddingDim 在模块加载时跑一次（production 才执行）
+ * - 失败 throw → 函数冷启动失败 → 不会接收任何请求
  */
 
-import { getEnv, validateEmbeddingDim } from "./lib/env.js";
+import {
+  getEnv,
+  validateEmbeddingDim,
+} from "./lib/env.js";
 import {
   errorResponse,
-  getClientIp,
   jsonResponse,
   optionsResponse,
   parseFuncPath,
   type HttpTriggerEvent,
+  type HttpTriggerResponse,
 } from "./lib/handler-utils.js";
 
-// 启动时硬验证（模块加载时跑一次，失败 throw → 函数冷启动失败）
+import * as ask from "./handlers/api-ask.js";
+import * as upload from "./handlers/api-upload.js";
+import * as ingest from "./handlers/api-ingest.js";
+import * as search from "./handlers/api-search.js";
+import * as chat from "./handlers/api-chat.js";
+import * as sessionsList from "./handlers/api-sessions-list.js";
+import * as sessionsGet from "./handlers/api-sessions-get.js";
+import * as sessionsDelete from "./handlers/api-sessions-delete.js";
+import * as stats from "./handlers/api-stats.js";
+import * as authWxLogin from "./handlers/api-auth-wx-login.js";
+import * as authAdminLogin from "./handlers/api-auth-admin-login.js";
+import * as cronCleanup from "./handlers/api-cron-cleanup.js";
+import * as health from "./handlers/api-health.js";
+
+// 启动时硬验证（生产期）
 const startValidation = async () => {
   try {
     await validateEmbeddingDim();
@@ -36,10 +52,35 @@ const startValidation = async () => {
   }
 };
 
-// 触发启动验证（不 await —— 让函数冷启动时并行）
 void startValidation();
 
-export async function main(event: HttpTriggerEvent) {
+/** func 名 → handler 模块映射 */
+type HandlerModule = { main: (event: HttpTriggerEvent) => Promise<HttpTriggerResponse> };
+
+const HANDLER_MAP: Record<string, HandlerModule> = {
+  "api-ask": ask as unknown as HandlerModule,
+  "api-upload": upload as unknown as HandlerModule,
+  "api-ingest": ingest as unknown as HandlerModule,
+  "api-search": search as unknown as HandlerModule,
+  "api-chat": chat as unknown as HandlerModule,
+  "api-sessions-list": sessionsList as unknown as HandlerModule,
+  "api-sessions-get": sessionsGet as unknown as HandlerModule,
+  "api-sessions-delete": sessionsDelete as unknown as HandlerModule,
+  "api-stats": stats as unknown as HandlerModule,
+  "api-auth-wx-login": authWxLogin as unknown as HandlerModule,
+  "api-auth-admin-login": authAdminLogin as unknown as HandlerModule,
+  "api-cron-cleanup": cronCleanup as unknown as HandlerModule,
+  "api-health": health as unknown as HandlerModule,
+};
+
+/** 兼容 /health 短路径（admin 历史惯例） */
+function resolveFuncPath(path: string): string | null {
+  if (path === "/health") return "api-health";
+  const parsed = parseFuncPath(path);
+  return parsed?.func ?? null;
+}
+
+export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse> {
   const env = getEnv();
 
   // OPTIONS 预检
@@ -47,21 +88,25 @@ export async function main(event: HttpTriggerEvent) {
     return optionsResponse(env.ALLOWED_ORIGIN);
   }
 
-  // 简单存活检查
-  if (event.path === "/health" || event.path === "/api-health") {
-    return jsonResponse({ ok: true, environment: env.ENVIRONMENT });
-  }
-
-  // 按 func name 分发
-  const parsed = parseFuncPath(event.path);
-  if (!parsed) {
+  const funcName = resolveFuncPath(event.path);
+  if (!funcName) {
     return errorResponse("NOT_FOUND", `Unknown path: ${event.path}`, 404);
   }
 
-  // Phase 2+ 填充实际 handler
-  return errorResponse(
-    "NOT_IMPLEMENTED",
-    `Handler ${parsed.func} not yet wired (Phase 1 stub). clientIp=${getClientIp(event)}`,
-    501,
-  );
+  const handler = HANDLER_MAP[funcName];
+  if (!handler) {
+    return errorResponse("NOT_FOUND", `No handler for ${funcName}`, 404);
+  }
+
+  try {
+    return await handler.main(event);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(`[${funcName}] handler threw:`, err);
+    const message = err instanceof Error ? err.message : String(err);
+    return jsonResponse(
+      { error: "INTERNAL_ERROR", message: `${funcName} failed: ${message}` },
+      500,
+    );
+  }
 }

@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Read(//Users/Mark/.claude/**)",
+      "Read(//Users/Mark/.claude/plugins/**)",
+      "Bash(claude plugin *)",
+      "Bash(git -C /Users/Mark/cc_project/unequal/ status)",
+      "Bash(mkdir -p /Users/Mark/cc_project/unequal/docs/superpowers/specs)",
+      "Bash(git -C /Users/Mark/cc_project/unequal/ init)",
+      "Bash(git -C /Users/Mark/cc_project/unequal/ config user.email \"claude@local\")",
+      "Bash(git -C /Users/Mark/cc_project/unequal/ config user.name \"Claude Brainstorming\")",
+      "Bash(git -C /Users/Mark/cc_project/unequal/ add docs/)",
+      "Bash(git -C /Users/Mark/cc_project/unequal/ commit -m ' *)",
+      "Read(//Users/Mark/.config/superpowers/worktrees/**)",
+      "Bash(git -C /Users/Mark/cc_project/unequal/ check-ignore -q .worktrees)",
+      "Bash(git -C /Users/Mark/cc_project/unequal/ status --short)",
+      "Bash(mkdir -p ~/.config/superpowers/worktrees/unequal)",
+      "Bash(git -C /Users/Mark/cc_project/unequal/ worktree add ~/.config/superpowers/worktrees/unequal/m0-m1 -b feat/m0-m1)",
+      "Bash(git -C ~/.config/superpowers/worktrees/unequal/m0-m1/ branch --show-current)",
+      "Bash(pnpm --version)",
+      "Bash(pnpm install *)"
+    ]
+  },
+  "enabledPlugins": {}
+}
