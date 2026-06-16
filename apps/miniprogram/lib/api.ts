@@ -78,7 +78,19 @@ function getFetch(opts: ApiOptions): (input: string, init: { method?: string; he
  * - wx.login 或 /auth/wx-login 失败 → 原 401 透传给 caller（caller 决定 mock-first fallback）
  *
  * M6.2 adminLogin 走独立路径（无 jwt header），保留直 getFetch 不变。
+ *
+ * M6.4：同 baseUrl 并发 401 共享 inflight ensureJwt promise（避免 N 次 wx.login）。
+ *   - 模块级 Map<baseUrl, Promise<jwt>>；第一个 401 创建 inflight，第二个 / 第三个 await 同一 promise
+ *   - inflight 完成（成功 / 失败）后 .finally 清缓存，下次 401 重新触发
  */
+// 模块级 inflight cache：key = baseUrl，value = inflight ensureJwt promise
+const inflightEnsureJwt = new Map<string, Promise<string>>();
+
+/** @internal 测试桩：清空 inflight promise cache（仅单测用） */
+export function __clearInflightEnsureJwt(): void {
+  inflightEnsureJwt.clear();
+}
+
 /** @internal 导出仅用于单测；生产代码不直接调 */
 export async function fetchWithRefresh(
   url: string,
@@ -89,18 +101,30 @@ export async function fetchWithRefresh(
   const f = getFetch(opts);
   const res = await f(url, init);
   if (res.status !== 401 || isRetry) return res;
-  // 401 + 非 retry → 触发 refresh
+
+  // 401 + 非 retry → 共享 inflight ensureJwt（同 baseUrl 并发只触发 1 次 wx.login）
+  const baseUrl = opts.baseUrl ?? "http://localhost:8787";
+  let inflight = inflightEnsureJwt.get(baseUrl);
+  if (!inflight) {
+    inflight = ensureJwt(baseUrl, opts.fetchImpl).finally(() => {
+      // 不论成功失败清掉缓存，下次 401 重新触发
+      inflightEnsureJwt.delete(baseUrl);
+    });
+    inflightEnsureJwt.set(baseUrl, inflight);
+  }
+
+  let newJwt: string;
   try {
-    const newJwt = await ensureJwt(opts.baseUrl ?? "http://localhost:8787", opts.fetchImpl);
-    const newInit: typeof init = {
-      ...init,
-      headers: { ...init.headers, authorization: `Bearer ${newJwt}` },
-    };
-    return await fetchWithRefresh(url, newInit, opts, true);
+    newJwt = await inflight;
   } catch {
     // wx.login 失败或 /auth/wx-login 失败 → 原 401 透传
     return res;
   }
+  const newInit: typeof init = {
+    ...init,
+    headers: { ...init.headers, authorization: `Bearer ${newJwt}` },
+  };
+  return await fetchWithRefresh(url, newInit, opts, true);
 }
 
 function buildHeaders(opts: ApiOptions): Record<string, string> {

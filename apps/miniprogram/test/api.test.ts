@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ask, chat, listSessions, renameSession, deleteSession, adminLogin, updateNickname } from "../lib/api.js";
-import { fetchWithRefresh } from "../lib/api.js";
+import { fetchWithRefresh, __clearInflightEnsureJwt } from "../lib/api.js";
 import { __setJwtStorageImpl } from "../lib/chat-storage.js";
 import type { AskResponse, ChatResponse, SessionsListResponse } from "../lib/types.js";
 
@@ -411,3 +411,156 @@ describe("fetchWithRefresh (M6.3a) — 401 透明 refresh + retry", () => {
     expect(src).toMatch(/^export async function fetchWithRefresh\b/m);
   });
 });
+
+/* ---------- M6.4 fetchWithRefresh 共享 inflight promise ---------- */
+
+describe("fetchWithRefresh (M6.4) — inflight promise 共享", () => {
+  let storage: Record<string, string> = {};
+
+  beforeEach(() => {
+    storage = {};
+    __setJwtStorageImpl(
+      (k) => storage[k] ?? "",
+      (k, v) => { storage[k] = v; },
+    );
+    __clearInflightEnsureJwt();   // 重置模块级 inflight Map
+    wxLoginMock.mockReset();
+    wxRequestMock.mockReset();
+  });
+
+  it("3 并发 401 → wx.login 只调 1 次（inflight promise 共享）", async () => {
+    // 关键：第一个 fetchWithRefresh 调 ensureJwt 创建 inflight promise（wx.login pending），
+    // 第二个 / 第三个 fetchWithRefresh 直接复用 inflight promise，不调 wx.login。
+    let resolveWxLogin: ((v: { code: string }) => void) | null = null;
+    wxLoginMock.mockImplementation(({ success }: any) => {
+      // 不自动 resolve — 让第一个 ensureJwt 卡在 pending，3 个 fetchWithRefresh 都进入 inflight await
+      resolveWxLogin = success;
+    });
+    const fetchMock = vi.fn(async (input: string, _init?: RequestInit) => {
+      if (input === "http://localhost:8787/auth/wx-login") {
+        return new Response(
+          JSON.stringify({ token: "new_jwt", user_id: "u", is_new_user: false, expires_in: 86400 }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({ error: "UNAUTHORIZED" }), { status: 401 });
+    }) as unknown as typeof fetch;
+
+    // 并发 3 个 fetchWithRefresh（不 await，先让 3 个都进入 inflight await 状态）
+    const p1 = fetchWithRefresh(
+      "http://localhost:8787/ask",
+      { method: "POST", headers: { authorization: "Bearer old" } },
+      { baseUrl: "http://localhost:8787", fetchImpl: fetchMock },
+    );
+    const p2 = fetchWithRefresh(
+      "http://localhost:8787/chat",
+      { method: "POST", headers: { authorization: "Bearer old" } },
+      { baseUrl: "http://localhost:8787", fetchImpl: fetchMock },
+    );
+    const p3 = fetchWithRefresh(
+      "http://localhost:8787/sessions",
+      { method: "GET", headers: { authorization: "Bearer old" } },
+      { baseUrl: "http://localhost:8787", fetchImpl: fetchMock },
+    );
+
+    // 让 microtask queue 跑 — 3 个 fetchWithRefresh 都已触发 ensureJwt 并 await inflight
+    await new Promise((r) => setTimeout(r, 0));
+    // 关键：wxLoginMock 此时只被调 1 次（第一个 ensureJwt 调，inflight promise 创建）
+    expect(wxLoginMock).toHaveBeenCalledTimes(1);
+
+    // resolve wx.login → inflight promise 完成 → 3 个 fetchWithRefresh 各自 retry
+    resolveWxLogin!({ code: "code_3" });
+    await Promise.all([p1, p2, p3]);
+
+    // 最终 wxLoginMock 仍只 1 次（其他 2 个直接复用 inflight）
+    expect(wxLoginMock).toHaveBeenCalledTimes(1);
+    // /auth/wx-login 也只 1 次
+    expect(fetchMock).toHaveBeenCalledWith("http://localhost:8787/auth/wx-login", expect.any(Object));
+  });
+
+  it("串行：先 1 个 401 → refresh 完成 → storage 清空（jwt 过期）→ 再 401 → wx.login 调第 2 次", async () => {
+    let wxLoginCount = 0;
+    wxLoginMock.mockImplementation(({ success }: any) => {
+      wxLoginCount++;
+      success({ code: `code_${wxLoginCount}` });
+    });
+    const fetchMock = vi.fn(async (input: string, _init?: RequestInit) => {
+      if (input === "http://localhost:8787/auth/wx-login") {
+        return new Response(
+          JSON.stringify({ token: "new_jwt", user_id: "u", is_new_user: false, expires_in: 86400 }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({ error: "UNAUTHORIZED" }), { status: 401 });
+    }) as unknown as typeof fetch;
+
+    // 第 1 个 401 → refresh（storage 空 → ensureJwt 走 wx.login）
+    await fetchWithRefresh(
+      "http://localhost:8787/ask",
+      { method: "POST", headers: { authorization: "Bearer old" } },
+      { baseUrl: "http://localhost:8787", fetchImpl: fetchMock },
+    );
+    expect(wxLoginCount).toBe(1);
+    // inflight 完成时已 .finally 清缓存（map 空）
+
+    // 模拟 24h 后：jwt 过期 + storage 清空
+    storage["unequal:jwt"] = "";
+
+    // 第 2 个 401 → ensureJwt 重新调 wx.login（storage 空 + inflight cache 空）
+    await fetchWithRefresh(
+      "http://localhost:8787/chat",
+      { method: "POST", headers: { authorization: "Bearer old" } },
+      { baseUrl: "http://localhost:8787", fetchImpl: fetchMock },
+    );
+    expect(wxLoginCount).toBe(2);
+  });
+
+  it("不同 baseUrl 互不影响（A 401 + B 401 并发 → wx.login 调 2 次）", async () => {
+    let wxLoginCount = 0;
+    const resolveQueue: Array<(v: { code: string }) => void> = [];
+    wxLoginMock.mockImplementation(({ success }: any) => {
+      wxLoginCount++;
+      resolveQueue.push(success);
+    });
+    const fetchMock = vi.fn(async (input: string, _init?: RequestInit) => {
+      if (input === "http://localhost:8787/auth/wx-login") {
+        return new Response(
+          JSON.stringify({ token: "jwt_a", user_id: "u", is_new_user: false, expires_in: 86400 }),
+          { status: 200 },
+        );
+      }
+      if (input === "http://localhost:8788/auth/wx-login") {
+        return new Response(
+          JSON.stringify({ token: "jwt_b", user_id: "u", is_new_user: false, expires_in: 86400 }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({ error: "UNAUTHORIZED" }), { status: 401 });
+    }) as unknown as typeof fetch;
+
+    const p1 = fetchWithRefresh(
+      "http://localhost:8787/ask",
+      { method: "POST", headers: { authorization: "Bearer old" } },
+      { baseUrl: "http://localhost:8787", fetchImpl: fetchMock },
+    );
+    const p2 = fetchWithRefresh(
+      "http://localhost:8788/chat",
+      { method: "POST", headers: { authorization: "Bearer old" } },
+      { baseUrl: "http://localhost:8788", fetchImpl: fetchMock },
+    );
+
+    // 让 2 个 ensureJwt 都进入 inflight await
+    await new Promise((r) => setTimeout(r, 0));
+    // 关键：2 个 inflight promise 各调 wx.login 1 次（不同 baseUrl，不共享）
+    expect(wxLoginMock).toHaveBeenCalledTimes(2);
+
+    // resolve 两个 wx.login
+    resolveQueue[0]!({ code: "code_a" });
+    resolveQueue[1]!({ code: "code_b" });
+    await Promise.all([p1, p2]);
+
+    // 最终 wxLoginMock 仍 2 次（不同 baseUrl 互不影响）
+    expect(wxLoginMock).toHaveBeenCalledTimes(2);
+  });
+});
+
