@@ -869,6 +869,65 @@ const w2 = withTokenMutex(adminIdentifier, () => recordAttempt(...));  // 与 w1
 
 详见 `docs/superpowers/state-m6-9.md`（含 0 偏差记录 + commit 汇总 + CP-5 真接路径 + 下一步建议）。
 
+## M6.10 状态
+
+跑通：1 项 admin 误锁 UX 优化 — `env.ADMIN_IP_ALLOWLIST` 静态 IP 列表，admin IP 跳过 /auth/admin-login 的 per-IP 限流（per-token 仍锁 — 防御 5 错 token）。**288 用例全绿**（280 M6.9 收尾 + 8 M6.10 新增：admin-ip-allowlist 8）。
+
+mock-first 实现：
+
+- `apps/api/src/lib/admin-ip-allowlist.ts` 新（~20 行）：
+  - `parseAdminIpAllowlist(env)`：`split(",")` + `trim()` + `filter(s => s.length > 0)`
+  - `isAdminIpAllowed(clientIp, allowlist)`：O(N) `includes`
+- `apps/api/src/routes/auth.ts` 改 1 处（ADMIN_LOGIN）：
+  - 提取 `clientIp = getClientIp(request)`
+  - `parseAdminIpAllowlist(env)` + `isAdminIpAllowed(clientIp, allowlist)` 前置 check
+  - 白名单内：跳过 `checkRateLimitDual`
+  - 白名单外：正常限流（向后兼容 M6.6）
+- `apps/api/src/types.ts` Env 加 1 字段：`ADMIN_IP_ALLOWLIST?: string`
+- 1 commit 跨 1 包主线程直接做（M6.9 教训应用，总耗时 ~5 min）
+
+### Admin IP 白名单行为（M6.10 后）
+
+```bash
+# 配置（wrangler vars，非敏感 IP）
+pnpm wrangler vars set ADMIN_IP_ALLOWLIST "1.2.3.4,5.6.7.8,127.0.0.1"
+# dev 需 .dev.vars 加：ADMIN_IP_ALLOWLIST="127.0.0.1"
+
+# 行为：admin IP 在白名单 → 跳过 per-IP 限流
+#   - 输错 5 次 admin_token 不会锁本机 IP 15min
+#   - per-token 限流仍生效（5 错同 token 仍锁 token 维度）
+
+# 白名单未设 / 空：行为不变（M6.6 per-IP 限流生效）
+```
+
+- 配置：`env.ADMIN_IP_ALLOWLIST` comma-separated IP 列表
+- 范围：仅 /auth/admin-login（wx-login 不变）
+- 行为：白名单空 / undefined = 行为不变
+- per-token 限流仍生效（防御 5 错同 token）
+- 0 新依赖 / 0 schema / 0 env 新增（vars 而非 secret）
+- 0 跨包改动（仅 apps/api）
+
+### M6.10 测试矩阵
+
+- `pnpm -F shared test` — 38 用例（无变化）
+- `pnpm -F api test` — 175 用例（admin-ip-allowlist 8 + 167 旧 = 175；M6.10 新增 8）
+- 其他包 — 113 用例（无变化）
+- `pnpm -r typecheck` — 5 包全绿
+- `pnpm -F api build` — wrangler dry-run OK
+- 累计：**288 用例全绿**（spec 估 7 净增，实际 8 — +1 isAdminIpAllowed "空白名单" 边界测试）
+
+### M6.10 限制（mock-first 已知）
+
+- **白名单 IP 误配**（如 dev 设成攻击者 IP）：admin 责任配 env；dev 默认空 = 行为不变
+  - 缓解：CP-5 流程文档强提示 + .dev.vars 必须设 127.0.0.1
+- 静态 IP 变更：admin 切换网络需手动更新 wrangler vars
+- IPv6 白名单：O(N) includes 仍工作；YAGNI CIDR 范围
+- 真实 CF Workers 注入 `env.ADMIN_IP_ALLOWLIST` 行为未验（CP-5 真接时验）
+- 0 production console.log
+- 0 跨包改动
+
+详见 `docs/superpowers/state-m6-10.md`（含 3 个偏差记录 + commit 汇总 + CP-5 真接路径 + 下一步建议）。
+
 ## M6.1 状态
 
 跑通：多轮会话 + Durable Objects（一个 session 一个 DO instance）+ D1 session 列表 + 小程序双 tab（对话 / 历史）+ admin ChatSim 多 session 切换。130 用例全绿（73 M0-M5 + 57 M6.1）。
