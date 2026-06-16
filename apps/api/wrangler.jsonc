@@ -9,7 +9,9 @@
   "vars": {
     "ENVIRONMENT": "development",
     "ALLOWED_ORIGIN": "*",
-    "AUTH_MODE": "admin_token"
+    "AUTH_MODE": "admin_token",
+    "WX_APP_ID": "wx_development_placeholder",
+    "JWT_SECRET": "dev-jwt-secret-change-me-in-production-32-bytes-min"
   },
 
   "d1_databases": [

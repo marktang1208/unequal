@@ -1,4 +1,4 @@
-import { verifyAdminToken } from "../lib/auth.js";
+import { verifyAuth, HttpError } from "../lib/auth.js";
 import { createMiniMaxEmbedder } from "@unequal/shared/embedding";
 import { searchChunks } from "@unequal/shared/retrieval";
 import type { Env } from "../types.js";
@@ -19,9 +19,13 @@ interface SearchSnippet {
 
 export const searchRoute = {
   async GET(request: Request, env: Env): Promise<Response> {
-    const auth = verifyAdminToken(request.headers.get("Authorization"), env.ADMIN_TOKEN);
-    if (!auth.ok) {
-      return Response.json({ error: auth.message }, { status: auth.status });
+    try {
+      await verifyAuth(request, env);
+    } catch (err) {
+      if (err instanceof HttpError) {
+        return Response.json({ error: err.code, message: err.message }, { status: err.status });
+      }
+      throw err;
     }
 
     const url = new URL(request.url);
