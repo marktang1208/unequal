@@ -7,4 +7,7 @@ export interface Env {
   MINIMAX_BASE_URL: string;
   ENVIRONMENT: string;
   ALLOWED_ORIGIN: string;
+  // M6.1: Durable Object binding + 鉴权模式
+  SESSION_DO?: DurableObjectNamespace;
+  AUTH_MODE?: string;
 }
