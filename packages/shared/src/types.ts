@@ -25,11 +25,19 @@ export interface Document {
   sourceId: string;
   userId: string;
   title?: string;
+  /** 云存储路径：原文件（PDF / docx） */
   rawPath: string;
+  /** 云存储路径：解析后纯文本（CP-6 新增；parsed_text 移出文档 doc） */
   parsedTextPath?: string;
+  /** 引用卡片用的前 N 字片段（CP-6 新增，避免拉全文） */
+  previewSnippet?: string;
   createdAt: number;
 }
 
+/**
+ * Chunk: CP-6 嵌入 embedding 字段（替代 v0 在 Vectorize 单独存的模式）。
+ * CloudBase NoSQL doc 限制 1MB，单 chunk ~14KB 远不到。
+ */
 export interface Chunk {
   id: string;
   documentId: string;
@@ -37,6 +45,8 @@ export interface Chunk {
   userId: string;
   idx: number;
   content: string;
+  /** 1536-dim MiniMax embedding（spec §4 假设；启动时硬验证） */
+  embedding: number[];
   tokenCount: number;
   trustLevel: TrustLevel;
   createdAt: number;
@@ -50,4 +60,64 @@ export interface Citation {
   trustLevel: TrustLevel;
   sourceId: string;
   chunkId: string;
+}
+
+export interface QueryCache {
+  id: string;
+  userId: string;
+  query: string;
+  queryVector: number[];
+  answer: string;
+  citations: Citation[];
+  topChunkId?: string;
+  topScore?: number;
+  createdAt: number;
+  expiresAt: number;
+}
+
+export interface ChatSession {
+  id: string;
+  userId: string;
+  title?: string;
+  messages: ChatMessage[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+  citations?: Citation[];
+  createdAt: number;
+}
+
+export interface UserSessionKey {
+  id: string;
+  userId: string;
+  /** AES-256-CBC + HMAC envelope（v0 M6.7） */
+  envelope: string;
+  /** M6.8: 当前 KEK 版本（默认 1） */
+  kekVersion: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface LoginAttempt {
+  id: string;
+  identifier: string;
+  clientIpHash: string;
+  success: boolean;
+  createdAt: number;
+}
+
+export interface CrawlJob {
+  id: string;
+  userId: string;
+  sourceId?: string;
+  url: string;
+  status: "pending" | "running" | "completed" | "failed";
+  error?: string;
+  chunksAdded?: number;
+  createdAt: number;
+  updatedAt: number;
 }

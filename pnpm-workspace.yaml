@@ -2,6 +2,7 @@ packages:
   - "apps/*"
   - "packages/*"
 allowBuilds:
+  core-js-pure: set this to true or false
   esbuild: true
   sharp: false
   workerd: true

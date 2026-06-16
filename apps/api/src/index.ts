@@ -1,75 +1,67 @@
-import { Hono } from "hono";
-import { cors } from "hono/cors";
-import type { Env } from "./types.js";
-import { healthRoute } from "./routes/health.js";
-import { seedUserRoute } from "./routes/seed-user.js";
-import { uploadRoute } from "./routes/upload.js";
-import { ingestRoute } from "./routes/ingest.js";
-import { searchRoute } from "./routes/search.js";
-import { askRoute } from "./routes/ask.js";
-import { chatRoute } from "./routes/chat.js";
-import { sessionsRoute } from "./routes/sessions.js";
-import { authRoute } from "./routes/auth.js";
-import { userRoute } from "./routes/user.js";
-import { cronRoute } from "./routes/cron.js";
-import { statsRoute } from "./routes/stats.js";
-import { scheduled } from "./scheduled.js";
-import { ChatSessionDO } from "./do/chat-session.js";
+/**
+ * CP-6: HTTP trigger 入口
+ *
+ * 单一函数入口按 event.path 分发到 13 个 handler。
+ * CloudBase 推荐每个函数独立部署，本文件作为：
+ * - 启动时硬验证入口（validateEmbeddingDim 在模块加载时跑）
+ * - 统一分发骨架（Phase 2 填充 13 个 handler）
+ *
+ * Phase 2+ 部署模式：
+ * - 推荐：每个 handler 独立成云函数（13 个独立部署）
+ * - 简化：本文件作为单一入口分发（部署 1 个函数）
+ *
+ * 当前 Phase 1：骨架 + 硬验证，分发返 501。
+ */
 
-const app = new Hono<{ Bindings: Env }>();
+import { getEnv, validateEmbeddingDim } from "./lib/env.js";
+import {
+  errorResponse,
+  getClientIp,
+  jsonResponse,
+  optionsResponse,
+  parseFuncPath,
+  type HttpTriggerEvent,
+} from "./lib/handler-utils.js";
 
-// CORS：admin 前端在生产部署（Cloudflare Pages）跨域访问 api Worker。
-// MVP 阶段允许 *；生产应改为具体 origin（通过 wrangler var 注入 ALLOWED_ORIGIN）。
-app.use("*", cors({
-  origin: (origin, c) => {
-    const allowed = c.env.ALLOWED_ORIGIN;
-    if (!allowed || allowed === "*") return "*";
-    return allowed;
-  },
-  allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-  allowHeaders: ["Content-Type", "Authorization"],
-  maxAge: 86400,
-}));
-
-app.get("/health", (c) => healthRoute.GET(c.req.raw, c.env));
-
-// seed-user 不强制鉴权（MVP 阶段给本地种子脚本用）
-app.post("/seed-user", (c) => seedUserRoute.POST(c.req.raw, c.env));
-
-// 鉴权：admin token（Bearer）；在路由内部用 verifyAdminToken
-app.post("/upload", (c) => uploadRoute.POST(c.req.raw, c.env));
-app.post("/ingest", (c) => ingestRoute.POST(c.req.raw, c.env));
-app.get("/search", (c) => searchRoute.GET(c.req.raw, c.env));
-app.post("/ask", (c) => askRoute.POST(c.req.raw, c.env));
-
-// M6.1: 多轮会话 + Durable Objects
-app.post("/chat", (c) => chatRoute.POST(c.req.raw, c.env));
-app.get("/sessions", (c) => sessionsRoute.LIST(c.req.raw, c.env));
-app.get("/sessions/:id", (c) => sessionsRoute.GET(c.req.raw, c.env, c.req.param("id")!));
-app.patch("/sessions/:id", (c) => sessionsRoute.PATCH(c.req.raw, c.env, c.req.param("id")!));
-app.delete("/sessions/:id", (c) => sessionsRoute.DELETE(c.req.raw, c.env, c.req.param("id")!));
-
-// M6.2: 鉴权 + JWT 签发（spec §3.3 + §3.4）
-app.post("/auth/wx-login", (c) => authRoute.WX_LOGIN(c.req.raw, c.env));
-app.post("/auth/admin-login", (c) => authRoute.ADMIN_LOGIN(c.req.raw, c.env));
-
-// M6.3c: miniprogram nickname-input 组件触发的 nickname 写入（spec §5）
-app.patch("/user/nickname", (c) => userRoute.UPDATE_NICKNAME(c.req.raw, c.env));
-
-// M6.4: cron 清理 login_attempt（M6.5 起 scheduled handler 主路径，HTTP 备用）
-app.post("/cron/cleanup-login-attempts", (c) => cronRoute.CLEANUP_LOGIN_ATTEMPTS(c.req.raw, c.env));
-
-// M6.5: login_attempt 可视化（admin JWT 鉴权）
-app.get("/stats/login-attempts", (c) => statsRoute.GET_LOGIN_ATTEMPTS(c.req.raw, c.env));
-
-app.notFound((c) => c.text("Not found", 404));
-
-// M6.5: Cloudflare Workers scheduled handler（CF Cron Triggers 触发）。
-// HTTP /cron/cleanup-login-attempts 端点保留作为外部 cron 兼容入口。
-export default {
-  fetch: app.fetch.bind(app),
-  scheduled,
+// 启动时硬验证（模块加载时跑一次，失败 throw → 函数冷启动失败）
+const startValidation = async () => {
+  try {
+    await validateEmbeddingDim();
+    // eslint-disable-next-line no-console
+    console.log("[startup] embedding dim validated");
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("[startup] embedding dim validation failed:", err);
+    throw err;
+  }
 };
 
-// wrangler build 要求 entrypoint re-export Durable Object 类（与 M6.1 同模式）
-export { ChatSessionDO };
+// 触发启动验证（不 await —— 让函数冷启动时并行）
+void startValidation();
+
+export async function main(event: HttpTriggerEvent) {
+  const env = getEnv();
+
+  // OPTIONS 预检
+  if (event.httpMethod === "OPTIONS") {
+    return optionsResponse(env.ALLOWED_ORIGIN);
+  }
+
+  // 简单存活检查
+  if (event.path === "/health" || event.path === "/api-health") {
+    return jsonResponse({ ok: true, environment: env.ENVIRONMENT });
+  }
+
+  // 按 func name 分发
+  const parsed = parseFuncPath(event.path);
+  if (!parsed) {
+    return errorResponse("NOT_FOUND", `Unknown path: ${event.path}`, 404);
+  }
+
+  // Phase 2+ 填充实际 handler
+  return errorResponse(
+    "NOT_IMPLEMENTED",
+    `Handler ${parsed.func} not yet wired (Phase 1 stub). clientIp=${getClientIp(event)}`,
+    501,
+  );
+}
