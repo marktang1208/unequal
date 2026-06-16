@@ -14,4 +14,7 @@ export interface Env {
   JWT_SECRET?: string;
   WX_APP_ID?: string;
   WX_APP_SECRET?: string;
+  // M6.2 测试依赖注入：/auth/wx-login 通过 env.fetchImpl 注入 mock fetch（spec §3.5）。
+  // 生产路径不传，自动 fallback 到全局 fetch。
+  fetchImpl?: typeof fetch;
 }
