@@ -30,4 +30,6 @@ export interface Env {
   KEK_SECRET_V2?: string;
   KEK_SECRET_V3?: string;
   KEK_CURRENT_VERSION?: string; // M6.8: current KEK version（默认 "1"）
+  // M6.10: admin IP 白名单（comma-separated IP 列表；空 = 行为不变）
+  ADMIN_IP_ALLOWLIST?: string;
 }
