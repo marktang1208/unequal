@@ -655,6 +655,83 @@ done
 
 详见 `docs/superpowers/state-m6-6.md`（含 4 个偏差记录 + commit 汇总 + CP-5 真接路径 + 下一步建议）。
 
+## M6.7 状态
+
+跑通：1 项 M6.3b 留口加固 — `session_key` 改 envelope encryption（Web Crypto AES-256-GCM，每条数据独立 DEK + KEK 来自 `env.KEK_SECRET`），消除明文存 session_key 依赖 CF D1 encryption at rest 黑盒信任。**263 用例全绿**（251 M6.6 收尾 + 12 M6.7 新增：envelope 8 + user 4 净增）。
+
+mock-first 实现：
+
+- `apps/api/src/lib/envelope.ts` 新（~80 行）：
+  - `encryptEnvelope(plaintext, env)` → `{ ciphertext, wrappedDek }`
+    每次生成新 DEK（32B 随机）+ 2 个 96-bit nonce；DEK 加密 plaintext → ciphertext；KEK 加密 DEK → wrappedDek
+  - `decryptEnvelope(ct_b64, dek_b64, env)` → plaintext
+    失败 throw "envelope decrypt failed"（KEK 错 / tamper / 格式坏）
+  - 内部 `deriveKek(env)`：SHA-256(env.KEK_SECRET)[:32] → AES-256 raw key
+  - 内部 base64 串行化 helper（自包含 nonce + tag + ciphertext）
+- `apps/api/src/lib/user.ts` 改 `updateUserSessionKey` 签名加 env 必填；写密文路径 `UPDATE user SET session_key_ct=?, session_key_dek=?, session_key=NULL`；新 `readUserSessionKey` 透明 fallback 老明文（lazy 兼容）
+- `apps/api/src/routes/auth.ts` 改 1 处：`updateUserSessionKey` 调用加 env
+- `apps/api/src/types.ts` Env 加 `KEK_SECRET?: string` 字段
+- `apps/api/migrations/0009_user_session_key_envelope.sql` 新 — `ALTER TABLE user ADD session_key_ct TEXT` + `session_key_dek TEXT`
+- 2 commit 跨 1 包主线程直接做（M6.6 教训应用，总耗时 ~10 min）
+
+### Envelope encryption 行为（M6.7 后）
+
+```bash
+# 写：每次 /auth/wx-login 成功后
+#   1. DEK = random(32B)
+#   2. ciphertext = AES-GCM(DEK, nonce1, session_key)
+#   3. KEK = SHA-256(env.KEK_SECRET)[:32]
+#   4. wrappedDek = AES-GCM(KEK, nonce2, DEK)
+#   5. D1: UPDATE user SET session_key_ct=base64(nonce1+ct), session_key_dek=base64(nonce2+wrappedDek), session_key=NULL
+
+# 读：未来 /auth/wx-user-info
+#   1. SELECT session_key_ct, session_key_dek, session_key FROM user
+#   2. 优先解 envelope：DEK = AES-GCM-decrypt(KEK, nonce2, wrappedDek); plaintext = AES-GCM-decrypt(DEK, nonce1, ct)
+#   3. session_key_ct=NULL（老 user）→ fallback 旧明文
+#   4. decrypt 失败 → null + console.warn
+
+# 验证（D1 真接后）
+pnpm wrangler d1 execute unequal-db --remote \
+  --command "SELECT id, session_key_ct, session_key_dek, session_key FROM user LIMIT 5"
+# 新 user: session_key_ct + session_key_dek 有 base64 密文，session_key=NULL
+# 老 user（M6.3b 上线后 / M6.7 上线前）: session_key 仍明文
+```
+
+- 合并语义：`checkRateLimitDual` 无关（M6.6）；envelope 是独立 lib
+- `KEK_SECRET` 来自 `wrangler secret put KEK_SECRET`（与 JWT_SECRET / WX_APP_SECRET / CRON_SECRET 同模式）
+- 派生算法：SHA-256 截 32 字节（env 任意长度 secret 统一 raw key）
+- nonce 12 字节（96-bit AES-GCM 推荐）
+- DEK 32 字节（AES-256 key）
+- 写时 `session_key=NULL` 避免明密共存（安全原则）
+- 读路径懒 fallback：M6.3b 老 user（`session_key_ct=NULL`）自动走旧明文（lazy 兼容）
+- 0 新 wrangler vars（KEK_SECRET 是 secret）
+- 0 跨包改动（仅 apps/api）
+
+### M6.7 测试矩阵
+
+- `pnpm -F shared test` — 38 用例（无变化）
+- `pnpm -F api test` — 150 用例（envelope 8 + user 4 净增 + 138 旧 = 150）
+- `pnpm -F miniprogram test` — 32 用例（无变化）
+- `pnpm -F admin test` — 24 用例（无变化）
+- `pnpm -F crawler test` — 19 用例（无变化）
+- `pnpm -r typecheck` — 5 包全绿
+- 累计：**263 用例全绿**（spec 估 264，差 1 user 净增 — 详见 state-m6-7.md 偏差 1）
+
+### M6.7 限制（mock-first 已知）
+
+- **KEK 丢失 HIGH 严重度**：env.KEK_SECRET 误删/重生成 → 老 user 密文全不可解
+  - 缓解：KEK 强制密码管理器备份（1Password / Bitwarden）
+  - 未来 M6.8 候选：KEK version + 多 KEK 兜底
+- 真实 CF Workers 注入 `env.KEK_SECRET` 行为未验（miniflare 无 secret 注入）
+- 真实 D1 ALTER TABLE 2 列性能未验（mock-first 不验）
+- 真实 Web Crypto AES-GCM 性能未验（< 1ms 预期）
+- 老 user（M6.3b 上线后 / M6.7 上线前）需重 login 自然迁移到密文（0 主动 batch migration）
+- 派生算法 hardcode SHA-256（未来换 scrypt 需数据迁移；YAGNI）
+- `applyMigrations` 列表手动维护（auth.test.ts 显式列 0001/0005/0006/0008/0009；M6.8+ 加 migration 需同步更新）
+- 0 production console.log（除 envelope decrypt 失败 `console.warn` — 监控必需，**不计入**）
+
+详见 `docs/superpowers/state-m6-7.md`（含 4 个偏差记录 + commit 汇总 + CP-5 真接路径 + 下一步建议）。
+
 ## M6.1 状态
 
 跑通：多轮会话 + Durable Objects（一个 session 一个 DO instance）+ D1 session 列表 + 小程序双 tab（对话 / 历史）+ admin ChatSim 多 session 切换。130 用例全绿（73 M0-M5 + 57 M6.1）。
