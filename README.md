@@ -175,6 +175,78 @@ pnpm -F admin dev → 访问 http://localhost:5173/crawl
 - **真接 Cloudflare Vectorize**（CP-5）：`wrangler vectorize create unequal-chunks --dimensions=1024 --metric=cosine`
 - **小红书 / 微信公众号抓取**（M5 范围）：这两个平台需要登录态 / 反爬严格，独立 scope
 
+## M6.1 状态
+
+跑通：多轮会话 + Durable Objects（一个 session 一个 DO instance）+ D1 session 列表 + 小程序双 tab（对话 / 历史）+ admin ChatSim 多 session 切换。130 用例全绿（73 M0-M5 + 57 M6.1）。
+
+mock-first 实现：
+- Durable Object 走 miniflare 真 binding（生产换 `wrangler durable-objects class create ChatSessionDO`）
+- /chat 走 spec §3.2 完整数据流（拼 multiturn context + 调 RAG + 写 DO + D1 维护）
+- /sessions 走 server-side 列表（前端不再用 localStorage 存历史）
+- 鉴权走 `verifyAuth` 唯一切换点（M6.1 `admin_token`，M6.2 切 `jwt` 只动一个函数）
+- 限额：每 user 最多 50 active session
+- 过期：lazy 判定（30 天未活跃 → loadSession 返 null → 404）
+- 降级：DO 写失败或 SESSION_DO binding 缺 → `degraded: true` 不 throw
+
+### 多轮会话用法
+
+**admin ChatSim**（多 session 升级）：
+
+```bash
+pnpm dev:admin → 访问 http://localhost:5173/chat-sim
+                → 左栏 session 列表（hover 显示 ✎ / ×）
+                → 提问题：建新 session 自动加进列表
+                → 点 session 切换 / 长按重命名 / × 软删
+```
+
+**API**：
+
+```bash
+# 新建 session
+curl -X POST http://localhost:8787/chat \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"q":"5个月宝宝发烧38.5怎么办？"}'
+# → { "answer": "...", "session_id": "01H...", "is_new_session": true, ... }
+
+# 复用 session
+curl -X POST http://localhost:8787/chat \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"q":"那 38.5 以下呢？", "session_id":"01H..."}'
+
+# 列 session
+curl http://localhost:8787/sessions -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# 重命名 / 软删
+curl -X PATCH http://localhost:8787/sessions/01H... -H "Authorization: Bearer $ADMIN_TOKEN" -d '{"title":"新标题"}'
+curl -X DELETE http://localhost:8787/sessions/01H... -H "Authorization: Bearer $ADMIN_TOKEN"
+```
+
+**小程序双 tab**（聊天 / 历史）：
+- 聊天 tab 持 session_id（`wx.setStorageSync('unequal:currentSessionId')`），关掉重开继续上一轮
+- 历史 tab 调 `/sessions` 拉 server-side 列表，长按 session 弹「重命名 / 删除」
+
+### M6.1 测试矩阵
+
+- `pnpm -F shared test` — 38 用例（multiturn 12 + 其他 M0-M5 26）
+- `pnpm -F api test` — 56 用例（chat 14 + chat route 4 + sessions lib 10 + sessions route 4 + do-client 4 + ask/cache/auth/integration 20）
+- `pnpm -F miniprogram test` — 9 用例（chat 2 + list 1 + rename 1 + delete 1 + ask 4）
+- `pnpm -F admin test` — 8 用例（ChatSim 4 + dedupe 4）
+- `pnpm -F crawler test` — 19 用例（无变化）
+- `pnpm -r typecheck` — 5 包全绿
+- `pnpm -F admin build` — 成功（192.81 kB / 60.09 kB gzip）
+- 累计：**130 用例全绿**
+
+### M6.1 限制（mock-first 已知）
+
+- 不真接 Cloudflare Workers / D1 / DO — 推到 CP-5
+- 不接 wx.login / 微信小程序真鉴权 — M6.2
+- 不签 JWT — M6.2
+- 不实跑 admin dev 真连 /chat-sim（仅 build + 8 jsdom 单测覆盖）— 推到 M6.2 真接后做
+
+详见 `docs/superpowers/state-m6-1.md`（含 ECC 组件 + 真接路径 + commit 汇总）。
+
 ## M5 状态
 
 跑通：小红书 + 微信公众号两个 source adapter（cheerio parser）+ admin 2 个抓取页（`/crawl/xiaohongshu` + `/crawl/wechat-mp`）+ localStorage URL 去重。19 crawler 用例 + 4 admin dedupe 用例全绿。
