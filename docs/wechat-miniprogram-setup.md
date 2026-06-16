@@ -278,6 +278,87 @@ pnpm dev:admin
 
 ---
 
+## 7B. M6.2 联调 wx.login + /auth/wx-login + JWT 持久化
+
+> M6.2 新增：小程序冷启动自动 `wx.login` + 后端 `/auth/wx-login` 换 JWT + 持久化 + 调 `/chat` / `/sessions` 自动带 Bearer header。
+
+### 7B.1 验证冷启动登录（dev mock-first）
+
+M6.2 dev 阶段 jscode2session 走 mock — `apps/api/.dev.vars.example` 已配：
+- `AUTH_MODE=admin_token`（dev 模式不变；M6.2 真接后改 `jwt`）
+- `WX_APP_ID=wx_development_placeholder`（dev 占位）
+- `WX_APP_SECRET=dev-wx-app-secret-...`（dev 占位）
+
+小程序 onLaunch 调 `ensureJwt()`：
+1. 调 `wx.login` 拿 `code: "mock_test_code_081H1z"`（dev mock）
+2. 调 `POST /auth/wx-login` body `{ code }`
+3. mock jscode2session 返 `{ openid: "mock_openid_001", session_key: "mock_session_key" }`
+4. 后端 `findOrCreateUser` INSERT user row（wx_openid=mock_openid_001, nickname=null）
+5. 后端 `signJwt({ userId: ulid(), isAdmin: false }, JWT_SECRET)` 返 24h JWT
+6. 前端 `wx.setStorageSync("unequal:jwt", token)` 持久化
+
+**期望**（手机小程序）：
+- onLaunch 完成后，wx.storage 里有 `unequal:jwt` key（value 是 `eyJ...` 字符串）
+- 任何调 `/chat` / `/sessions` / `/ask` 自动带 `Authorization: Bearer <jwt>` header
+
+### 7B.2 验证 token 过期重 login
+
+M6.2 暂不实现 refresh — JWT 24h 过期后：
+- 下次调 `/chat` 返 401 `INVALID_JWT`
+- 前端 `ask()` / `chat()` throw Error
+- M6.3+ 加自动 refresh（M6.2 阶段用户需手动关闭重开小程序让 onLaunch 重 login）
+
+**手动测试 24h 过期**（加速版）：改 `apps/api/src/lib/auth-jwt.ts` 的 `TTL_SECONDS = 10`（10 秒过期），启 wrangler dev → 等 10 秒 → 调 /chat → 预期 401。
+
+### 7B.3 验证 user 表写入
+
+M6.2 dev 跑过后，D1 `user` 表新增 1 行：
+```sql
+SELECT * FROM user WHERE wx_openid = 'mock_openid_001';
+-- id: 01HXXXX...  wx_openid: mock_openid_001  nickname: NULL  created_at: <timestamp>
+```
+
+真接 Cloudflare 后 `wx_openid` 改微信返回真 openid（每个小程序 unique）。
+
+### 7B.4 验证 wx.login 失败不阻塞启动
+
+M6.2 阶段 wx.login 失败处理（apps/miniprogram/app.ts onLaunch）：
+```ts
+try {
+  await ensureJwt();
+} catch (err) {
+  console.warn("[unequal] ensureJwt failed:", err);
+  // 不 throw — app 启动继续
+}
+```
+
+**期望**：
+- wx.login fail → app.ts 仅 warn，app 启动 → chat 页可访问
+- chat 页提问题时 ask/chat 因无 jwt 返 401 → throw（用户看到"未登录"错误）
+- M6.3 加自动 refresh 后这种情况会 retry
+
+### 7B.5 真接 Cloudflare 后的端到端
+
+按 `docs/superpowers/state-m6-2.md` §"真接 Cloudflare 路径"8 步：
+1. `pnpm wrangler secret put WX_APP_ID / WX_APP_SECRET / JWT_SECRET / ADMIN_TOKEN`
+2. 改 `apps/api/wrangler.jsonc` `vars.AUTH_MODE = "jwt"`
+3. 改 `apps/miniprogram/lib/api.ts` baseUrl 改 `https://unequal-api.xxx.workers.dev`
+4. 微信公众平台加 request 合法域名
+5. 微信开发者工具真机扫码 → onLaunch 调真 wx.login → /auth/wx-login 调真 jscode2session → 拿真 jwt → 调真 /chat
+
+### 7B.6 验证 checklist
+
+| 项 | 期望 |
+|----|------|
+| 冷启动拿 jwt | ✅ wx.storage 有 `unequal:jwt` |
+| 调 /chat 带 header | ✅ Authorization: Bearer <jwt> |
+| user 表写入 | ✅ D1 有 wx_openid=mock_openid_001 行 |
+| 24h 过期 | ✅ 401 INVALID_JWT（不自动 refresh）|
+| wx.login 失败 | ✅ app 启动继续，chat 返 401 |
+| 真接 Cloudflare | 推到 CP-5 后做 |
+
+---
+
 ## 8. 提审前准备（仅在要正式发布时做）
 
 > M3 阶段不需要做这步。本节是 CP-6+ 真发布时的预热。
