@@ -364,25 +364,28 @@ describe("fetchWithRefresh (M6.3a) — 401 透明 refresh + retry", () => {
   });
 
   it("5 函数共享 fetchWithRefresh — 通过读 api.ts 源码验证 5 函数体都 call wrapper", async () => {
-    // 行为覆盖 ask / chat 在 Task 9 接入后单测（见 Task 9 验证）；
-    // Task 8 这里仅做静态验证：5 个函数体内都引用 fetchWithRefresh（不调旧 getFetch 直调）。
+    // 静态验证：5 个函数体内都引用 fetchWithRefresh（Task 9 替换后）。adminLogin 不在列（spec 5.3 走独立路径）。
     const { readFileSync } = await import("node:fs");
     const path = await import("node:path");
     const apiPath = path.resolve(__dirname, "../lib/api.ts");
     const src = readFileSync(apiPath, "utf8");
 
-    // 每个函数都应 fetchWithRefresh 调用（提取函数体子串）
     const fnNames = ["ask", "chat", "listSessions", "renameSession", "deleteSession"];
     for (const fn of fnNames) {
-      // 简单 regex：函数体内首次出现 fetchWithRefresh 应在 getFetch 之后
       const fnMatch = src.match(new RegExp(`export async function ${fn}\\b[\\s\\S]*?\\n\\}`));
       expect(fnMatch, `${fn} function body not found`).not.toBeNull();
       const body = fnMatch![0];
-      // 旧模式 `const f = getFetch(opts); const res = await f(...)` 不应再出现（ask / chat / listSessions / renameSession / deleteSession 应改）
-      // 注：Task 8 这里不强制；Task 9 commit 替换后才生效。本测只静态验 wrapper 已被引入 + Task 9 后正则切换到 wrapper。
-      expect(body.includes("fetchWithRefresh") || body.includes("getFetch"),
-        `${fn} body should reference either fetchWithRefresh (post-Task-9) or getFetch (pre-Task-9)`).toBe(true);
+      // 5 函数都应调 fetchWithRefresh（不再直 getFetch）
+      expect(body.includes("fetchWithRefresh"),
+        `${fn} body should call fetchWithRefresh after Task 9 wiring`).toBe(true);
+      expect(!/const f = getFetch\(opts\)/.test(body),
+        `${fn} body should not call getFetch directly after Task 9 wiring`).toBe(true);
     }
+    // adminLogin 保留 getFetch（无 jwt header）
+    const adminFnMatch = src.match(/export async function adminLogin\b[\s\S]*?\n\}/);
+    expect(adminFnMatch, "adminLogin function body not found").not.toBeNull();
+    expect(adminFnMatch![0].includes("getFetch"),
+      "adminLogin should still use getFetch (no jwt header)").toBe(true);
     // 顶层 fetchWithRefresh 函数已存在（@internal 导出）
     expect(src).toMatch(/^export async function fetchWithRefresh\b/m);
   });
