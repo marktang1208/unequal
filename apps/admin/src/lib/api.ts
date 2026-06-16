@@ -15,7 +15,25 @@ export function getToken(): string {
   throw new Error("admin_token 未设置：请访问 /login 登录");
 }
 
-/* ---------- M6.2 admin JWT 登录（spec §3.7） ---------- */
+/**
+ * M6.2 admin JWT 登录（spec §3.7） */
+
+/**
+ * M6.3a 401 handler：清除 admin_token + 强刷跳 /login（spec §5.4 / §7.3）。
+ * 强刷绕过 react-router，避免 RequireAuth race。
+ *
+ * 当前 admin 仅有 adminLogin 一个 fetch 端点（LoginPage 已显式 catch 401/429），
+ * handleApiResponse 作为 lib 备件保留，待后续 admin 接入新 fetch 时统一调用。
+ */
+export function handleApiResponse(res: Response): Response {
+  if (res.status === 401) {
+    localStorage.removeItem("admin_token");
+    if (typeof window !== "undefined") {
+      window.location.href = "/login";
+    }
+  }
+  return res;
+}
 
 export interface AdminLoginResponse {
   token: string;
