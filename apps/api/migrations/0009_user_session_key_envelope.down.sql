@@ -1,0 +1,5 @@
+-- M6.7: down migration
+-- SQLite < 3.35 不支持 DROP COLUMN；orphan session_key_ct/dek 列无副作用
+-- DOWN: 留空（不影响数据完整性；如需重迁，drop columns 应在 SQLite 3.35+ 环境手动执行）
+-- ALTER TABLE user DROP COLUMN session_key_ct;
+-- ALTER TABLE user DROP COLUMN session_key_dek;
