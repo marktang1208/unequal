@@ -1,11 +1,8 @@
 // @ts-nocheck wx 全局类型 mock-first 缺失（miniprogram-api-typings 未安装，按 CP-1 决策容忍）
-import { ask } from "../../lib/api.js";
-import {
-  loadHistory,
-  appendHistory,
-  __setStorageImpl,
-} from "../../lib/storage.js";
-import type { AskResponse, HistoryEntry } from "../../lib/types.js";
+import { chat } from "../../lib/api.js";
+import { __setStorageImpl } from "../../lib/storage.js";
+import { __setSessionStorageImpl, loadCurrentSessionId, saveCurrentSessionId } from "../../lib/chat-storage.js";
+import type { AskResponse, ChatResponse, HistoryEntry } from "../../lib/types.js";
 
 // 注入 wx storage 实现（运行时由小程序 runtime 提供，测试桩 vitest 替换）
 // @ts-expect-error wx 全局类型 mock-first 缺失
@@ -25,6 +22,21 @@ __setStorageImpl(
   },
 );
 
+// 注入 chat-storage 默认 wx 实现（M6.1 持久化当前 session_id）
+__setSessionStorageImpl(
+  // @ts-nocheck wx 全局类型 mock-first 缺失
+  (key: string) => {
+    // @ts-expect-error wx 全局类型 mock-first 缺失
+    const raw = wx.getStorageSync(key);
+    return typeof raw === "string" ? raw : "";
+  },
+  // @ts-nocheck wx 全局类型 mock-first 缺失
+  (key: string, value: string) => {
+    // @ts-expect-error wx 全局类型 mock-first 缺失
+    wx.setStorageSync(key, value);
+  },
+);
+
 interface MessageItem {
   id: string;
   role: "user" | "assistant";
@@ -32,8 +44,6 @@ interface MessageItem {
   cached: boolean;
   citations: AskResponse["citations"];
 }
-
-const MAX_HISTORY_RENDER = 10;
 
 interface AppWithGlobals {
   globalData: { apiBaseUrl: string };
@@ -45,36 +55,28 @@ Page({
     q: "",
     submitting: false,
     error: "",
+    sessionId: "" as string, // 空 → 新 session；非空 → 复用
+    sessionTitle: "" as string,
   },
 
   onLoad(): void {
-    this.loadFromStorage();
+    // M6.1: 加载持久化的 session_id（关掉重开继续上一轮）
+    const sid = loadCurrentSessionId();
+    if (sid) {
+      this.setData({ sessionId: sid });
+    }
   },
 
   onShow(): void {
-    this.loadFromStorage();
+    // history 页切换 session 后回 chat 页会触发 onShow → 用最新 sid
+    const sid = loadCurrentSessionId();
+    if (sid && sid !== this.data.sessionId) {
+      this.setData({ sessionId: sid, messages: [] });
+    }
   },
 
-  loadFromStorage(): void {
-    const entries = loadHistory().slice(0, MAX_HISTORY_RENDER);
-    const messages: MessageItem[] = [];
-    for (const e of entries.slice().reverse()) {
-      messages.push({
-        id: `${e.q}-q`,
-        role: "user",
-        text: e.q,
-        cached: false,
-        citations: [],
-      });
-      messages.push({
-        id: `${e.q}-a`,
-        role: "assistant",
-        text: e.answer,
-        cached: e.cached,
-        citations: e.citations,
-      });
-    }
-    this.setData({ messages });
+  onUnload(): void {
+    // 用户从 chat 页离开不清 session_id（让他能从 history 切回）
   },
 
   onQInput(e: WechatMiniprogram.Input): void {
@@ -100,31 +102,33 @@ Page({
       error: "",
     });
 
-    void this.callAsk(q);
+    void this.callChat(q);
   },
 
-  async callAsk(q: string): Promise<void> {
+  /** 调 /chat（多轮）；返回的 session_id 持久化 */
+  async callChat(q: string): Promise<void> {
     const app = getApp<AppWithGlobals>();
     const baseUrl = app?.globalData?.apiBaseUrl ?? "http://localhost:8787";
     try {
-      const resp: AskResponse = await ask(q, { baseUrl });
+      const resp: ChatResponse = await chat(
+        { q, ...(this.data.sessionId ? { session_id: this.data.sessionId } : {}) },
+        { baseUrl },
+      );
+      // 服务端返的 session_id 持久化（新建时才有意义）
+      if (resp.session_id && resp.session_id !== this.data.sessionId) {
+        saveCurrentSessionId(resp.session_id);
+        this.setData({ sessionId: resp.session_id, sessionTitle: resp.session_title ?? "" });
+      }
       const botMsg: MessageItem = {
         id: `${q}-${Date.now()}-a`,
         role: "assistant",
         text: resp.answer,
         cached: resp.cached,
-        citations: resp.citations,
+        citations: resp.citations as unknown as AskResponse["citations"],
       };
       this.setData({
         messages: [...this.data.messages, botMsg],
         submitting: false,
-      });
-      appendHistory({
-        q,
-        answer: resp.answer,
-        citations: resp.citations,
-        cached: resp.cached,
-        timestamp: Date.now(),
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "未知错误";
@@ -133,6 +137,21 @@ Page({
         error: msg,
       });
     }
+  },
+
+  /** 长按消息 → 弹"新建会话"或"清空当前" */
+  onTapNewSession(): void {
+    // @ts-expect-error wx 全局类型 mock-first 缺失
+    wx.showModal({
+      title: "新建会话",
+      content: "开始一个新的对话？当前会话会保留在历史里。",
+      success: (res: { confirm: boolean }) => {
+        if (res.confirm) {
+          saveCurrentSessionId(null);
+          this.setData({ sessionId: "", sessionTitle: "", messages: [] });
+        }
+      },
+    });
   },
 
   onTapCitation(): void {

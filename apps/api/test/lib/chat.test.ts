@@ -77,8 +77,8 @@ function makeFakeDO(impl: (call: CapturedDoCall) => Response | Promise<Response>
 /* ---------- shared fixtures ---------- */
 
 const FAKE_CITATIONS: Citation[] = [
-  { n: 1, title: "儿科指南", snippet: "物理降温", trustLevel: 3, sourceId: "s1", chunkId: "c1" },
-  { n: 2, title: "退热药说明", snippet: "38.5以上用布洛芬", trustLevel: 2, sourceId: "s2", chunkId: "c2" },
+  { n: 1, title: "儿科指南", snippet: "物理降温", url: "raw/1.pdf", trustLevel: 3, sourceId: "s1", chunkId: "c1" },
+  { n: 2, title: "退热药说明", snippet: "38.5以上用布洛芬", url: "raw/2.pdf", trustLevel: 2, sourceId: "s2", chunkId: "c2" },
 ];
 
 const FAKE_HITS: SearchResult[] = [
@@ -272,10 +272,10 @@ describe("runChat (spy-style fake D1 + fake SESSION_DO)", () => {
 
   /* ---- 5. searchFn 透传 ---- */
   it("searchFn 注入 → runAsk 调 searchFn（不调 VECTORIZE）", async () => {
-    const searchFn = vi.fn(async () => FAKE_HITS);
+    const searchFn = vi.fn(async (_qEmbedding: number[]) => FAKE_HITS);
     await callRunChat({ searchFn, env });
     expect(searchFn).toHaveBeenCalledTimes(1);
-    const arg = searchFn.mock.calls[0]![0] as number[];
+    const arg = searchFn.mock.calls[0]![0] as unknown as number[];
     expect(arg).toHaveLength(1024); // embedding 维度
   });
 
