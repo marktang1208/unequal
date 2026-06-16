@@ -79,3 +79,36 @@ export function saveCurrentSessionId(id: string | null): void {
   }
   setImpl(STORAGE_KEY, id);
 }
+
+/* ---------- M6.3c 首次昵称 modal shown flag ---------- */
+
+const NICKNAME_MODAL_SHOWN_KEY = "unequal:nickname_modal_shown_v1";
+
+let nicknameModalGetImpl: (key: string) => string = (k) => {
+  // @ts-expect-error wx 全局类型 mock-first 缺失
+  const raw = wx.getStorageSync(k);
+  return typeof raw === "string" ? raw : "";
+};
+let nicknameModalSetImpl: (key: string, value: string) => void = (k, v) => {
+  // @ts-expect-error wx 全局类型 mock-first 缺失
+  wx.setStorageSync(k, v);
+};
+
+/** 让测试桩替换 wx storage（同 __setSessionStorageImpl / __setJwtStorageImpl 模式） */
+export function __setNicknameModalStorageImpl(
+  g: (key: string) => string,
+  s: (key: string, value: string) => void,
+): void {
+  nicknameModalGetImpl = g;
+  nicknameModalSetImpl = s;
+}
+
+/** 首次昵称 modal 是否已弹过（不论填/跳过） */
+export function hasShownNicknameModal(): boolean {
+  return nicknameModalGetImpl(NICKNAME_MODAL_SHOWN_KEY) === "true";
+}
+
+/** 标记首次昵称 modal 已弹过 */
+export function setShownNicknameModal(): void {
+  nicknameModalSetImpl(NICKNAME_MODAL_SHOWN_KEY, "true");
+}
