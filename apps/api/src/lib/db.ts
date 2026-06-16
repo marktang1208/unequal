@@ -19,12 +19,12 @@ export function newId(): string {
 }
 
 /** add：插入新 doc，返回 _id */
-export async function add<T extends Record<string, unknown>>(
+export async function add<T>(
   collection: CollectionName,
   data: T,
 ): Promise<string> {
   const _id = newId();
-  await DB().collection(collection).add({ _id, ...data });
+  await DB().collection(collection).add({ _id, ...(data as Record<string, unknown>) });
   return _id;
 }
 
