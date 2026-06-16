@@ -1,21 +1,28 @@
 /**
- * M6.7 envelope encryption（Web Crypto AES-256-GCM，spec §5 + §10）。
+ * M6.7 + M6.8 envelope encryption（Web Crypto AES-256-GCM，spec §5 + §10）。
  *
- * 流程：
+ * M6.7 流程：
  * - 写：随机 DEK + 2 个 96-bit nonce；DEK 加密 plaintext → ciphertext；KEK 加密 DEK → wrappedDek
  * - 读：从 ciphertext + wrappedDek + 2 nonce 恢复 plaintext
  *
- * KEK 来源：env.KEK_SECRET（wrangler secret put 注入）
- * KEK 派生：SHA-256(env.KEK_SECRET)（任意长度 secret 统一到 32 字节 raw key，AES-256）
+ * M6.8 改：KEK version + multi-KEK fallback
+ * - KEK 来源：env.KEK_SECRET_V{version}（如 KEK_SECRET_V1, V2, V3...）
+ * - KEK 派生：SHA-256(env.KEK_SECRET_V{version})[:32] → AES-256 raw key
+ * - 缺失 throw `KEK_SECRET_V${version} not configured`
+ * - fallback（tryDecryptWithAnyKek）：遍历 env 所有 KEK_SECRET_V* 试解
  *
  * 错误：
- * - KEK 缺失 → throw Error("KEK_SECRET not configured")（auth.ts try/catch 兜底，不阻断登录）
- * - decrypt 失败（KEK 错 / tamper / 格式坏）→ throw Error("envelope decrypt failed")
- *   readUserSessionKey try/catch 返 null + console.warn
+ * - KEK 缺失 → throw `KEK_SECRET_V${version} not configured`（auth.ts try/catch 兜底，不阻断登录）
+ * - decrypt 失败（KEK 错 / tamper / 格式坏）→ throw "envelope decrypt failed"
+ *   readUserSessionKey 1st try 失败 → fallback tryDecryptWithAnyKek
+ * - 全失败 → readUserSessionKey 返 null + console.error
  *
  * M6.7 决策（D-1 ~ D-10）：Web Crypto / KEK env / 真 envelope / Lazy 兼容 / SHA-256 派生 /
  * session_key=NULL / decrypt throw + readUserSessionKey try/catch / base64 串行化 /
- * env 显式传 / 0 KEK version（YAGNI）
+ * env 显式传 / 0 KEK version
+ * M6.8 决策（D-1 ~ D-8）：表加 version 列 / KEK_SECRET_V* 多 env / fallback 遍历 /
+ * 1st try row.session_key_kek_version / 写 currentVersion 默认 1 /
+ * 0 主动重 wrap 工具 / 0 KEK 自动轮换调度 / 派生算法 hardcode SHA-256
  */
 
 const NONCE_BYTES = 12;  // AES-GCM 推荐 96-bit nonce
@@ -29,14 +36,23 @@ export interface EnvelopeCipher {
 }
 
 /**
- * 加密 plaintext 返 ciphertext + wrappedDek。
+ * M6.8: KEK env 子集（任意 string 字段）。
+ * envelope 函数只读这些字段（D1/R2 等无关）。
+ */
+export type KekEnv = Record<string, string | undefined>;
+
+/**
+ * M6.7 + M6.8 加密 plaintext 返 ciphertext + wrappedDek。
  * 每次调用生成新 DEK + 2 个 96-bit nonce（DEK/KEK 各 1）。
+ *
+ * M6.8 改：加 version 参数；按 `env.KEK_SECRET_V${version}` 取 KEK。
  */
 export async function encryptEnvelope(
   plaintext: string,
-  env: { KEK_SECRET?: string },
+  env: KekEnv,
+  version: number,
 ): Promise<EnvelopeCipher> {
-  const kek = await deriveKek(env);
+  const kek = await deriveKek(env, version);
 
   // 1. 随机 DEK + DEK 加密 plaintext
   const dek = crypto.getRandomValues(new Uint8Array(DEK_BYTES));
@@ -62,15 +78,18 @@ export async function encryptEnvelope(
 }
 
 /**
- * 解密 envelope 返 plaintext。
+ * M6.7 + M6.8 解密 envelope 返 plaintext。
  * 失败 throw "envelope decrypt failed"（KEK 错 / ciphertext tamper / 格式坏）。
+ *
+ * M6.8 改：加 version 参数；按 `env.KEK_SECRET_V${version}` 取 KEK。
  */
 export async function decryptEnvelope(
   ciphertext_b64: string,
   wrappedDek_b64: string,
-  env: { KEK_SECRET?: string },
+  env: KekEnv,
+  version: number,
 ): Promise<string> {
-  const kek = await deriveKek(env);
+  const kek = await deriveKek(env, version);
 
   // 1. 解 wrappedDek → DEK
   const dekBytes = decodeBase64(wrappedDek_b64);
@@ -105,14 +124,65 @@ export async function decryptEnvelope(
   return new TextDecoder().decode(ptBuf);
 }
 
+/**
+ * M6.8: 扫描 env 找所有 `KEK_SECRET_V{N}` 变量，返回版本号数组（升序）。
+ * 用于 fallback 遍历所有 KEK 试解（last resort）。
+ */
+export function getAllKekVersions(env: KekEnv): number[] {
+  const versions: number[] = [];
+  for (const key of Object.keys(env)) {
+    const match = key.match(/^KEK_SECRET_V(\d+)$/);
+    if (match) {
+      const v = parseInt(match[1]!, 10);
+      if (Number.isFinite(v) && v >= 1) versions.push(v);
+    }
+  }
+  return versions.sort((a, b) => a - b);
+}
+
+/**
+ * M6.8: fallback 遍历所有 env KEK 试解。
+ * 1st try 优先用 row.session_key_kek_version（fast path），失败 → fallback 此函数。
+ *
+ * 错误：env 无 KEK → throw "no KEK configured"；所有 KEK 都失败 → throw "all KEKs failed to decrypt"。
+ */
+export async function tryDecryptWithAnyKek(
+  ciphertext_b64: string,
+  wrappedDek_b64: string,
+  env: KekEnv,
+): Promise<string> {
+  const versions = getAllKekVersions(env);
+  if (versions.length === 0) {
+    throw new Error("no KEK configured");
+  }
+  for (const v of versions) {
+    try {
+      return await decryptEnvelope(ciphertext_b64, wrappedDek_b64, env, v);
+    } catch {
+      continue;  // 该 KEK 错/缺失，试下一个
+    }
+  }
+  throw new Error("all KEKs failed to decrypt");
+}
+
 /* ---------- 内部 helper ---------- */
 
-/** SHA-256(env.KEK_SECRET) 截 32 字节 → AES-256 raw key */
-async function deriveKek(env: { KEK_SECRET?: string }): Promise<CryptoKey> {
-  if (!env.KEK_SECRET) {
-    throw new Error("KEK_SECRET not configured");
+/**
+ * M6.8: KEK 派生（按 version 选 secret）。
+ * SHA-256(env.KEK_SECRET_V{version})[:32] → AES-256 raw key。
+ * 缺失 throw `KEK_SECRET_V${version} not configured`。
+ */
+async function deriveKek(env: KekEnv, version: number): Promise<CryptoKey> {
+  // 显式 switch：避免 dynamic key 访问 + 类型丢失
+  const secret =
+    version === 1 ? env.KEK_SECRET_V1 :
+    version === 2 ? env.KEK_SECRET_V2 :
+    version === 3 ? env.KEK_SECRET_V3 :
+    undefined;
+  if (!secret) {
+    throw new Error(`KEK_SECRET_V${version} not configured`);
   }
-  const raw = new TextEncoder().encode(env.KEK_SECRET);
+  const raw = new TextEncoder().encode(secret);
   const hash = await crypto.subtle.digest("SHA-256", raw);
   return crypto.subtle.importKey(
     "raw",

@@ -46,12 +46,14 @@ async function applyMigrations(d1: D1Database) {
   // + 0006_user_session_key.sql（M6.3b session_key 落库）
   // + 0008_login_attempt_client_ip.sql（M6.6 per-IP 限流数据源）
   // + 0009_user_session_key_envelope.sql（M6.7 envelope 密文列）
+  // + 0010_user_session_key_kek_version.sql（M6.8 KEK version 列）
   for (const f of [
     "0001_init.sql",
     "0005_login_attempt.sql",
     "0006_user_session_key.sql",
     "0008_login_attempt_client_ip.sql",
     "0009_user_session_key_envelope.sql",
+    "0010_user_session_key_kek_version.sql",
   ]) {
     const sql = await readFile(resolve(MIGRATIONS_DIR, f), "utf-8");
     for (const stmt of splitSqlIntoStatements(sql)) {
@@ -375,16 +377,17 @@ describe("/auth route (Miniflare + D1 + mock fetchImpl)", () => {
     expect(countRow?.c ?? 0).toBe(0);
   });
 
-  // ---------- M6.7 session_key envelope 落库（spec §6/§10） ----------
+  // ---------- M6.7 + M6.8 session_key envelope 落库 ----------
 
-  it("POST /auth/wx-login 200: 成功后 D1 user.session_key_ct + session_key_dek 写入密文，session_key=NULL", async () => {
+  it("POST /auth/wx-login 200: 成功后 D1 user.session_key_ct + session_key_dek + session_key_kek_version=1 写入密文，session_key=NULL", async () => {
     const d1 = await mf.getD1Database("DB");
     const env = {
       ADMIN_TOKEN,
       JWT_SECRET,
       WX_APP_ID: "wx_test_id",
       WX_APP_SECRET: "wx_test_secret",
-      KEK_SECRET: "test-kek-32-bytes-long-please-please-xxx",
+      KEK_SECRET_V1: "test-kek-v1-32-bytes-long-please-please",
+      KEK_CURRENT_VERSION: "1",
       DB: d1,
       fetchImpl: mockFetch, // mockFetch 返 session_key: "mock_session_key"
     } as unknown as Env;
@@ -399,15 +402,16 @@ describe("/auth route (Miniflare + D1 + mock fetchImpl)", () => {
       env,
     );
     expect(res.status).toBe(200);
-    // 验证 D1 user 表 envelope 密文已写入 + 旧 session_key 明文列已置 NULL
+    // 验证 D1 user 表 envelope 密文已写入 + 旧 session_key 明文列已置 NULL + version=1
     const row = await d1
       .prepare(
-        "SELECT session_key_ct, session_key_dek, session_key FROM user LIMIT 1",
+        "SELECT session_key_ct, session_key_dek, session_key, session_key_kek_version FROM user LIMIT 1",
       )
-      .first<{ session_key_ct: string | null; session_key_dek: string | null; session_key: string | null }>();
+      .first<{ session_key_ct: string | null; session_key_dek: string | null; session_key: string | null; session_key_kek_version: number | null }>();
     expect(row?.session_key_ct).toMatch(/^[A-Za-z0-9+/=]+$/);
     expect(row?.session_key_dek).toMatch(/^[A-Za-z0-9+/=]+$/);
     expect(row?.session_key).toBeNull();
+    expect(row?.session_key_kek_version).toBe(1);
   });
 
   it("POST /auth/wx-login 401 INVALID_CODE: 失败路径不写 session_key（user 表 0 行）", async () => {
