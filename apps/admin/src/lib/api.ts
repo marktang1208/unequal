@@ -326,6 +326,42 @@ export async function crawlXiaohongshuUrls(
   };
 }
 
+// ─────────────────────────────────────────────────────────
+// M6.5: login_attempt 可视化（spec §6.3）
+// ─────────────────────────────────────────────────────────
+
+export interface LoginAttemptStatsByType {
+  failed: number;
+  succeeded: number;
+}
+
+export interface LoginAttemptStats {
+  window_hours: number;
+  cutoff: number;
+  total_failed: number;
+  total_succeeded: number;
+  by_type: {
+    admin: LoginAttemptStatsByType;
+    wx_code: LoginAttemptStatsByType;
+  };
+  by_hour: Array<{
+    hour_ts: number;
+    failed: number;
+    succeeded: number;
+  }>;
+}
+
+/**
+ * M6.5 admin dashboard：GET /stats/login-attempts?hours=24
+ * 鉴权：admin JWT（走 authedJson + handleApiResponse，401 自动跳 /login）
+ */
+export async function getLoginAttemptStats(hours: number): Promise<LoginAttemptStats> {
+  return authedJson<LoginAttemptStats>(
+    `/stats/login-attempts?hours=${hours}`,
+    { method: "GET" },
+  );
+}
+
 /**
  * Mock-first 抓取微信公众号 URL 列表：同 crawlXiaohongshuUrls，fixture 路径换 wechat-mp.json
  */

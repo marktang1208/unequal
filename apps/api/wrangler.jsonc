@@ -48,6 +48,11 @@
     ]
   },
 
+  // M6.5: Cloudflare Cron Triggers 调度（每日 UTC 03:00 触发 cleanupLoginAttempts）
+  "triggers": {
+    "crons": ["0 3 * * *"]
+  },
+
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["ChatSessionDO"] }
   ]
