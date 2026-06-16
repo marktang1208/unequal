@@ -12,6 +12,7 @@ import { sessionsRoute } from "./routes/sessions.js";
 import { authRoute } from "./routes/auth.js";
 import { userRoute } from "./routes/user.js";
 import { cronRoute } from "./routes/cron.js";
+import { scheduled } from "./scheduled.js";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -53,9 +54,14 @@ app.post("/auth/admin-login", (c) => authRoute.ADMIN_LOGIN(c.req.raw, c.env));
 // M6.3c: miniprogram nickname-input 组件触发的 nickname 写入（spec §5）
 app.patch("/user/nickname", (c) => userRoute.UPDATE_NICKNAME(c.req.raw, c.env));
 
-// M6.4: cron 清理 login_attempt（CP-5 接 scheduled handler 或 external cron）
+// M6.4: cron 清理 login_attempt（M6.5 起 scheduled handler 主路径，HTTP 备用）
 app.post("/cron/cleanup-login-attempts", (c) => cronRoute.CLEANUP_LOGIN_ATTEMPTS(c.req.raw, c.env));
 
 app.notFound((c) => c.text("Not found", 404));
 
-export default app;
+// M6.5: Cloudflare Workers scheduled handler（CF Cron Triggers 触发）。
+// HTTP /cron/cleanup-login-attempts 端点保留作为外部 cron 兼容入口。
+export default {
+  fetch: app.fetch.bind(app),
+  scheduled,
+};
