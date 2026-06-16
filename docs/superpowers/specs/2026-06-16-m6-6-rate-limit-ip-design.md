@@ -146,7 +146,7 @@ export async function sha256ClientIp(ip: string): Promise<string> {
     .slice(0, 16);
 }
 
-export const UNKNOWN_IP_HASH = "unknown00000000"; // 16 字符固定
+export const UNKNOWN_IP_HASH = "unknown000000000"; // 16 字符固定 (unknown=7 + 9 个 0)
 ```
 
 ### 5.3 关键决策

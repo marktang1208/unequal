@@ -86,7 +86,7 @@
 **Task 1: rate-limit IP 维度（helpers + ByIp + Dual + 11 tests）**
 
 - Action 1.1: 改 `apps/api/src/lib/rate-limit.ts`（spec §5 + §6 完整代码）：
-  - 加常量 `export const UNKNOWN_IP_HASH = "unknown00000000";` （16 字符固定）
+  - 加常量 `export const UNKNOWN_IP_HASH = "unknown000000000";` （16 字符固定 = "unknown" 7 + 9 个 0）
   - 加 helper `getClientIp(req: Request): string` — 读 `CF-Connecting-IP` header，缺则 `"unknown"`
   - 加 helper `sha256ClientIp(ip: string): Promise<string>` — 镜像 `sha256Identifier` 签名，`ip === "unknown"` 短路返 `UNKNOWN_IP_HASH`，否则 sha256 截 16 字符
   - 加函数 `checkRateLimitByIp(d1, clientIpHash, type, now?, config?)` — 镜像 `checkRateLimit` 签名，SQL 改 `WHERE client_ip = ?`（vs `WHERE identifier = ?`）
@@ -145,7 +145,7 @@
       .run();
   }
   ```
-  - 关键：clientIpHash 是**必填**（不设默认值），调用方必须显式传 `"unknown00000000"` 或真实 hash
+  - 关键：clientIpHash 是**必填**（不设默认值），调用方必须显式传 `"unknown000000000"` 或真实 hash
   - INSERT SQL 加 `client_ip` 列（第 5 个 ?）
   - 函数注释更新：说明 clientIpHash 来源（getClientIp → sha256ClientIp）
 
