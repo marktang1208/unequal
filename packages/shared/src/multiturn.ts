@@ -51,7 +51,13 @@ export function groupIntoRounds(messages: MultiturnMessage[]): MultiturnMessage[
  * 进 prefix，标记 "（无答）"，让 LLM 知道这条历史没有回答。
  */
 function trailingUsers(messages: MultiturnMessage[]): string[] {
-  const lastAsstIdx = messages.findLastIndex((m) => m.role === "assistant");
+  let lastAsstIdx = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]!.role === "assistant") {
+      lastAsstIdx = i;
+      break;
+    }
+  }
   const tail = lastAsstIdx >= 0 ? messages.slice(lastAsstIdx + 1) : messages;
   return tail.filter((m) => m.role === "user").map((m) => m.content);
 }
