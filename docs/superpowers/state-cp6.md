@@ -252,9 +252,40 @@ cp-6 CloudBase 全量迁移完成后，v0 CF 部署进入封存状态。
 | **Embedding 1536 维假设** | 启动时硬验证；不符即 throw | ✅ 已加测试 |
 | **WX_CONTEXT.openid 字段路径** | 兼容 3 种字段名（`userInfo.openId`/`openid`/`OPENID`）| ✅ smoke 时验 |
 
-### 8.2 cp-7 计划项
+### 8.2 部署自动化（CP-6+ 新增）
 
-1. **CloudBase 环境创建 + 13 函数部署**（用户操作）
+`apps/api/scripts/` 下 4 个部署自动化脚本（托管模式开发 — 让你跑最少手动步骤）：
+
+| 脚本 | 命令 | 用途 |
+|---|---|---|
+| `deploy-collections.ts` | `pnpm -F api deploy:collections` | SDK 创建 9 collection（幂等：已存在跳过）|
+| `deploy-indexes.ts` | `pnpm -F api deploy:indexes` | HTTP API 创建 9 个 field index（幂等）|
+| `deploy-functions.sh` | `pnpm -F api deploy:functions` | 打印 13 个函数的 tcb CLI 命令（用户复制执行）|
+| `deploy-secrets.ts` | `pnpm -F api deploy:secrets` | 注入 4 secrets + 8 vars（HTTP API）|
+
+**前置 env vars**：
+- `TCB_SECRET_ID` / `TCB_SECRET_KEY` / `TCB_ENV`（CloudBase 控制台拿）
+- `TCB_ACCESS_TOKEN`（CloudBase 控制台 → API 密钥管理 → 自签 token）
+- 4 secrets 从你 terminal env 读（ADMIN_TOKEN / JWT_SECRET / MINIMAX_API_KEY / KEK_SECRET_V1）
+
+**部署流程**：
+```bash
+cd apps/api
+export TCB_SECRET_ID=...  TCB_SECRET_KEY=...  TCB_ENV=...  TCB_ACCESS_TOKEN=...
+export ADMIN_TOKEN=...  JWT_SECRET=...  MINIMAX_API_KEY=...  KEK_SECRET_V1=...
+pnpm deploy:collections   # 创建 9 collection
+pnpm deploy:indexes        # 创建 9 field index
+bash scripts/deploy-functions.sh  # 看输出复制 tcb 命令
+pnpm deploy:secrets        # 注入 4 secrets + 8 vars
+```
+
+**部署模式二选一**：
+- **模式 A（推荐）**：单入口分发（deploy 1 个 `api-router` 函数）；spec §2.4 简化方案
+- **模式 B**：13 个独立函数；spec §2.4 推荐方案（更灵活但配置 13 倍）
+
+### 8.3 cp-7 计划项
+
+1. **CloudBase 环境创建 + 13 函数部署**（用户操作 — 跑 §8.2 脚本）
 2. **Mini-program 真机验证**（需 AppID 注册时同时做；现在 user 已有 AppID）
 3. **重跑 6 步 smoke**（D-1 / D-3 / D-4 / D-6 全部验证）
 4. **KEK 轮换演练**（M6.8 留口）
