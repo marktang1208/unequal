@@ -13,7 +13,7 @@ import {
   type HttpTriggerResponse,
 } from "../lib/handler-utils.js";
 import { getEnv } from "../lib/env.js";
-import { verifyJwt } from "../lib/jwt.js";
+import { requireAdmin } from "../lib/auth-admin.js";
 import { createMiniMaxEmbedder } from "@unequal/shared/embedding";
 import { searchChunks, type ChunkWithEmbedding } from "@unequal/shared/retrieval";
 import { buildAskPrompt, DISCLAIMER_TEXT } from "@unequal/shared/prompt";
@@ -41,16 +41,6 @@ interface AskResponse {
   disclaimer: string;
 }
 
-async function verifyAdmin(token: string, env: ReturnType<typeof getEnv>): Promise<boolean> {
-  if (token === env.ADMIN_TOKEN) return true;
-  try {
-    const payload = await verifyJwt({ token, secret: env.JWT_SECRET });
-    return payload.scope === "admin";
-  } catch {
-    return false;
-  }
-}
-
 function parseCitationsJson(answer: string): number[] {
   // 抓答案末尾的 {"citations": [...]} JSON 块
   const m = answer.match(/\{"citations":\s*\[([^\]]*)\]\s*\}/);
@@ -71,11 +61,8 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
   const env = getEnv();
   if (event.httpMethod === "OPTIONS") return optionsResponse(env.ALLOWED_ORIGIN);
 
-  const authHeader = event.headers.authorization || event.headers.Authorization || "";
-  const token = authHeader.replace(/^Bearer\s+/i, "");
-  if (!await verifyAdmin(token, env)) {
-    return errorResponse("AUTH_FAILED", "Not admin", 401);
-  }
+  const auth = await requireAdmin(event, env);
+  if (!auth.ok) return auth.response;
 
   const body = parseJsonBody<AskRequest>(event);
   if (!body?.q || typeof body.q !== "string") {

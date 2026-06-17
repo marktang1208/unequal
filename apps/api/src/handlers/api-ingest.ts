@@ -14,7 +14,7 @@ import {
   type HttpTriggerResponse,
 } from "../lib/handler-utils.js";
 import { getEnv } from "../lib/env.js";
-import { verifyJwt } from "../lib/jwt.js";
+import { requireAdmin } from "../lib/auth-admin.js";
 import { createMiniMaxEmbedder } from "@unequal/shared/embedding";
 import { chunkText } from "@unequal/shared/chunking";
 import { COLLECTIONS, type CollectionName } from "../lib/collections.js";
@@ -29,25 +29,12 @@ interface IngestRequest {
   trust_level?: 0 | 1 | 2 | 3;
 }
 
-async function verifyAdmin(token: string, env: ReturnType<typeof getEnv>): Promise<boolean> {
-  if (token === env.ADMIN_TOKEN) return true;
-  try {
-    const payload = await verifyJwt({ token, secret: env.JWT_SECRET });
-    return payload.scope === "admin";
-  } catch {
-    return false;
-  }
-}
-
 export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse> {
   const env = getEnv();
   if (event.httpMethod === "OPTIONS") return optionsResponse(env.ALLOWED_ORIGIN);
 
-  const authHeader = event.headers.authorization || event.headers.Authorization || "";
-  const token = authHeader.replace(/^Bearer\s+/i, "");
-  if (!await verifyAdmin(token, env)) {
-    return errorResponse("AUTH_FAILED", "Not admin", 401);
-  }
+  const auth = await requireAdmin(event, env);
+  if (!auth.ok) return auth.response;
 
   const body = parseJsonBody<IngestRequest>(event);
   if (!body?.content || typeof body.content !== "string") {

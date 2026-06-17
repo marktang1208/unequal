@@ -7,15 +7,13 @@
 
 import {
   errorResponse,
-  getClientIp,
   jsonResponse,
   optionsResponse,
-  parseJsonBody,
   type HttpTriggerEvent,
   type HttpTriggerResponse,
 } from "../lib/handler-utils.js";
 import { getEnv } from "../lib/env.js";
-import { verifyJwt } from "../lib/jwt.js";
+import { requireAdmin } from "../lib/auth-admin.js";
 import { whereQuery, COLLECTIONS } from "../lib/db.js";
 import type { LoginAttempt } from "@unequal/shared/types";
 
@@ -23,32 +21,10 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
   const env = getEnv();
   if (event.httpMethod === "OPTIONS") return optionsResponse(env.ALLOWED_ORIGIN);
 
-  // admin auth: Authorization: Bearer $ADMIN_TOKEN OR JWT
-  const authHeader = event.headers.authorization || event.headers.Authorization || "";
-  const token = authHeader.replace(/^Bearer\s+/i, "");
-  if (!token) {
-    return errorResponse("AUTH_FAILED", "Missing Authorization header", 401);
-  }
-
-  let isAdmin = false;
-  if (token === env.ADMIN_TOKEN) {
-    isAdmin = true;
-  } else {
-    try {
-      const payload = await verifyJwt({ token, secret: env.JWT_SECRET });
-      isAdmin = payload.scope === "admin";
-    } catch {
-      // fall through
-    }
-  }
-  if (!isAdmin) {
-    return errorResponse("AUTH_FAILED", "Not admin", 403);
-  }
+  const auth = await requireAdmin(event, env);
+  if (!auth.ok) return auth.response;
 
   // 聚合 login_attempt：总成功 + 总失败 + 近 24h
-  void getClientIp(event); // 保留 IP 上下文（如未来按 IP 聚合）
-  void parseJsonBody;       // 保留引用避免 lint warn
-
   const now = Date.now();
   const last24h = now - 24 * 60 * 60 * 1000;
 

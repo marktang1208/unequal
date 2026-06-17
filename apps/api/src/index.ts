@@ -18,6 +18,7 @@ import {
 } from "./lib/env.js";
 import {
   errorResponse,
+  getClientIp,
   jsonResponse,
   optionsResponse,
   parseFuncPath,
@@ -82,6 +83,18 @@ function resolveFuncPath(path: string): string | null {
 
 export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse> {
   const env = getEnv();
+  const start = Date.now();
+  const clientIp = getClientIp(event);
+
+  // request log（start）
+  // eslint-disable-next-line no-console
+  console.log(JSON.stringify({
+    level: "info",
+    msg: "request.start",
+    method: event.httpMethod,
+    path: event.path,
+    clientIp,
+  }));
 
   // OPTIONS 预检
   if (event.httpMethod === "OPTIONS") {
@@ -90,23 +103,52 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
 
   const funcName = resolveFuncPath(event.path);
   if (!funcName) {
+    logEnd(start, event, clientIp, funcName, 404, "NOT_FOUND");
     return errorResponse("NOT_FOUND", `Unknown path: ${event.path}`, 404);
   }
 
   const handler = HANDLER_MAP[funcName];
   if (!handler) {
+    logEnd(start, event, clientIp, funcName, 404, "HANDLER_NOT_FOUND");
     return errorResponse("NOT_FOUND", `No handler for ${funcName}`, 404);
   }
 
   try {
-    return await handler.main(event);
+    const response = await handler.main(event);
+    logEnd(start, event, clientIp, funcName, response.statusCode);
+    return response;
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error(`[${funcName}] handler threw:`, err);
     const message = err instanceof Error ? err.message : String(err);
+    logEnd(start, event, clientIp, funcName, 500, "INTERNAL_ERROR");
     return jsonResponse(
       { error: "INTERNAL_ERROR", message: `${funcName} failed: ${message}` },
       500,
     );
   }
+}
+
+/** request log（end）—— 结构化 JSON 一行输出，便于 CloudBase 日志聚合 */
+function logEnd(
+  start: number,
+  event: HttpTriggerEvent,
+  clientIp: string,
+  funcName: string | null,
+  statusCode: number,
+  errorCode?: string,
+): void {
+  const latency = Date.now() - start;
+  // eslint-disable-next-line no-console
+  console.log(JSON.stringify({
+    level: statusCode >= 500 ? "error" : statusCode >= 400 ? "warn" : "info",
+    msg: "request.end",
+    method: event.httpMethod,
+    path: event.path,
+    func: funcName,
+    status: statusCode,
+    latencyMs: latency,
+    clientIp,
+    ...(errorCode ? { errorCode } : {}),
+  }));
 }

@@ -39,14 +39,16 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
     return errorResponse("INVALID_REQUEST", "Missing or invalid 'token' field", 400);
   }
 
-  // 2. IP allowlist check（spec §5.3；目前仅记日志，rate-limit 留 v2）
+  // 1. IP allowlist check（spec §5.3；白名单非空时强制拒绝）
   const clientIp = getClientIp(event);
   const allowlist = parseAdminIpAllowlist({ ADMIN_IP_ALLOWLIST: env.ADMIN_IP_ALLOWLIST });
   const isAdminIp = isAdminIpAllowed(clientIp, allowlist);
-  if (!isAdminIp && allowlist.length > 0) {
-    // eslint-disable-next-line no-console
-    console.warn(`[admin-login] clientIp=${clientIp} not in allowlist`);
-    // 当前不强制拒绝（仅警告）；spec §10.3 D-4 验证后由 admin_token 本身做二次防御
+  if (allowlist.length > 0 && !isAdminIp) {
+    return errorResponse(
+      "IP_NOT_ALLOWED",
+      `clientIp=${clientIp} not in ADMIN_IP_ALLOWLIST`,
+      403,
+    );
   }
 
   // 3. verify token
