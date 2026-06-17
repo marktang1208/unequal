@@ -42,7 +42,6 @@ const REQUIRED_ENV = [
   "TCB_SECRET_ID",
   "TCB_SECRET_KEY",
   "TCB_ENV",
-  "TCB_ACCESS_TOKEN",
   "ADMIN_TOKEN",
   "JWT_SECRET",
   "MINIMAX_API_KEY",
@@ -88,9 +87,19 @@ check("13 handlers 文件存在", () => {
 });
 
 // 2. 必填 env vars 存在
-check("9 必填 env vars 已设置", () => {
+check("8 必填 env vars 已设置", () => {
   const missing = REQUIRED_ENV.filter((k) => !process.env[k]);
   if (missing.length > 0) return `missing: ${missing.join(", ")}`;
+  // API Key 3.0 模式：SECRET_ID 和 SECRET_KEY 必须相同
+  // CAM 传统模式：两者不同（SecretId 是 AKID 开头，SecretKey 是独立随机串）
+  // 自动检测：如果都是 AKID 开头 → CAM 模式；否则 API Key 3.0 模式
+  const sid = process.env.TCB_SECRET_ID ?? "";
+  const skey = process.env.TCB_SECRET_KEY ?? "";
+  const isCam = sid.startsWith("AKID");
+  const isApiKey30 = !isCam && sid === skey && sid.length > 100;
+  if (!isCam && !isApiKey30) {
+    return "TCB_SECRET_ID 应为 AKID 开头（CAM 模式）或与 TCB_SECRET_KEY 相同且 > 100 字符（API Key 3.0 模式）";
+  }
   return true;
 });
 

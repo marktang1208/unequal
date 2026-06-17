@@ -2,9 +2,9 @@
  * CP-6: 部署脚本 — 创建 9 个 CloudBase collections（幂等）
  *
  * 用法（用户在 CloudBase 账号实名 + 环境创建后跑）：
- *   1. export TCB_SECRET_ID=<your-secret-id>
- *   2. export TCB_SECRET_KEY=<your-secret-key>
- *   3. export TCB_ENV=<your-env-id>          # CloudBase 控制台 → 环境 → env ID
+ *   1. export TCB_SECRET_ID=<your-api-key>     # API Key 3.0 单 key
+ *   2. export TCB_SECRET_KEY=<same-key>        # 同一字符串（API Key 3.0 兼容）
+ *   3. export TCB_ENV=<your-env-id>            # CloudBase 控制台 → 环境 ID
  *   4. pnpm tsx scripts/deploy-collections.ts
  *
  * 幂等：已存在的 collection 跳过。
@@ -24,6 +24,7 @@ const ENV = process.env.TCB_ENV;
 
 if (!SECRET_ID || !SECRET_KEY || !ENV) {
   console.error("Missing env vars: TCB_SECRET_ID / TCB_SECRET_KEY / TCB_ENV");
+  console.error("(API Key 3.0 模式：SECRET_ID 和 SECRET_KEY 传同一个 key 字符串)");
   process.exit(1);
 }
 
@@ -43,8 +44,16 @@ async function main() {
       await (db as unknown as { createCollection: (n: string) => Promise<unknown> }).createCollection(value);
       console.log("✅ created");
     } catch (err: unknown) {
+      // 多语言错误码兼容
+      const code = (err as { code?: string }).code;
       const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes("already exists") || msg.includes("-501000")) {
+      const isExists =
+        code === "DATABASE_COLLECTION_ALREADY_EXIST" ||
+        code === "-501000" ||
+        msg.includes("already exists") ||
+        msg.includes("Table exist") ||
+        msg.includes("已存在");
+      if (isExists) {
         console.log("⏭  already exists");
       } else {
         console.log(`❌ ${msg}`);

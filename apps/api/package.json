@@ -10,6 +10,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "deploy:readiness": "tsx scripts/deploy-readiness.ts",
+    "deploy:build": "tsx scripts/deploy-build.ts",
     "deploy:collections": "tsx scripts/deploy-collections.ts",
     "deploy:indexes": "tsx scripts/deploy-indexes.ts",
     "deploy:functions": "bash scripts/deploy-functions.sh",
