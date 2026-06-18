@@ -1255,14 +1255,56 @@ v0 CF 真接部署（commit `f623f66`）已封存归档 + CP-6 收尾 commit（`
 
 ### 下一步（cp-7 候选）
 
-1. **miniprogram callFunction 化重构**（P3.9 临时方案 — chat/sessions 仍走 HTTP）— 统一所有 endpoint 走 callFunction，删 wxRequestAsFetch + fetchWithRefresh
+1. ~~miniprogram callFunction 化重构（P3.9 临时方案 — chat/sessions 仍走 HTTP）~~ ✅ **CP-7-A 完成**（见下文"CP-7-A 状态"）
 2. **api-chat.ts 加 [N] 引用解析**（P3.9 已知 caveat — LLM variance 让 citations 偶发空）
-3. **renameSession / updateNickname handler**（CP-6 后端没实现，前端调用仍 404）
+3. **renameSession / updateNickname handler**（CP-6 后端没实现，前端调用仍 404 — `cloudCall` 抛 ApiError(404) caller 降级）
 4. **LLM model 跨 handler 一致性 smoke**（P3.9 暴露 — api-ask 用 MiniMax-Text-01，api-chat 之前用 MiniMax-chat 拼错）
 5. **deploy 流程内化 env vars push**（P3.9 暴露 — `tcb fn deploy --force` 重置 env vars）
 6. **v0 资源销毁决策**（1 个月后）
 7. **Cloudflare Workers 备案域名**（如果 v0 想复活）
 8. **未来扩展：本地 vector DB sync**（CP-6 备选架构，详见 state-cp6 §9.5）
+
+---
+
+## CP-7-A 状态（miniprogram callFunction 统一化）
+
+**完成日期**：2026-06-18
+**Spec**：`docs/superpowers/specs/2026-06-18-cp7-a-cloudcall-unification-design.md`（commit `3c86ac2`）
+**Plan**：`docs/superpowers/plans/2026-06-18-cp7-a-cloudcall-unification.md`（commit `bf716bf`）
+**State**：`docs/superpowers/state-cp7-a.md`
+
+跑通：miniprogram 端 callFunction 统一化 — 删 P3.9 临时方案留下的双套机制（wxRequestAsFetch + fetchWithRefresh + inflightEnsureJwt），统一走 `cloudCall<T>(req)` 单一入口。
+
+mock-first 实现：
+- `apps/miniprogram/lib/cloud-call.ts` 升级（73 → 165 行）：
+  - `cloudCall<T>(req): Promise<T>` typed body + throw `ApiError`
+  - 401 + jwt → refresh + retry 1 次（内作于 cloudCall）
+  - 401 + refresh 后仍 401 → `saveJwt(null)` + throw `UNAUTHORIZED`
+  - inflight 共享（M6.4 模式）：3 并发 401 → 1 次 ensureJwt
+  - 测试桩：`__setCloudCallImpl` / `__resetCloudCallImpl` / `__clearInflightRefresh`
+- `apps/miniprogram/lib/api.ts` 重写（262 → ~140 行）：
+  - 7 caller 全调 `cloudCall<T>({path, httpMethod, body, jwt})` typed wrapper
+  - 删 `wxRequestAsFetch` / `getFetch` / `buildHeaders` / `fetchWithRefresh` / `inflightEnsureJwt` / `__clearInflightEnsureJwt`
+- `apps/miniprogram/lib/auth.ts` 清理：ensureJwt 删旧 `_baseUrl/fetchImpl` 参数 + 删旧 HTTP fallback 分支
+- 0 server / shared / admin / crawler 改动
+
+### CP-7-A 测试矩阵
+
+- `pnpm -F miniprogram test` — **32 用例**（10 cloud-call 新增 + 13 api caller + 5 auth + 3 chat-storage + 1 chat）
+- `pnpm -F shared test` — 49 用例（无变化）
+- `pnpm -F api test` — 30 用例（无变化）
+- `pnpm -F admin test` — 24 用例（无变化）
+- `pnpm -F crawler test` — 19 用例（无变化）
+- `pnpm -r typecheck` — 5 包全绿
+- 累计：**154 用例全绿**（master 143 + 净 +11）
+
+### CP-7-A 限制（mock-first 已知）
+
+- 真实 wx.cloud.callFunction 协议未在 CI 跑（mock-first；CP-7 真接时验证）
+- renameSession / updateNickname 后端 404（CP-7-B 独立项目；cloudCall 抛 ApiError(404) caller 降级）
+- 不做 callFunction retry/backoff（仅 1 次 refresh；YAGNI）
+
+详见 `docs/superpowers/state-cp7-a.md`（含 commit 汇总 + 真接路径 + 教训）。
 
 ---
 

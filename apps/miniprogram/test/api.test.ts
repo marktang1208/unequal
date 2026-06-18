@@ -58,7 +58,7 @@ describe("ask()", () => {
     expect(res.citations.length).toBe(1);
     expect(res.cached).toBe(false);
     expect(mockCloudCall).toHaveBeenCalledTimes(1);
-    const callArg = mockCloudCall.mock.calls[0][0];
+    const callArg = mockCloudCall.mock.calls[0]![0]!;
     expect(callArg.path).toBe("/api-ask");
     expect(callArg.httpMethod).toBe("POST");
     expect(callArg.body).toEqual({ q: "5个月宝宝发烧" });
@@ -68,14 +68,14 @@ describe("ask()", () => {
     storage["unequal:jwt"] = "stored_jwt";
     mockCloudCall.mockResolvedValue({ statusCode: 200, body: happy });
     await ask("test");
-    const callArg = mockCloudCall.mock.calls[0][0];
+    const callArg = mockCloudCall.mock.calls[0]![0]!;
     expect(callArg.jwt).toBe("stored_jwt");
   });
 
   it("storage 无 jwt → cloudCall 不传 jwt", async () => {
     mockCloudCall.mockResolvedValue({ statusCode: 200, body: happy });
     await ask("test");
-    const callArg = mockCloudCall.mock.calls[0][0];
+    const callArg = mockCloudCall.mock.calls[0]![0]!;
     expect(callArg.jwt).toBeUndefined();
   });
 });
@@ -97,7 +97,7 @@ describe("chat()", () => {
     const res = await chat({ q: "5个月宝宝发烧" });
     expect(res.session_id).toBe("01HNEWULIDSESSION000000000");
     expect(res.is_new_session).toBe(true);
-    const callArg = mockCloudCall.mock.calls[0][0];
+    const callArg = mockCloudCall.mock.calls[0]![0]!;
     expect(callArg.path).toBe("/api-chat");
     expect(callArg.httpMethod).toBe("POST");
     expect(callArg.body).toEqual({ q: "5个月宝宝发烧" });
@@ -106,7 +106,7 @@ describe("chat()", () => {
   it("带 session_id → body 含 session_id", async () => {
     mockCloudCall.mockResolvedValue({ statusCode: 200, body: { ...happy, session_id: "01HEXIST", is_new_session: false } });
     await chat({ q: "那 38.5 以下呢？", session_id: "01HEXIST" });
-    const callArg = mockCloudCall.mock.calls[0][0];
+    const callArg = mockCloudCall.mock.calls[0]![0]!;
     expect(callArg.body).toEqual({ q: "那 38.5 以下呢？", session_id: "01HEXIST" });
   });
 });
@@ -123,7 +123,7 @@ describe("listSessions()", () => {
     const res = await listSessions();
     expect(res.sessions).toHaveLength(2);
     expect(res.sessions[0]!.title).toBe("宝宝发烧");
-    const callArg = mockCloudCall.mock.calls[0][0];
+    const callArg = mockCloudCall.mock.calls[0]![0]!;
     expect(callArg.path).toBe("/api-sessions-list");
     expect(callArg.httpMethod).toBe("GET");
   });
@@ -133,7 +133,7 @@ describe("renameSession() / deleteSession()", () => {
   it("renameSession: PATCH /sessions/:id → return ok", async () => {
     mockCloudCall.mockResolvedValue({ statusCode: 200, body: null });
     await renameSession("01HSESSION", "新标题");
-    const callArg = mockCloudCall.mock.calls[0][0];
+    const callArg = mockCloudCall.mock.calls[0]![0]!;
     expect(callArg.path).toBe("/sessions/01HSESSION");
     expect(callArg.httpMethod).toBe("PATCH");
     expect(callArg.body).toEqual({ title: "新标题" });
@@ -142,7 +142,7 @@ describe("renameSession() / deleteSession()", () => {
   it("deleteSession: DELETE /api-sessions-delete/:id → return ok", async () => {
     mockCloudCall.mockResolvedValue({ statusCode: 200, body: null });
     await deleteSession("01HSESSION");
-    const callArg = mockCloudCall.mock.calls[0][0];
+    const callArg = mockCloudCall.mock.calls[0]![0]!;
     expect(callArg.path).toBe("/api-sessions-delete/01HSESSION");
     expect(callArg.httpMethod).toBe("DELETE");
   });
@@ -152,7 +152,7 @@ describe("updateNickname()", () => {
   it("PATCH /user/nickname → return ok", async () => {
     mockCloudCall.mockResolvedValue({ statusCode: 200, body: { nickname: "张三" } });
     await updateNickname("张三");
-    const callArg = mockCloudCall.mock.calls[0][0];
+    const callArg = mockCloudCall.mock.calls[0]![0]!;
     expect(callArg.path).toBe("/user/nickname");
     expect(callArg.httpMethod).toBe("PATCH");
     expect(callArg.body).toEqual({ nickname: "张三" });
@@ -168,7 +168,7 @@ describe("adminLogin()", () => {
     const res = await adminLogin("test-token-please-change");
     expect(res.is_admin).toBe(true);
     expect(res.token).toBe("eyJ.admin.jwt");
-    const callArg = mockCloudCall.mock.calls[0][0];
+    const callArg = mockCloudCall.mock.calls[0]![0]!;
     expect(callArg.path).toBe("/api-auth-admin-login");
     expect(callArg.httpMethod).toBe("POST");
     expect(callArg.body).toEqual({ admin_token: "test-token-please-change" });
