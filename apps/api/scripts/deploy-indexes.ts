@@ -1,77 +1,97 @@
 /**
- * CP-6: 部署脚本 — 创建 9 个 collection 的 field indexes（HTTP API）
+ * CP-6.5 (P3.5): 部署脚本 — 创建 9 个 collection 的 field indexes（幂等）
  *
- * CloudBase Node SDK 没暴露 createIndex API；用 HTTP REST API（管理 API）。
- * 用户从 CloudBase 控制台 → 用户管理 → API 密钥管理拿 access token。
+ * 用 tcb CLI（`tcb db nosql execute`）+ MongoDB createIndexes 命令。CLI 内部
+ * 走腾讯云 API 端点（tcb-api.tencentcloudapi.com），DNS 在国内可达；不需要
+ * SDK、不需要 access token。
  *
- * 用法：
- *   export TCB_ACCESS_TOKEN=<api-access-token>   # CloudBase 控制台 → API 密钥管理
- *   export TCB_ENV=<env-id>                       # CloudBase 控制台 → 环境 ID
- *   pnpm tsx scripts/deploy-indexes.ts
+ * 用法（需先 `tcb login` + 当前目录有 cloudbaserc.json 或显式 -e）：
+ *   pnpm -F api deploy:indexes
+ *
+ * 幂等：MongoDB createIndexes 已存在返回 "all indexes already exist" note。
+ *
+ * 不做的事：
+ * - 创建 collection（用 deploy-collections.ts）
+ * - 部署云函数 / secrets（用 tcb CLI 其他子命令）
+ *
+ * 替代方案（已废）：
+ * - HTTP API `api.cloudbase.tencentcloud.com` — DNS NXDOMAIN，国内不可达
+ * - CAM 永久 key + SDK — SIGN_PARAM_INVALID
  */
 
+import { spawn } from "node:child_process";
 import { REQUIRED_INDEXES } from "../src/lib/collections.js";
 
-const ACCESS_TOKEN = process.env.TCB_ACCESS_TOKEN;
-const ENV = process.env.TCB_ENV;
-
-if (!ACCESS_TOKEN || !ENV) {
-  console.error("Missing env vars: TCB_ACCESS_TOKEN / TCB_ENV");
-  process.exit(1);
+interface ExecResult {
+  stdout: string;
+  stderr: string;
+  code: number;
 }
 
-const API_BASE = "https://api.cloudbase.tencentcloud.com/v2/database";
+function runTcb(args: string[]): Promise<ExecResult> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("tcb", args, { env: process.env });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (d) => (stdout += d.toString()));
+    child.stderr.on("data", (d) => (stderr += d.toString()));
+    child.on("error", reject);
+    child.on("close", (code) => resolve({ stdout, stderr, code: code ?? 0 }));
+  });
+}
 
-interface IndexInfo {
+interface IndexResult {
   collection: string;
   field: string;
+  ok: boolean;
+  created: boolean;
+  error?: string;
 }
 
-async function createIndex(info: IndexInfo): Promise<boolean> {
-  const url = `${API_BASE}/${info.collection}/index`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json; charset=utf-8",
-      "X-CloudBase-AccessToken": ACCESS_TOKEN!,
-      "X-CloudBase-Env": ENV!,
-    },
-    body: JSON.stringify({
-      IndexName: `idx_${info.field}`,
-      Keys: [{ Name: info.field, Direction: "1" }],  // "1" = asc
-      Unique: false,
+async function createIndex(collection: string, field: string): Promise<IndexResult> {
+  const cmd = JSON.stringify([{
+    TableName: collection,
+    CommandType: "COMMAND",
+    Command: JSON.stringify({
+      createIndexes: collection,
+      indexes: [{ key: { [field]: 1 }, name: `idx_${field}` }],
     }),
-  });
-
-  if (res.status === 200 || res.status === 201) {
-    console.log(`  ✅ ${info.collection}.${info.field}`);
-    return true;
+  }]);
+  const r = await runTcb(["db", "nosql", "execute", "--command", cmd]);
+  const out = r.stdout + r.stderr;
+  if (r.code === 0) {
+    const created = !out.includes("already exist");
+    return { collection, field, ok: true, created };
   }
-  const text = await res.text();
-  if (text.includes("already exists") || text.includes("DuplicateKey")) {
-    console.log(`  ⏭  ${info.collection}.${info.field} already exists`);
-    return true;
+  if (out.includes("already exist") || out.includes("IndexOptionsConflict")) {
+    return { collection, field, ok: true, created: false };
   }
-  console.log(`  ❌ ${info.collection}.${info.field}: ${res.status} ${text}`);
-  return false;
+  return { collection, field, ok: false, created: false, error: out.slice(0, 200) };
 }
 
 async function main() {
-  console.log(`[deploy-indexes] env=${ENV}`);
+  console.log("[deploy-indexes] via tcb db nosql execute");
 
-  let ok = 0;
+  let created = 0;
+  let existed = 0;
   let fail = 0;
-  for (const info of REQUIRED_INDEXES) {
-    const success = await createIndex(info);
-    if (success) ok++;
-    else fail++;
+  for (const { collection, field } of REQUIRED_INDEXES) {
+    process.stdout.write(`  - ${collection}.${field}... `);
+    const r = await createIndex(collection, field);
+    if (!r.ok) {
+      console.log(`❌ ${r.error}`);
+      fail++;
+    } else if (r.created) {
+      console.log("✅ created");
+      created++;
+    } else {
+      console.log("⏭  already exists");
+      existed++;
+    }
   }
 
-  console.log(`\n${ok} indexes created/exist, ${fail} failed`);
-  if (fail > 0) {
-    console.error("❌ Some indexes failed to create");
-    process.exit(1);
-  }
+  console.log(`\n${created} created, ${existed} already exist, ${fail} failed`);
+  if (fail > 0) process.exit(1);
 }
 
 main().catch((err) => {
