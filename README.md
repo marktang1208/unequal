@@ -1308,6 +1308,52 @@ mock-first 实现：
 
 ---
 
+## CP-7-B 状态（handler 后端补全 + [N] 引用解析 + minipgm 富文本）
+
+**完成日期**：2026-06-18
+**Spec**：`docs/superpowers/specs/2026-06-18-cp7-b-handler-citations-design.md`（commit `f10e7b6`）
+**Plan**：`docs/superpowers/plans/2026-06-18-cp7-b-handler-citations.md`（commit `0308c95`）
+**State**：`docs/superpowers/state-cp7-b.md`
+
+跑通：补齐 2 个缺失 handler（renameSession + updateNickname 之前 404）+ api-chat 答案 `[N]` 内联标记解析（`citedNums` subset）+ minipgm message-bubble 富文本化（`[N]` 可点击 → showToast citation title）。
+
+mock-first 实现：
+
+- **后端**（`apps/api/`）：
+  - `handlers/api-sessions-rename.ts` (NEW)：PATCH /api-sessions-rename?id={id} body={title} → 改 chatSession.title + updatedAt + owner 校验
+  - `handlers/api-user-nickname.ts` (NEW)：PATCH /api-user-nickname body={nickname} → 改 user.nickname（不动 wxOpenid/createdAt）
+  - `handlers/api-chat.ts`：加 `parseAnswerSegments` helper；`citedNums: number[]` + `citations` 改 subset
+  - `index.ts`：+2 HANDLER_MAP 条目（13 → 15 handler）
+- **minipgm caller**（`apps/miniprogram/lib/api.ts`）：
+  - `renameSession`: `/api-sessions-rename` + query `{id}` + PATCH
+  - `updateNickname`: `/api-user-nickname` + PATCH
+  - `deleteSession`: `/api-sessions-delete` + query `{id}` + DELETE（修复 CP-7-A 遗留 path param bug）
+- **minipgm 前端富文本**：
+  - `lib/citation-parser.ts` (NEW)：`parseAnswerSegments(answer)` + `extractCitedNums(answer)` 共享 helper（与后端对称）
+  - `components/message-bubble/`：+segments prop + onCiteTap → `wx.showToast(citations[n-1].title)` + wxml `wx:for` 渲染 text + cite-n + `.cite-num` 蓝色样式
+  - `pages/chat/chat.ts`：callChat 内 `parseAnswerSegments(resp.answer)` → 传 message-bubble
+
+### CP-7-B 测试矩阵
+
+- `pnpm -F api test` — **63 用例**（+33：rename 12 + nickname 12 + chat[N] 9）
+- `pnpm -F miniprogram test` — **49 用例**（+17：citation-parser 11 + message-bubble 6）
+- `pnpm -F shared test` — 49 用例（无变化）
+- `pnpm -F admin test` — 24 用例（无变化）
+- `pnpm -F crawler test` — 19 用例（无变化）
+- `pnpm -r typecheck` — 5 包全绿
+- `pnpm -F admin build` — 成功（202.97 kB JS / 15.67 kB CSS）
+- 累计：**204 用例全绿**（CP-7-A 后 154 + CP-7-B 净 +50）
+
+### CP-7-B 限制（mock-first 已知）
+
+- 真实 wx.cloud.callFunction 协议未在 CI 跑（mock-first；CP-7 真接时验证）
+- `[N]` 富文本仅 toast 显示，不 scrollToCard（CP-7-C/D 推）
+- 不做 `chat` 与 `ask` 引用格式统一（chat 用 inline `[N]`，ask 用 JSON 块；CP-7-D 推）
+
+详见 `docs/superpowers/state-cp7-b.md`（含 commit 汇总 + 真接路径 + 教训 + 下一步）。
+
+---
+
 ## 许可 / 致谢
 
 个人项目，暂未开源许可证。
