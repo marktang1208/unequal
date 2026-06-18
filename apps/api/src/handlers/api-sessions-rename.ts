@@ -1,11 +1,14 @@
 /**
- * api-sessions-rename handler（CP-7-B）
+ * api-sessions-rename handler（CP-7-B + bugfix）
  * PATCH /api-sessions-rename?id={sessionId}
  *
  * Body: { title: string }
  * Auth: JWT user/admin scope
  *
  * 改 chatSession.title + updatedAt；owner 校验。
+ *
+ * CP-7-B bugfix：原 `getById` 查 CloudBase `_id`，caller 传的是 schema `id`。
+ * 改用 `whereQuery({id})` 查 schema 字段；update 用 CloudBase `_id`。
  */
 
 import {
@@ -19,7 +22,7 @@ import {
 } from "../lib/handler-utils.js";
 import { getEnv } from "../lib/env.js";
 import { verifyJwt } from "../lib/jwt.js";
-import { getById, update, COLLECTIONS } from "../lib/db.js";
+import { whereQuery, update, COLLECTIONS } from "../lib/db.js";
 import type { ChatSession } from "@unequal/shared/types";
 
 const MAX_TITLE_LEN = 100;
@@ -62,8 +65,13 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
     return errorResponse("INVALID_REQUEST", `'title' exceeds ${MAX_TITLE_LEN} chars`, 400);
   }
 
-  // ownership 校验
-  const session = await getById<ChatSession>(COLLECTIONS.chatSession, id);
+  // ownership 校验（查 schema id；list 返的就是 schema id）
+  const sessions = await whereQuery<ChatSession>(
+    COLLECTIONS.chatSession,
+    { id },
+    { limit: 1 },
+  );
+  const session = sessions[0];
   if (!session) {
     return errorResponse("NOT_FOUND", `Session ${id} not found`, 404);
   }
@@ -71,8 +79,8 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
     return errorResponse("FORBIDDEN", "Not your session", 403);
   }
 
-  // update
-  await update(COLLECTIONS.chatSession, id, {
+  // update 用 CloudBase _id
+  await update(COLLECTIONS.chatSession, session._id, {
     title,
     updatedAt: Date.now(),
   });

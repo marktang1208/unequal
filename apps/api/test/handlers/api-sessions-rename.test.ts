@@ -35,7 +35,7 @@ vi.mock("../../src/lib/env.js", () => ({
   }),
 }));
 
-import { getById, update } from "../../src/lib/db.js";
+import { getById, update, whereQuery } from "../../src/lib/db.js";
 import { main } from "../../src/handlers/api-sessions-rename.js";
 import { signJwt } from "../../src/lib/jwt.js";
 import type { HttpTriggerEvent } from "../../src/lib/handler-utils.js";
@@ -69,7 +69,7 @@ describe("api-sessions-rename (CP-7-B)", () => {
 
   it("happy: PATCH with valid jwt + id + title → 200 + update called", async () => {
     const jwt = await makeJwt("01HUSER");
-    vi.mocked(getById).mockResolvedValue({
+    vi.mocked(whereQuery).mockResolvedValue([{
       _id: "01HSESSION",
       id: "01HSESSION",
       userId: "01HUSER",
@@ -77,7 +77,7 @@ describe("api-sessions-rename (CP-7-B)", () => {
       messages: [],
       createdAt: 1000,
       updatedAt: 1000,
-    } as unknown as Awaited<ReturnType<typeof getById>>);
+    }] as unknown as Awaited<ReturnType<typeof whereQuery>>);
     vi.mocked(update).mockResolvedValue(undefined);
 
     const res = await main(
@@ -92,7 +92,7 @@ describe("api-sessions-rename (CP-7-B)", () => {
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
     expect(body).toEqual({ ok: true, id: "01HSESSION", title: "新标题" });
-    expect(getById).toHaveBeenCalledWith("chat_session", "01HSESSION");
+    expect(whereQuery).toHaveBeenCalledWith("chat_session", { id: "01HSESSION" }, expect.objectContaining({ limit: 1 }));
     expect(update).toHaveBeenCalledWith(
       "chat_session",
       "01HSESSION",
@@ -173,7 +173,7 @@ describe("api-sessions-rename (CP-7-B)", () => {
 
   it("404: session not found → NOT_FOUND", async () => {
     const jwt = await makeJwt("01HUSER");
-    vi.mocked(getById).mockResolvedValue(null);
+    vi.mocked(whereQuery).mockResolvedValue([]);
 
     const res = await main(
       makeEvent({
@@ -190,7 +190,7 @@ describe("api-sessions-rename (CP-7-B)", () => {
 
   it("403: session.userId !== jwt.sub → FORBIDDEN", async () => {
     const jwt = await makeJwt("01HUSER_A");
-    vi.mocked(getById).mockResolvedValue({
+    vi.mocked(whereQuery).mockResolvedValue([{
       _id: "01HSESSION",
       id: "01HSESSION",
       userId: "01HUSER_B",
@@ -198,7 +198,7 @@ describe("api-sessions-rename (CP-7-B)", () => {
       messages: [],
       createdAt: 1000,
       updatedAt: 1000,
-    } as unknown as Awaited<ReturnType<typeof getById>>);
+    }] as unknown as Awaited<ReturnType<typeof whereQuery>>);
 
     const res = await main(
       makeEvent({
@@ -232,7 +232,7 @@ describe("api-sessions-rename (CP-7-B)", () => {
 
   it("title trimmed: '  新标题  ' → title='新标题'", async () => {
     const jwt = await makeJwt("01HUSER");
-    vi.mocked(getById).mockResolvedValue({
+    vi.mocked(whereQuery).mockResolvedValue([{
       _id: "01HSESSION",
       id: "01HSESSION",
       userId: "01HUSER",
@@ -240,7 +240,7 @@ describe("api-sessions-rename (CP-7-B)", () => {
       messages: [],
       createdAt: 1000,
       updatedAt: 1000,
-    } as unknown as Awaited<ReturnType<typeof getById>>);
+    }] as unknown as Awaited<ReturnType<typeof whereQuery>>);
     vi.mocked(update).mockResolvedValue(undefined);
 
     const res = await main(
