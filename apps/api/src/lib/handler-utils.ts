@@ -13,7 +13,8 @@ export interface HttpTriggerEvent {
   httpMethod: string;
   path: string;
   headers: Record<string, string>;
-  queryString: Record<string, string | string[]>;
+  /** queryString 实际可能 undefined（CloudBase HTTP gateway 时有时无） */
+  queryString?: Record<string, string | string[]>;
   body: string | null;
   isBase64Encoded: boolean;
 }
@@ -78,9 +79,11 @@ export function parseJsonBody<T = unknown>(event: HttpTriggerEvent): T | null {
   }
 }
 
-/** 取第一个 query 参数值 */
+/** 取第一个 query 参数值（兼容 queryString + queryStringParameters） */
 export function getQuery(event: HttpTriggerEvent, key: string): string | undefined {
-  const v = event.queryString[key];
+  // SCF API GW 标准: queryStringParameters；CloudBase: queryString
+  const qs = event.queryString ?? (event as unknown as { queryStringParameters?: Record<string, string | string[]> }).queryStringParameters;
+  const v = qs?.[key];
   return Array.isArray(v) ? v[0] : v;
 }
 

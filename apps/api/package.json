@@ -14,7 +14,8 @@
     "deploy:collections": "tsx scripts/deploy-collections.ts",
     "deploy:indexes": "tsx scripts/deploy-indexes.ts",
     "deploy:functions": "bash scripts/deploy-functions.sh",
-    "deploy:secrets": "tsx scripts/deploy-secrets.ts"
+    "deploy:secrets": "tsx scripts/deploy-secrets.ts",
+    "deploy:clean": "tsx scripts/deploy-clean.ts"
   },
   "dependencies": {
     "@cloudbase/node-sdk": "^3.18.1",

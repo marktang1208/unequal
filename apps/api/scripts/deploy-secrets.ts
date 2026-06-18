@@ -1,30 +1,39 @@
 /**
- * CP-6: 部署脚本 — 注入 4 secrets + 8 vars 到 CloudBase 函数
+ * CP-6.5 (P3.6): 部署脚本 — 注入 4 secrets + IP allowlist 到 CloudBase 函数
  *
- * 用法：
- *   export TCB_SECRET_ID=<your-secret-id>
- *   export TCB_SECRET_KEY=<your-secret-key>
- *   export TCB_ENV=<env-id>
- *   # 4 secrets 从本机 env 读
- *   export ADMIN_TOKEN=...
- *   export JWT_SECRET=...
- *   export MINIMAX_API_KEY=...
- *   export KEK_SECRET_V1=...
- *   pnpm tsx scripts/deploy-secrets.ts
+ * 用 tcb CLI（`tcb fn deploy --all --force --config-file`）从 gitignored
+ * cloudbaserc.smoke.json 部署。CLI 内部走 tcb-api.tencentcloudapi.com（国内
+ * DNS 可达），auth 复用 `tcb login` 状态。
  *
- * 幂等：覆盖已有。
+ * 用法（需先 `tcb login`）：
+ *   # 1. 准备 4 secrets + IP allowlist 到本机 env
+ *   export ADMIN_TOKEN=... JWT_SECRET=... MINIMAX_API_KEY=... KEK_SECRET_V1=...
+ *   export ADMIN_IP_ALLOWLIST=...
+ *
+ *   # 2. 跑 deploy:secrets（生成 cloudbaserc.smoke.json + 重 deploy api-router）
+ *   pnpm -F api deploy:secrets
+ *
+ *   # 3. 跑 6 步 smoke（state-cp6.md §4）
+ *
+ *   # 4. 清理：把 secrets 从云函数 env 清掉（用干净 cloudbaserc.json 重 deploy）
+ *   pnpm -F api deploy:clean
+ *
+ * 幂等：重 deploy 会覆盖已有 env vars；先备份后清理。
+ *
+ * 替代方案（已废）：
+ * - HTTP API `api.cloudbase.tencentcloud.com` — DNS NXDOMAIN
+ * - `tcb config update fn --all` — 交互式 prompt 卡 Override/Merge
+ *
+ * 前置：apps/api/cloudbaserc.json 已存在（7 stable vars 模板）。
  */
 
-import cloudbase from "@cloudbase/node-sdk";
+import { spawn } from "node:child_process";
+import { readFile, writeFile, copyFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 
-const SECRET_ID = process.env.TCB_SECRET_ID;
-const SECRET_KEY = process.env.TCB_SECRET_KEY;
-const ENV = process.env.TCB_ENV;
-
-if (!SECRET_ID || !SECRET_KEY || !ENV) {
-  console.error("Missing TCB_SECRET_ID / TCB_SECRET_KEY / TCB_ENV");
-  process.exit(1);
-}
+const SMOKE_CONFIG = "cloudbaserc.smoke.json";
+const CLEAN_CONFIG = "cloudbaserc.json";
+const CLEAN_BACKUP = "cloudbaserc.clean.bak";
 
 const SECRETS = {
   ADMIN_TOKEN: process.env.ADMIN_TOKEN,
@@ -33,81 +42,93 @@ const SECRETS = {
   KEK_SECRET_V1: process.env.KEK_SECRET_V1,
 };
 
-const VARS = {
-  ENVIRONMENT: "production",
-  ALLOWED_ORIGIN: "*",
-  ADMIN_IP_ALLOWLIST: process.env.ADMIN_IP_ALLOWLIST ?? "127.0.0.1",
-  MINIMAX_BASE_URL: "https://api.MiniMax.chat/v1",
-  DEFAULT_USER_ID: "01H0000000000000000000000",
-  LOGIN_MAX_ATTEMPTS: "5",
-  LOGIN_WINDOW_MS: "900000",
-  KEK_CURRENT_VERSION: "1",
-};
+const IP_ALLOWLIST = process.env.ADMIN_IP_ALLOWLIST;
 
-async function main() {
+interface ExecResult {
+  stdout: string;
+  stderr: string;
+  code: number;
+}
+
+function runTcb(args: string[], stdin?: string): Promise<ExecResult> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("tcb", args, { env: process.env });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (d) => (stdout += d.toString()));
+    child.stderr.on("data", (d) => (stderr += d.toString()));
+    if (stdin) {
+      child.stdin.write(stdin);
+      child.stdin.end();
+    }
+    child.on("error", reject);
+    child.on("close", (code) => resolve({ stdout, stderr, code: code ?? 0 }));
+  });
+}
+
+async function loadBaseConfig(): Promise<Record<string, unknown>> {
+  const raw = await readFile(CLEAN_CONFIG, "utf-8");
+  return JSON.parse(raw);
+}
+
+async function writeSmokeConfig(): Promise<void> {
   // 验证 secrets 必填
   for (const [name, value] of Object.entries(SECRETS)) {
     if (!value) {
-      console.error(`Missing secret env var: ${name}`);
-      process.exit(1);
+      throw new Error(`Missing env var: ${name}`);
     }
   }
-
-  const app = cloudbase.init({ secretId: SECRET_ID, secretKey: SECRET_KEY, env: ENV });
-
-  // 1. 注入 secrets（用 HTTP API）
-  console.log("[deploy-secrets] 4 secrets");
-  const accessToken = await getAccessToken(app);
-  for (const [name, value] of Object.entries(SECRETS)) {
-    await setSecret(ENV!, name, value!, accessToken);
-    console.log(`  ✅ ${name}`);
+  if (!IP_ALLOWLIST) {
+    throw new Error("Missing env var: ADMIN_IP_ALLOWLIST");
   }
 
-  // 2. 注入 vars（用 HTTP API）
-  console.log("[deploy-vars] 8 vars");
-  for (const [name, value] of Object.entries(VARS)) {
-    await setVar(ENV!, name, value, accessToken);
-    console.log(`  ✅ ${name}=${value.slice(0, 20)}${value.length > 20 ? "..." : ""}`);
+  const base = await loadBaseConfig();
+  const fns = base.functions as Array<Record<string, unknown>>;
+  if (!Array.isArray(fns) || fns.length === 0) {
+    throw new Error("cloudbaserc.json has no functions array");
   }
 
-  console.log("\n✅ 4 secrets + 8 vars 注入完成");
+  // 把 4 secrets + IP allowlist 合并到第一个函数的 envVariables
+  const fn = fns[0];
+  const envVars = (fn.envVariables ?? {}) as Record<string, string>;
+  fn.envVariables = {
+    ...envVars,
+    ADMIN_TOKEN: SECRETS.ADMIN_TOKEN!,
+    JWT_SECRET: SECRETS.JWT_SECRET!,
+    MINIMAX_API_KEY: SECRETS.MINIMAX_API_KEY!,
+    KEK_SECRET_V1: SECRETS.KEK_SECRET_V1!,
+    ADMIN_IP_ALLOWLIST: IP_ALLOWLIST!,
+  };
+
+  await writeFile(SMOKE_CONFIG, JSON.stringify(base, null, 2) + "\n");
+  console.log(`  ✅ ${SMOKE_CONFIG} 生成（7 stable + 4 secrets + IP allowlist = 12 vars）`);
 }
 
-async function getAccessToken(_app: unknown): Promise<string> {
-  // CloudBase Node SDK 没直接暴露 access token；通过 serviceUrl + IAM 拿
-  // 这里用 secretId/secretKey 调腾讯云 CAM STS API；简化版直接返回 env
-  const token = process.env.TCB_ACCESS_TOKEN;
-  if (!token) {
-    throw new Error("TCB_ACCESS_TOKEN not set (get from CloudBase console → API 密钥管理)");
+async function deploySmoke(): Promise<void> {
+  console.log("  → tcb --config-file cloudbaserc.smoke.json fn deploy --all --force");
+  const r = await runTcb([
+    "--config-file", SMOKE_CONFIG,
+    "fn", "deploy", "--all", "--force", "--json",
+  ]);
+  if (r.code !== 0) {
+    console.log(`  ❌ deploy 失败 (exit ${r.code})`);
+    console.log(r.stdout);
+    console.log(r.stderr);
+    throw new Error(`tcb fn deploy failed: exit ${r.code}`);
   }
-  return token;
+  console.log("  ✅ deploy 成功（api-router 已用 12 vars 重 deploy）");
 }
 
-async function setSecret(env: string, name: string, value: string, accessToken: string): Promise<void> {
-  const url = `https://api.cloudbase.tencentcloud.com/v2/functions/${name}/secrets`;
-  await safeFetch(url, accessToken, env, { key: name, value });
-}
+async function main() {
+  console.log("[deploy-secrets] 生成 smoke 配置 + 重 deploy api-router");
 
-async function setVar(env: string, name: string, value: string, accessToken: string): Promise<void> {
-  // vars 需按函数批量设；spec 简化：用全局 env（CloudBase 自动注入所有函数）
-  const url = `https://api.cloudbase.tencentcloud.com/v2/env/${env}/variables`;
-  await safeFetch(url, accessToken, env, { key: name, value });
-}
+  await writeSmokeConfig();
+  await deploySmoke();
 
-async function safeFetch(url: string, accessToken: string, env: string, body: unknown): Promise<void> {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json; charset=utf-8",
-      "X-CloudBase-AccessToken": accessToken,
-      "X-CloudBase-Env": env,
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok && res.status !== 409) {  // 409 = already exists, OK
-    const text = await res.text();
-    throw new Error(`HTTP ${res.status}: ${text}`);
-  }
+  console.log("\n✅ 4 secrets + IP allowlist 注入完成");
+  console.log("\n下一步：");
+  console.log("  1. 跑 6 步 smoke（docs/superpowers/state-cp6.md §4）");
+  console.log("  2. smoke 通过后跑 pnpm -F api deploy:clean 清 secrets");
 }
 
 main().catch((err) => {
