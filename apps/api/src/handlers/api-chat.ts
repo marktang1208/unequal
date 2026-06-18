@@ -116,8 +116,10 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
   });
 
   // 3. 取 doc titles
+  // chunk.documentId = upload 时 newId() 生成的 ULID（schema `id` 字段），不是 CloudBase `_id`
+  // query 用 schema `id` 字段；docMap 用 `d.id` 作 key
   const docIds = Array.from(new Set(top.map((t) => chunksWithEmb.find((c) => c.id === t.chunkId)?.documentId).filter(Boolean) as string[]));
-  const docs = await Promise.all(docIds.map((id) => whereQuery<Document>(COLLECTIONS.document, { _id: id }, { limit: 1 }).then((r) => r[0])));
+  const docs = await Promise.all(docIds.map((id) => whereQuery<Document>(COLLECTIONS.document, { id }, { limit: 1 }).then((r) => r[0])));
   const docMap = new Map(docs.filter(Boolean).map((d) => [d!.id, d!]));
 
   // 4. 拼 context

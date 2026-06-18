@@ -105,12 +105,12 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
     scoreThreshold: 0.3,
   });
 
-  // 3. fetch docs for titles (denormalize: chunk has sourceId, doc has title)
-  // t.chunkId 是 CloudBase doc _id (P3.3 修复后), chunksWithEmb[i].id 是空字符串, 必须用 _id 比较
+  // 3. fetch docs for titles (denormalize: chunk has documentId, doc has title)
+  // chunk.documentId = upload 时 newId() 生成的 ULID（写 schema `id` 字段，不是 CloudBase `_id`）
+  // query 必须按 schema `id` 字段，不是 CloudBase `_id`（auto-generated 与 schema id 不同）
   const docIds = Array.from(new Set(top.map((t) => chunksWithEmb.find((c) => c._id === t.chunkId)?.documentId).filter(Boolean) as string[]));
-  const docs = await Promise.all(docIds.map((id) => getAllByFilter<Document>(COLLECTIONS.document, { _id: id }, 1).then((r) => r[0])));
-  // d._id 是 CloudBase doc _id, d.id 是 schema 字段（upload 写时 id=""，实际用 _id）
-  const docMap = new Map(docs.filter(Boolean).map((d) => [d!._id, d!]));
+  const docs = await Promise.all(docIds.map((id) => getAllByFilter<Document>(COLLECTIONS.document, { id }, 1).then((r) => r[0])));
+  const docMap = new Map(docs.filter(Boolean).map((d) => [d!.id, d!]));
 
   // 4. build prompt
   const ctx = {
