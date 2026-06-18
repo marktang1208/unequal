@@ -1,31 +1,36 @@
 /**
- * M6.2 miniprogram auth (ensureJwt + getJwtToken) 测试。
+ * CP-7-A miniprogram auth (ensureJwt + getJwtToken) 测试。
  *
- * CP-6 P3.9：ensureJwt 改走 wx.cloud.callFunction（不是 HTTP gateway）。
- * Mock 走 __setCloudCallImpl。
+ * ensureJwt 走 cloudCall（callFunction 路径）。
+ * Mock 用 __setCloudCallImpl，wx.login 全局 mock。
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { ensureJwt, getJwtToken } from "../lib/auth.js";
 import { __setJwtStorageImpl } from "../lib/chat-storage.js";
-import { __setCloudCallImpl, type CloudCallFn } from "../lib/cloud-call.js";
+import {
+  ApiError,
+  __setCloudCallImpl,
+  __resetCloudCallImpl,
+  __clearInflightRefresh,
+  type CloudCallFn,
+} from "../lib/cloud-call.js";
 
-// Mock wx 全局（miniflare/node 没 wx）
+// Mock wx 全局（miniflare/node 没 wx；wx.login + removeStorageSync 都需 mock）
 (globalThis as { wx?: unknown }).wx = {
   login: vi.fn(),
-  request: vi.fn(),
-  cloud: { callFunction: vi.fn() },
-  getStorageSync: vi.fn(),
-  setStorageSync: vi.fn(),
   removeStorageSync: vi.fn(),
 };
 // @ts-expect-error 测试桩类型
 const mockWx = (globalThis as {
-  wx: { login: ReturnType<typeof vi.fn> };
+  wx: { login: ReturnType<typeof vi.fn>; removeStorageSync: ReturnType<typeof vi.fn> };
 }).wx;
 
-let storage: Record<string, string> = {};
+let storage: Record<string, string>;
 let mockCloudCall: ReturnType<typeof vi.fn>;
+
 beforeEach(() => {
+  __clearInflightRefresh();
+  __resetCloudCallImpl();
   storage = {};
   __setJwtStorageImpl(
     (key) => storage[key] ?? "",
@@ -33,10 +38,15 @@ beforeEach(() => {
   );
   vi.clearAllMocks();
   mockWx.login.mockReset();
-  // 重置 cloudCall mock
-  __setCloudCallImpl(null);
+  mockWx.removeStorageSync.mockReset();
   mockCloudCall = vi.fn();
   __setCloudCallImpl(mockCloudCall as unknown as CloudCallFn);
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  __clearInflightRefresh();
+  __resetCloudCallImpl();
 });
 
 describe("miniprogram ensureJwt (mock wx + mock cloudCall)", () => {
@@ -46,7 +56,7 @@ describe("miniprogram ensureJwt (mock wx + mock cloudCall)", () => {
     });
     mockCloudCall.mockResolvedValue({
       statusCode: 200,
-      body: { jwt: "eyJ.jwt.token", user_id: "01HUSER", is_new_user: true },
+      body: { jwt: "eyJ.jwt.token" },
     });
 
     const token = await ensureJwt();
@@ -58,7 +68,6 @@ describe("miniprogram ensureJwt (mock wx + mock cloudCall)", () => {
       httpMethod: "POST",
       body: { code: "test_code_081H1z" },
     });
-    // 写 storage
     expect(getJwtToken()).toBe("eyJ.jwt.token");
   });
 
@@ -70,16 +79,14 @@ describe("miniprogram ensureJwt (mock wx + mock cloudCall)", () => {
     expect(mockCloudCall).not.toHaveBeenCalled();
   });
 
-  it("500 → 抛 Error 含 status + code（让 caller 决定 fallback）", async () => {
+  it("500 → 抛 ApiError(statusCode=500, code) 让 caller 决定 fallback", async () => {
     mockWx.login.mockImplementation(({ success }: any) => {
       success({ code: "expired_code" });
     });
-    mockCloudCall.mockResolvedValue({
-      statusCode: 500,
-      body: { error: "INTERNAL_ERROR" },
-    });
+    mockCloudCall.mockRejectedValue(new ApiError(500, "INTERNAL_ERROR", "boom"));
 
-    await expect(ensureJwt()).rejects.toThrow(/\/api-auth-wx-login 500.*INTERNAL_ERROR/);
+    await expect(ensureJwt()).rejects.toBeInstanceOf(ApiError);
+    await expect(ensureJwt()).rejects.toMatchObject({ statusCode: 500, code: "INTERNAL_ERROR" });
   });
 
   it("wx.login 抛错 → propagate（app.ts onLaunch 失败不 throw 阻塞启动）", async () => {
@@ -87,18 +94,17 @@ describe("miniprogram ensureJwt (mock wx + mock cloudCall)", () => {
       fail({ errMsg: "wx.login fail" });
     });
     await expect(ensureJwt()).rejects.toThrow(/wx.login/);
+    // cloudCall 不应被调（wx.login 先 fail）
+    expect(mockCloudCall).not.toHaveBeenCalled();
   });
 
-  it("cloudCall 5xx → ensureJwt 抛 Error 且不写 storage（避免返 500 token）", async () => {
+  it("cloudCall 5xx → ensureJwt 抛 ApiError 且不写 storage（避免返 500 token）", async () => {
     mockWx.login.mockImplementation(({ success }: any) => {
       success({ code: "valid_code_but_server_down" });
     });
-    mockCloudCall.mockResolvedValue({
-      statusCode: 500,
-      body: { error: "internal", detail: "boom" },
-    });
+    mockCloudCall.mockRejectedValue(new ApiError(500, "internal", "boom"));
 
-    await expect(ensureJwt()).rejects.toThrow(/\/api-auth-wx-login 500.*internal/);
+    await expect(ensureJwt()).rejects.toMatchObject({ statusCode: 500, code: "internal" });
     expect(storage["unequal:jwt"]).toBeUndefined();
   });
 });

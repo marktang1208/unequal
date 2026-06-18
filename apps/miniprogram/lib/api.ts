@@ -1,261 +1,115 @@
+/**
+ * CP-7-A 7 caller typed wrapper（spec §6.1 / plan Task 2）。
+ *
+ * 每个 caller 是 cloudCall<T> 的 thin wrapper：路径 + body + jwt 透明传
+ * 给 cloudCall；返回值直接 typed（caller 不解析 statusCode）。
+ *
+ * 路径全部沿用现有约定（CP-6 P3.9 + 旧路径兼容）：
+ * - /api-ask / /api-chat / /api-sessions-list / /api-sessions-delete/:id
+ * - /sessions/:id (renameSession — CP-6 后端暂无 handler；CP-7-B 范围)
+ * - /user/nickname (updateNickname — 同上)
+ * - /auth/admin-login (adminLogin — 无 jwt 依赖)
+ *
+ * 死代码清理（M6.3a / M6.4 时代的 wx HTTP 路径）：
+ * - 所有 caller 不再走 wx.request / fetchWithRefresh；统一 cloudCall
+ * - refresh 401 内作于 cloudCall（spec §D-3）
+ */
+
 import type {
   AskResponse,
-  AskError,
   ChatRequest,
   ChatResponse,
   SessionsListResponse,
 } from "./types.js";
-import { getJwtToken, ensureJwt } from "./auth.js";
+import { cloudCall } from "./cloud-call.js";
+import { getJwtToken } from "./auth.js";
 
-/**
- * 调 /ask endpoint 拿单轮问答。
- * Mock-first：
- * - 开发期 base URL = http://localhost:8787（需在微信开发者工具勾选「不校验合法域名」）
- * - CP-5 真接 Cloudflare 后改 https://unequal.xxx.workers.dev
- * - fetch 注入点允许测试桩（Vitest 单测）
- *
- * 三方环境兼容：
- * - Vitest Node 单测：opts.fetchImpl 注入
- * - 小程序运行时：wx 全局存在，走 wxRequestAsFetch（globalThis.fetch 不存在）
- * - 其它（admin / 浏览器）：原生 fetch
- */
+/* ---------- CP-7-A admin login (无 jwt 依赖) ---------- */
 
-export interface ApiOptions {
-  baseUrl?: string;
-  token?: string;
-  fetchImpl?: typeof fetch;
+interface AdminLoginResponse {
+  token: string;
+  user_id: string;
+  is_admin: boolean;
+  expires_in: number;
 }
-
-interface ResponseLike {
-  ok: boolean;
-  status: number;
-  statusText: string;
-  json(): Promise<unknown>;
-  text(): Promise<string>;
-}
-
-/** 把 wx.request 包成 fetch 兼容的 Promise 接口。miniprogram 运行时唯一可用的 HTTP 通道。 */
-function wxRequestAsFetch(input: string, init: { method?: string; headers?: Record<string, string>; body?: string }): Promise<ResponseLike> {
-  return new Promise((resolve, reject) => {
-    // miniprogram-api-typings 没装，wx 全局在 tsc 看是 any
-    // @ts-expect-error wx 全局类型 mock-first 缺失
-    wx.request({
-      url: input,
-      method: (init.method ?? "GET") as any,
-      header: init.headers as any,
-      data: init.body as any,
-      success: (res: any) => {
-        const ok = res.statusCode >= 200 && res.statusCode < 300;
-        const bodyText = typeof res.data === "string" ? res.data : JSON.stringify(res.data);
-        const response: ResponseLike = {
-          ok,
-          status: res.statusCode,
-          statusText: "",
-          json: async () => {
-            try { return JSON.parse(bodyText); } catch { return {}; }
-          },
-          text: async () => bodyText,
-        };
-        resolve(response);
-      },
-      fail: (err: any) => reject(new Error(err.errMsg ?? "wx.request failed")),
-    });
-  });
-}
-
-function getFetch(opts: ApiOptions): (input: string, init: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<ResponseLike> {
-  if (opts.fetchImpl) return opts.fetchImpl as never;
-  // @ts-expect-error wx 全局类型 mock-first 缺失
-  if (typeof wx !== "undefined" && typeof wx.request === "function") return wxRequestAsFetch as never;
-  return fetch as never;
-}
-
-/* ---------- M6.3a 401 transparent refresh wrapper ---------- */
-
-/**
- * 包一层：401 触发 ensureJwt 拿新 jwt → 用新 jwt 重发原 request 1 次。
- * - 第二次仍 401 → 拒死循环（isRetry flag 强制最多 1 次）
- * - wx.login 或 /auth/wx-login 失败 → 原 401 透传给 caller（caller 决定 mock-first fallback）
- *
- * M6.2 adminLogin 走独立路径（无 jwt header），保留直 getFetch 不变。
- *
- * M6.4：同 baseUrl 并发 401 共享 inflight ensureJwt promise（避免 N 次 wx.login）。
- *   - 模块级 Map<baseUrl, Promise<jwt>>；第一个 401 创建 inflight，第二个 / 第三个 await 同一 promise
- *   - inflight 完成（成功 / 失败）后 .finally 清缓存，下次 401 重新触发
- */
-// 模块级 inflight cache：key = baseUrl，value = inflight ensureJwt promise
-const inflightEnsureJwt = new Map<string, Promise<string>>();
-
-/** @internal 测试桩：清空 inflight promise cache（仅单测用） */
-export function __clearInflightEnsureJwt(): void {
-  inflightEnsureJwt.clear();
-}
-
-/** @internal 导出仅用于单测；生产代码不直接调 */
-export async function fetchWithRefresh(
-  url: string,
-  init: { method?: string; headers?: Record<string, string>; body?: string },
-  opts: ApiOptions,
-  isRetry = false,
-): Promise<ResponseLike> {
-  const f = getFetch(opts);
-  const res = await f(url, init);
-  if (res.status !== 401 || isRetry) return res;
-
-  // 401 + 非 retry → 共享 inflight ensureJwt（同 baseUrl 并发只触发 1 次 wx.login）
-  const baseUrl = opts.baseUrl ?? "http://localhost:8787";
-  let inflight = inflightEnsureJwt.get(baseUrl);
-  if (!inflight) {
-    inflight = ensureJwt(baseUrl, opts.fetchImpl).finally(() => {
-      // 不论成功失败清掉缓存，下次 401 重新触发
-      inflightEnsureJwt.delete(baseUrl);
-    });
-    inflightEnsureJwt.set(baseUrl, inflight);
-  }
-
-  let newJwt: string;
-  try {
-    newJwt = await inflight;
-  } catch {
-    // wx.login 失败或 /auth/wx-login 失败 → 原 401 透传
-    return res;
-  }
-  const newInit: typeof init = {
-    ...init,
-    headers: { ...init.headers, authorization: `Bearer ${newJwt}` },
-  };
-  return await fetchWithRefresh(url, newInit, opts, true);
-}
-
-function buildHeaders(opts: ApiOptions): Record<string, string> {
-  const headers: Record<string, string> = { "content-type": "application/json" };
-  // M6.2: 优先 opts.token（admin LoginPage 用），否则用 storage jwt
-  if (opts.token) {
-    headers.authorization = `Bearer ${opts.token}`;
-  } else {
-    const jwt = getJwtToken();
-    if (jwt) headers.authorization = `Bearer ${jwt}`;
-  }
-  return headers;
-}
-
-/* ---------- M6.2 admin login ---------- */
 
 /** POST /auth/admin-login → 返 admin jwt。Caller 自己 saveJwt() */
-export async function adminLogin(
-  adminToken: string,
-  opts: ApiOptions = {},
-): Promise<{ token: string; user_id: string; is_admin: boolean; expires_in: number }> {
-  const baseUrl = opts.baseUrl ?? "http://localhost:8787";
-  const f = getFetch(opts);
-  const res = await f(`${baseUrl}/auth/admin-login`, {
-    method: "POST",
-    headers: buildHeaders(opts),
-    body: JSON.stringify({ admin_token: adminToken }),
+export async function adminLogin(adminToken: string): Promise<AdminLoginResponse> {
+  return cloudCall<AdminLoginResponse>({
+    path: "/api-auth-admin-login",
+    httpMethod: "POST",
+    body: { admin_token: adminToken },
   });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as AskError;
-    throw new Error(`/auth/admin-login ${res.status}: ${body.error ?? "unknown"}`);
-  }
-  return (await res.json()) as { token: string; user_id: string; is_admin: boolean; expires_in: number };
 }
 
-export async function ask(q: string, opts: ApiOptions = {}): Promise<AskResponse> {
-  const baseUrl = opts.baseUrl ?? "http://localhost:8787";
-  const res = await fetchWithRefresh(`${baseUrl}/api-ask`, {
-    method: "POST",
-    headers: buildHeaders(opts),
-    body: JSON.stringify({ q }),
-  }, opts);
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as AskError;
-    throw new Error(`/ask ${res.status}: ${body.error ?? "unknown"}`);
-  }
-  return (await res.json()) as AskResponse;
+/* ---------- CP-7-A 单轮问答 (admin 用；user 用 chat 多轮) ---------- */
+
+export async function ask(q: string): Promise<AskResponse> {
+  return cloudCall<AskResponse>({
+    path: "/api-ask",
+    httpMethod: "POST",
+    body: { q },
+    jwt: getJwtToken() ?? undefined,
+  });
 }
 
 /* ---------- M6.1 多轮会话 + session CRUD ---------- */
 
 /**
- * /chat 多轮问答。sessionId 缺 → 服务端新建；sessionId 有 → 复用。
- * 失败降级：网络/5xx 抛 Error（含 status + code），让 caller 决定 retry / mock-first fallback。
+ * /api-chat 多轮问答。sessionId 缺 → 服务端新建；sessionId 有 → 复用。
+ * 失败降级：throw ApiError 让 caller 决定 retry / 跳登录。
  */
-export async function chat(req: ChatRequest, opts: ApiOptions = {}): Promise<ChatResponse> {
-  const baseUrl = opts.baseUrl ?? "http://localhost:8787";
-  const res = await fetchWithRefresh(`${baseUrl}/api-chat`, {
-    method: "POST",
-    headers: buildHeaders(opts),
-    body: JSON.stringify({
+export async function chat(req: ChatRequest): Promise<ChatResponse> {
+  return cloudCall<ChatResponse>({
+    path: "/api-chat",
+    httpMethod: "POST",
+    body: {
       q: req.q,
       ...(req.session_id ? { session_id: req.session_id } : {}),
-    }),
-  }, opts);
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as AskError;
-    throw new Error(`/chat ${res.status}: ${body.error ?? "unknown"}`);
-  }
-  return (await res.json()) as ChatResponse;
+    },
+    jwt: getJwtToken() ?? undefined,
+  });
 }
 
-/** GET /sessions → 返 server-side session 列表（最近 50） */
-export async function listSessions(opts: ApiOptions = {}): Promise<SessionsListResponse> {
-  const baseUrl = opts.baseUrl ?? "http://localhost:8787";
-  const res = await fetchWithRefresh(`${baseUrl}/api-sessions-list`, {
-    method: "GET",
-    headers: buildHeaders(opts),
-  }, opts);
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as AskError;
-    throw new Error(`/sessions ${res.status}: ${body.error ?? "unknown"}`);
-  }
-  return (await res.json()) as SessionsListResponse;
+/** GET /api-sessions-list → 返 server-side session 列表（最近 50） */
+export async function listSessions(): Promise<SessionsListResponse> {
+  return cloudCall<SessionsListResponse>({
+    path: "/api-sessions-list",
+    httpMethod: "GET",
+    jwt: getJwtToken() ?? undefined,
+  });
 }
 
-/** PATCH /sessions/:id → 改 title */
-export async function renameSession(sessionId: string, title: string, opts: ApiOptions = {}): Promise<void> {
-  const baseUrl = opts.baseUrl ?? "http://localhost:8787";
-  const res = await fetchWithRefresh(`${baseUrl}/sessions/${encodeURIComponent(sessionId)}`, {
-    method: "PATCH",
-    headers: buildHeaders(opts),
-    body: JSON.stringify({ title }),
-  }, opts);
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as AskError;
-    throw new Error(`/sessions PATCH ${res.status}: ${body.error ?? "unknown"}`);
-  }
+/** PATCH /sessions/:id → 改 title（CP-6 后端暂无 handler；CP-7-B 范围） */
+export async function renameSession(sessionId: string, title: string): Promise<void> {
+  await cloudCall({
+    path: `/sessions/${encodeURIComponent(sessionId)}`,
+    httpMethod: "PATCH",
+    body: { title },
+    jwt: getJwtToken() ?? undefined,
+  });
 }
 
 /** DELETE /api-sessions-delete/:id → 服务端软删（标 degraded_at） */
-export async function deleteSession(sessionId: string, opts: ApiOptions = {}): Promise<void> {
-  const baseUrl = opts.baseUrl ?? "http://localhost:8787";
-  const res = await fetchWithRefresh(`${baseUrl}/api-sessions-delete/${encodeURIComponent(sessionId)}`, {
-    method: "DELETE",
-    headers: buildHeaders(opts),
-  }, opts);
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as AskError;
-    throw new Error(`/sessions DELETE ${res.status}: ${body.error ?? "unknown"}`);
-  }
+export async function deleteSession(sessionId: string): Promise<void> {
+  await cloudCall({
+    path: `/api-sessions-delete/${encodeURIComponent(sessionId)}`,
+    httpMethod: "DELETE",
+    jwt: getJwtToken() ?? undefined,
+  });
 }
 
 /* ---------- M6.3c nickname (PATCH /user/nickname) ---------- */
 
 /**
  * PATCH /user/nickname → 写 miniprogram 用户的 nickname（2024 微信 nickname-input 组件触发）。
- * 401 时 fetchWithRefresh 自动重 wx.login + retry。
+ * CP-6 后端暂无 handler；CP-7-B 范围。
  */
-export async function updateNickname(
-  nickname: string,
-  opts: ApiOptions = {},
-): Promise<void> {
-  const baseUrl = opts.baseUrl ?? "http://localhost:8787";
-  const res = await fetchWithRefresh(`${baseUrl}/user/nickname`, {
-    method: "PATCH",
-    headers: buildHeaders(opts),
-    body: JSON.stringify({ nickname }),
-  }, opts);
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(`/user/nickname ${res.status}: ${body.error ?? "unknown"}`);
-  }
+export async function updateNickname(nickname: string): Promise<void> {
+  await cloudCall({
+    path: "/user/nickname",
+    httpMethod: "PATCH",
+    body: { nickname },
+    jwt: getJwtToken() ?? undefined,
+  });
 }
