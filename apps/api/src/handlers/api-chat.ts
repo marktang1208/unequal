@@ -28,6 +28,8 @@ interface ChatRequest {
 
 interface ChatResponse {
   answer: string;
+  /** CP-7-B 新增：answer 中实际引用的 N（去重保 first；可被调用方过滤越界） */
+  citedNums: number[];
   citations: Array<{ n: number; title: string; snippet: string; trustLevel: number; chunkId: string }>;
   session_id: string;
   session_title: string | null;
@@ -35,6 +37,35 @@ interface ChatResponse {
 }
 
 const MAX_HISTORY = 10;  // 最多带 10 条历史消息（控制 token）
+
+/**
+ * CP-7-B 新增：从 LLM 答案中解析 `[N]` 内联引用标记。
+ *
+ * 行为：
+ * - 正则 `/\[\d+\]/g` 提取所有 [数字]
+ * - 去重（保 first 出现位置）
+ * - 越界数字（n > topLength 或 n < 1 或 topLength=0）由 caller 决定如何映射到 citations subset
+ *
+ * 返回 { rawNums, citedNums }：
+ * - rawNums: 解析出的所有数字（不去重；调试用）
+ * - citedNums: 去重保 first 顺序（包含越界数字；调用方按需过滤）
+ *
+ * @param answer - LLM 答案文本
+ * @param topLength - 检索 top-N 数量（unused；保留供 caller 决策）
+ */
+export function parseAnswerSegments(answer: string, topLength: number): { rawNums: number[]; citedNums: number[] } {
+  void topLength; // 保留参数；不强制使用
+  const matches = answer.match(/\[\d+\]/g) ?? [];
+  const rawNums = matches.map((m) => parseInt(m.slice(1, -1), 10)).filter((n) => Number.isFinite(n));
+  const seen = new Set<number>();
+  const citedNums: number[] = [];
+  for (const n of rawNums) {
+    if (seen.has(n)) continue;
+    seen.add(n);
+    citedNums.push(n);
+  }
+  return { rawNums, citedNums };
+}
 
 export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse> {
   const env = getEnv();
@@ -190,20 +221,33 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
     });
   }
 
-  // 8. 返回
-  const response: ChatResponse = {
-    answer,
-    citations: top.slice(0, 5).map((t, i) => {
+  // 8. CP-7-B [N] 解析：citedNums + citations subset
+  const topChunks = top.slice(0, 5);
+  const { citedNums } = parseAnswerSegments(answer, topChunks.length);
+  // 过滤越界（保 citedNums 顺序）
+  const validCitedNums = citedNums.filter((n) => n >= 1 && n <= topChunks.length);
+  // 按 citedNums 顺序映射 topChunks（不按数字重排；caller 阅读顺序）
+  const citations = validCitedNums
+    .map((n) => {
+      const idx = n - 1;
+      const t = topChunks[idx];
+      if (!t) return null;
       const chunk = chunksWithEmb.find((c) => c.id === t.chunkId);
       const doc = chunk ? docMap.get(chunk.documentId) : undefined;
       return {
-        n: i + 1,
+        n,
         title: doc?.title ?? "?",
         snippet: chunk?.content.slice(0, 200) ?? "",
         trustLevel: t.trustLevel,
         chunkId: t.chunkId,
       };
-    }),
+    })
+    .filter((c): c is NonNullable<typeof c> => c !== null);
+
+  const response: ChatResponse = {
+    answer,
+    citedNums, // 包含越界数字（debug 用）；前端显示按需过滤
+    citations, // 仅 valid subset
     session_id: session.id,
     session_title: title,
     is_new_session: isNewSession,

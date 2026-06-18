@@ -185,10 +185,10 @@ CP-7-A 不改路径。沿用：
 1. **CP-7 真接验证**（user 操作）：
    - 微信开发者工具导入 apps/miniprogram（替换 AppID）
    - 编译 → onLaunch → 5 步真机验证（与 P3.9 类似）
-   - 验证：miniprogram 全 5 caller 走 callFunction + 401 refresh 行为 + inflight share
-2. **CP-7-B 独立项目**：handler 后端补全（renameSession + updateNickname）+ api-chat.ts [N] 引用解析
-3. **CP-7-C 候选**：deploy 流程内化 env vars push（`tcb fn deploy --force` 重置 vars 自动化）
-4. **CP-7-D 候选**：LLM model 跨 handler 一致性 smoke（api-ask + api-chat 用统一 model name）
+   - 验证：miniprogram 全 7 caller 走 callFunction + 401 refresh 行为 + inflight share
+2. ~~CP-7-B 独立项目：handler 后端补全（renameSession + updateNickname）+ api-chat.ts [N] 引用解析~~ ✅ **CP-7-B 完成**（见 `state-cp7-b.md`）
+3. CP-7-C 候选：deploy 流程内化 env vars push（`tcb fn deploy --force` 重置 vars 自动化）
+4. CP-7-D 候选：LLM model 跨 handler 一致性 smoke（api-ask + api-chat 用统一 model name）
 
 ---
 

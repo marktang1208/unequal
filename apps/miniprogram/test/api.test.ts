@@ -130,30 +130,32 @@ describe("listSessions()", () => {
 });
 
 describe("renameSession() / deleteSession()", () => {
-  it("renameSession: PATCH /sessions/:id → return ok", async () => {
+  it("renameSession: PATCH /api-sessions-rename?id=... body={title} → return ok", async () => {
     mockCloudCall.mockResolvedValue({ statusCode: 200, body: null });
     await renameSession("01HSESSION", "新标题");
     const callArg = mockCloudCall.mock.calls[0]![0]!;
-    expect(callArg.path).toBe("/sessions/01HSESSION");
+    expect(callArg.path).toBe("/api-sessions-rename");
     expect(callArg.httpMethod).toBe("PATCH");
+    expect(callArg.query).toEqual({ id: "01HSESSION" });
     expect(callArg.body).toEqual({ title: "新标题" });
   });
 
-  it("deleteSession: DELETE /api-sessions-delete/:id → return ok", async () => {
+  it("deleteSession: DELETE /api-sessions-delete?id=... → return ok", async () => {
     mockCloudCall.mockResolvedValue({ statusCode: 200, body: null });
     await deleteSession("01HSESSION");
     const callArg = mockCloudCall.mock.calls[0]![0]!;
-    expect(callArg.path).toBe("/api-sessions-delete/01HSESSION");
+    expect(callArg.path).toBe("/api-sessions-delete");
     expect(callArg.httpMethod).toBe("DELETE");
+    expect(callArg.query).toEqual({ id: "01HSESSION" });
   });
 });
 
 describe("updateNickname()", () => {
-  it("PATCH /user/nickname → return ok", async () => {
+  it("PATCH /api-user-nickname body={nickname} → return ok", async () => {
     mockCloudCall.mockResolvedValue({ statusCode: 200, body: { nickname: "张三" } });
     await updateNickname("张三");
     const callArg = mockCloudCall.mock.calls[0]![0]!;
-    expect(callArg.path).toBe("/user/nickname");
+    expect(callArg.path).toBe("/api-user-nickname");
     expect(callArg.httpMethod).toBe("PATCH");
     expect(callArg.body).toEqual({ nickname: "张三" });
   });

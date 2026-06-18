@@ -42,3 +42,17 @@
 .citations {
   margin-top: 16rpx;
 }
+
+/* CP-7-B 富文本 cite-num 样式（[N] 可点击） */
+.cite-num {
+  display: inline;
+  padding: 0 4rpx;
+  color: #2563eb;
+  font-weight: 600;
+  border-radius: 4rpx;
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.cite-num:active {
+  background: rgba(37, 99, 235, 0.18);
+}
