@@ -154,7 +154,8 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
         trustLevel,
         createdAt: Date.now(),
       };
-      await add<Chunk>(COLLECTIONS.chunk as CollectionName, chunk);
+      const newId = await add<Chunk>(COLLECTIONS.chunk as CollectionName, chunk);
+      chunk.id = newId;
       inserted++;
     } catch (err) {
       errors.push(`chunk ${i}: ${err instanceof Error ? err.message : String(err)}`);

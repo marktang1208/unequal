@@ -50,6 +50,7 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
   );
   const chunksWithEmb: ChunkWithEmbedding[] = chunks.map((c) => ({
     id: c.id,
+    _id: c._id,
     documentId: c.documentId,
     sourceId: c.sourceId,
     userId: c.userId,

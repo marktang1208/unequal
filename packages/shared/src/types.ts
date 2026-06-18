@@ -37,9 +37,14 @@ export interface Document {
 /**
  * Chunk: CP-6 嵌入 embedding 字段（替代 v0 在 Vectorize 单独存的模式）。
  * CloudBase NoSQL doc 限制 1MB，单 chunk ~14KB 远不到。
+ *
+ * `id` 字段保留以兼容历史接口（upload 写时会传 `id: ""`），但实际 ID
+ * 由 CloudBase `_id` 自动生成，retrieval/search 应优先读 `chunk._id`。
  */
 export interface Chunk {
   id: string;
+  /** CloudBase 自动生成的 doc ID（CP-6 migration 期间补回，retrieval 优先用这个） */
+  _id?: string;
   documentId: string;
   sourceId: string;
   userId: string;

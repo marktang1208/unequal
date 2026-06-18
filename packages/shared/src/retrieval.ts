@@ -18,6 +18,8 @@ export const DEFAULT_TRUST_WEIGHTS: Record<TrustLevel, number> = {
 
 export interface ChunkWithEmbedding {
   id: string;
+  /** CloudBase 自动生成的 doc ID（见 Chunk._id 注释） */
+  _id?: string;
   documentId: string;
   sourceId: string;
   userId: string;
@@ -83,7 +85,7 @@ export async function searchChunks(opts: SearchOptions): Promise<SearchResult[]>
     }
     const weight = weights[c.trustLevel] ?? 1.0;
     scored.push({
-      chunkId: c.id,
+      chunkId: c._id ?? c.id,
       vectorizeScore: score,
       finalScore: score * weight,
       trustLevel: c.trustLevel,

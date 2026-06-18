@@ -95,6 +95,7 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
   const chunks = await whereQuery<Chunk>(COLLECTIONS.chunk, { userId }, { limit: 500 });
   const chunksWithEmb: ChunkWithEmbedding[] = chunks.map((c) => ({
     id: c.id,
+    _id: c._id,
     documentId: c.documentId,
     sourceId: c.sourceId,
     userId: c.userId,

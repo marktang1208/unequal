@@ -85,6 +85,7 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
   const chunks = await getAllByFilter<Chunk>(COLLECTIONS.chunk, { userId: env.DEFAULT_USER_ID });
   const chunksWithEmb: ChunkWithEmbedding[] = chunks.map((c) => ({
     id: c.id,
+    _id: c._id,
     documentId: c.documentId,
     sourceId: c.sourceId,
     userId: c.userId,
@@ -105,14 +106,17 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
   });
 
   // 3. fetch docs for titles (denormalize: chunk has sourceId, doc has title)
-  const docIds = Array.from(new Set(top.map((t) => chunksWithEmb.find((c) => c.id === t.chunkId)?.documentId).filter(Boolean) as string[]));
+  // t.chunkId 是 CloudBase doc _id (P3.3 修复后), chunksWithEmb[i].id 是空字符串, 必须用 _id 比较
+  const docIds = Array.from(new Set(top.map((t) => chunksWithEmb.find((c) => c._id === t.chunkId)?.documentId).filter(Boolean) as string[]));
   const docs = await Promise.all(docIds.map((id) => getAllByFilter<Document>(COLLECTIONS.document, { _id: id }, 1).then((r) => r[0])));
-  const docMap = new Map(docs.filter(Boolean).map((d) => [d!.id, d!]));
+  // d._id 是 CloudBase doc _id, d.id 是 schema 字段（upload 写时 id=""，实际用 _id）
+  const docMap = new Map(docs.filter(Boolean).map((d) => [d!._id, d!]));
 
   // 4. build prompt
   const ctx = {
     chunks: top.slice(0, 5).map((t, i) => {
-      const chunk = chunksWithEmb.find((c) => c.id === t.chunkId);
+      // t.chunkId 是 CloudBase _id（P3.3 修复后），必须用 chunksWithEmb[i]._id 比较
+      const chunk = chunksWithEmb.find((c) => c._id === t.chunkId);
       const doc = chunk ? docMap.get(chunk.documentId) : undefined;
       return {
         n: (i + 1) as 1 | 2 | 3 | 4 | 5,
@@ -132,7 +136,7 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
       authorization: `Bearer ${env.MINIMAX_API_KEY}`,
     },
     body: JSON.stringify({
-      model: "MiniMax-chat",
+      model: "MiniMax-Text-01",
       messages: [
         { role: "system", content: system },
         { role: "user", content: user },
@@ -159,7 +163,9 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
       if (i < 0 || i >= top.length) return null;
       const t = top[i];
       if (!t) return null;
-      const chunk = chunksWithEmb.find((c) => c.id === t.chunkId);
+      // t.chunkId 是 CloudBase _id（P3.3 修复后），必须用 c._id 比较
+      const chunk = chunksWithEmb.find((c) => c._id === t.chunkId);
+      // docMap key 是 d._id（不是 d.id，id 字段 upload 写时为 ""）
       const doc = chunk ? docMap.get(chunk.documentId) : undefined;
       return {
         n,
