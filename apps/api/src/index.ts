@@ -34,6 +34,8 @@ import * as chat from "./handlers/api-chat.js";
 import * as sessionsList from "./handlers/api-sessions-list.js";
 import * as sessionsGet from "./handlers/api-sessions-get.js";
 import * as sessionsDelete from "./handlers/api-sessions-delete.js";
+import * as sessionsRename from "./handlers/api-sessions-rename.js";
+import * as userNickname from "./handlers/api-user-nickname.js";
 import * as stats from "./handlers/api-stats.js";
 import * as authWxLogin from "./handlers/api-auth-wx-login.js";
 import * as authAdminLogin from "./handlers/api-auth-admin-login.js";
@@ -79,6 +81,8 @@ const HANDLER_MAP: Record<string, HandlerModule> = {
   "api-sessions-list": sessionsList as unknown as HandlerModule,
   "api-sessions-get": sessionsGet as unknown as HandlerModule,
   "api-sessions-delete": sessionsDelete as unknown as HandlerModule,
+  "api-sessions-rename": sessionsRename as unknown as HandlerModule,
+  "api-user-nickname": userNickname as unknown as HandlerModule,
   "api-stats": stats as unknown as HandlerModule,
   "api-auth-wx-login": authWxLogin as unknown as HandlerModule,
   "api-auth-admin-login": authAdminLogin as unknown as HandlerModule,
