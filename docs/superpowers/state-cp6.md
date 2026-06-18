@@ -337,7 +337,7 @@ pnpm -F api deploy:clean                   # 用干净 cloudbaserc.json 重 depl
 - 2026-06-17 18:00-23:00: **HTTP 网关调试 8 次请求 0 成功** —— `prod.ap-shanghai.service.tencentcloudbase.com` API gateway 8 次调用 0 成功
 - 2026-06-17 23:00 之后: 旧 env 用户**主动注销**（个人版 ¥19.9/月停用）
 - 2026-06-17 23:30-00:00: 公众号云开发 **d8g6 重新激活测试**（d8g6 是 CP-6 之前从微信公众号后台开通的免费版，d8g4 注销后回来测试同账号下的免费版是否 work） — IDE 同步 + Monaco 代码 editor 验证，**但 SCF Node 18 runtime 触发 `writeRuntimeFile toString undefined` 错**（不同 bug）
-- 2026-06-18 00:00-01:00: 新个人版 env `unequal-d4ggf7rwg82e0900b` 开通（用新主 API key `***REMOVED***`），tcb CLI 凭证切换
+- 2026-06-18 00:00-01:00: 新个人版 env `unequal-d4ggf7rwg82e0900b` 开通（**账号身份切换：微信账号 → 小程序账号**；用新主 API key `***REMOVED***`），tcb CLI 凭证切换
 - 2026-06-18 01:00-01:15: **所有 deploy 100% 失败** —— `bash: mjs: command not found` 错（包括 207 字节 helloworld）
 - **诊断：北京时间 01:11（凌晨）= 腾讯云 SCF 系统运维窗口**（通常 02:00-06:00），BuildCodeViaSCF 镜像 mjs 工具维护期间被下掉
 
