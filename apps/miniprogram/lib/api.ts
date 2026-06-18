@@ -162,7 +162,7 @@ export async function adminLogin(
 
 export async function ask(q: string, opts: ApiOptions = {}): Promise<AskResponse> {
   const baseUrl = opts.baseUrl ?? "http://localhost:8787";
-  const res = await fetchWithRefresh(`${baseUrl}/ask`, {
+  const res = await fetchWithRefresh(`${baseUrl}/api-ask`, {
     method: "POST",
     headers: buildHeaders(opts),
     body: JSON.stringify({ q }),
@@ -182,7 +182,7 @@ export async function ask(q: string, opts: ApiOptions = {}): Promise<AskResponse
  */
 export async function chat(req: ChatRequest, opts: ApiOptions = {}): Promise<ChatResponse> {
   const baseUrl = opts.baseUrl ?? "http://localhost:8787";
-  const res = await fetchWithRefresh(`${baseUrl}/chat`, {
+  const res = await fetchWithRefresh(`${baseUrl}/api-chat`, {
     method: "POST",
     headers: buildHeaders(opts),
     body: JSON.stringify({
@@ -200,7 +200,7 @@ export async function chat(req: ChatRequest, opts: ApiOptions = {}): Promise<Cha
 /** GET /sessions → 返 server-side session 列表（最近 50） */
 export async function listSessions(opts: ApiOptions = {}): Promise<SessionsListResponse> {
   const baseUrl = opts.baseUrl ?? "http://localhost:8787";
-  const res = await fetchWithRefresh(`${baseUrl}/sessions`, {
+  const res = await fetchWithRefresh(`${baseUrl}/api-sessions-list`, {
     method: "GET",
     headers: buildHeaders(opts),
   }, opts);
@@ -225,10 +225,10 @@ export async function renameSession(sessionId: string, title: string, opts: ApiO
   }
 }
 
-/** DELETE /sessions/:id → 服务端软删（标 degraded_at） */
+/** DELETE /api-sessions-delete/:id → 服务端软删（标 degraded_at） */
 export async function deleteSession(sessionId: string, opts: ApiOptions = {}): Promise<void> {
   const baseUrl = opts.baseUrl ?? "http://localhost:8787";
-  const res = await fetchWithRefresh(`${baseUrl}/sessions/${encodeURIComponent(sessionId)}`, {
+  const res = await fetchWithRefresh(`${baseUrl}/api-sessions-delete/${encodeURIComponent(sessionId)}`, {
     method: "DELETE",
     headers: buildHeaders(opts),
   }, opts);

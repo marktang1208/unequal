@@ -1,25 +1,30 @@
 /**
  * M6.2 miniprogram auth (ensureJwt + getJwtToken) 测试。
  *
- * 4 用例：冷启动拿 jwt / 已存 jwt 直接返 / 401 重 login / wx.login 失败 throw。
- * Mock fetchImpl + Mock wx.login 通过 __setJwtStorageImpl 替换 storage。
+ * CP-6 P3.9：ensureJwt 改走 wx.cloud.callFunction（不是 HTTP gateway）。
+ * Mock 走 __setCloudCallImpl。
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ensureJwt, getJwtToken } from "../lib/auth.js";
 import { __setJwtStorageImpl } from "../lib/chat-storage.js";
+import { __setCloudCallImpl, type CloudCallFn } from "../lib/cloud-call.js";
 
 // Mock wx 全局（miniflare/node 没 wx）
 (globalThis as { wx?: unknown }).wx = {
   login: vi.fn(),
   request: vi.fn(),
+  cloud: { callFunction: vi.fn() },
   getStorageSync: vi.fn(),
   setStorageSync: vi.fn(),
   removeStorageSync: vi.fn(),
 };
 // @ts-expect-error 测试桩类型
-const mockWx = (globalThis as { wx: { login: ReturnType<typeof vi.fn>; request: ReturnType<typeof vi.fn> } }).wx;
+const mockWx = (globalThis as {
+  wx: { login: ReturnType<typeof vi.fn> };
+}).wx;
 
 let storage: Record<string, string> = {};
+let mockCloudCall: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   storage = {};
   __setJwtStorageImpl(
@@ -28,74 +33,72 @@ beforeEach(() => {
   );
   vi.clearAllMocks();
   mockWx.login.mockReset();
-  mockWx.request.mockReset();
+  // 重置 cloudCall mock
+  __setCloudCallImpl(null);
+  mockCloudCall = vi.fn();
+  __setCloudCallImpl(mockCloudCall as unknown as CloudCallFn);
 });
 
-describe("miniprogram ensureJwt (mock wx + mock fetch)", () => {
-  it("冷启动无 jwt → 调 wx.login + /auth/wx-login + 存 storage + 返 token", async () => {
+describe("miniprogram ensureJwt (mock wx + mock cloudCall)", () => {
+  it("冷启动无 jwt → 调 wx.login + cloudCall + 存 storage + 返 jwt", async () => {
     mockWx.login.mockImplementation(({ success }: any) => {
       success({ code: "test_code_081H1z" });
     });
-    const fakeFetch = vi.fn(async (url: string, init?: RequestInit) => {
-      expect(url).toBe("http://localhost:8787/auth/wx-login");
-      expect(JSON.parse(init?.body as string)).toEqual({ code: "test_code_081H1z" });
-      return new Response(
-        JSON.stringify({ token: "eyJ.jwt.token", user_id: "01HUSER", is_new_user: true, expires_in: 86400 }),
-        { status: 200 },
-      );
-    }) as unknown as typeof fetch;
+    mockCloudCall.mockResolvedValue({
+      statusCode: 200,
+      body: { jwt: "eyJ.jwt.token", user_id: "01HUSER", is_new_user: true },
+    });
 
-    const token = await ensureJwt("http://localhost:8787", fakeFetch);
+    const token = await ensureJwt();
     expect(token).toBe("eyJ.jwt.token");
     expect(mockWx.login).toHaveBeenCalledTimes(1);
-    expect(fakeFetch).toHaveBeenCalledTimes(1);
+    expect(mockCloudCall).toHaveBeenCalledTimes(1);
+    expect(mockCloudCall).toHaveBeenCalledWith({
+      path: "/api-auth-wx-login",
+      httpMethod: "POST",
+      body: { code: "test_code_081H1z" },
+    });
     // 写 storage
     expect(getJwtToken()).toBe("eyJ.jwt.token");
   });
 
-  it("已存 jwt → 直接返（不调 wx.login / fetch）", async () => {
+  it("已存 jwt → 直接返（不调 wx.login / cloudCall）", async () => {
     storage["unequal:jwt"] = "existing_jwt_token";
-    const token = await ensureJwt("http://localhost:8787", vi.fn());
+    const token = await ensureJwt();
     expect(token).toBe("existing_jwt_token");
     expect(mockWx.login).not.toHaveBeenCalled();
+    expect(mockCloudCall).not.toHaveBeenCalled();
   });
 
-  it("401 → 抛 Error 含 status + code（让 caller retry）", async () => {
+  it("500 → 抛 Error 含 status + code（让 caller 决定 fallback）", async () => {
     mockWx.login.mockImplementation(({ success }: any) => {
       success({ code: "expired_code" });
     });
-    const fakeFetch = vi.fn(async () =>
-      new Response(JSON.stringify({ error: "INVALID_CODE" }), { status: 401 }),
-    ) as unknown as typeof fetch;
+    mockCloudCall.mockResolvedValue({
+      statusCode: 500,
+      body: { error: "INTERNAL_ERROR" },
+    });
 
-    await expect(ensureJwt("http://localhost:8787", fakeFetch)).rejects.toThrow(
-      /\/auth\/wx-login 401.*INVALID_CODE/,
-    );
+    await expect(ensureJwt()).rejects.toThrow(/\/api-auth-wx-login 500.*INTERNAL_ERROR/);
   });
 
   it("wx.login 抛错 → propagate（app.ts onLaunch 失败不 throw 阻塞启动）", async () => {
     mockWx.login.mockImplementation(({ fail }: any) => {
       fail({ errMsg: "wx.login fail" });
     });
-    await expect(ensureJwt("http://localhost:8787", vi.fn())).rejects.toThrow(
-      /wx.login/,
-    );
+    await expect(ensureJwt()).rejects.toThrow(/wx.login/);
   });
 
-  it("/auth/wx-login 5xx → ensureJwt 抛 Error（caller 透传给 fetchWithRefresh，wrapper 返原 401）", async () => {
-    // 验证 ensureJwt 在 /auth/wx-login server error 路径也正确 throw（不吞）
-    // fetchWithRefresh 的 catch 块依赖此 throw 来触发"原 401 透传"行为
+  it("cloudCall 5xx → ensureJwt 抛 Error 且不写 storage（避免返 500 token）", async () => {
     mockWx.login.mockImplementation(({ success }: any) => {
       success({ code: "valid_code_but_server_down" });
     });
-    const fakeFetch = vi.fn(async () =>
-      new Response(JSON.stringify({ error: "internal", detail: "boom" }), { status: 500 }),
-    ) as unknown as typeof fetch;
+    mockCloudCall.mockResolvedValue({
+      statusCode: 500,
+      body: { error: "internal", detail: "boom" },
+    });
 
-    await expect(ensureJwt("http://localhost:8787", fakeFetch)).rejects.toThrow(
-      /\/auth\/wx-login 500.*internal/,
-    );
-    // 5xx 时 ensureJwt 不应写 storage（避免后续 ensureJwt 直接返 500 token）
+    await expect(ensureJwt()).rejects.toThrow(/\/api-auth-wx-login 500.*internal/);
     expect(storage["unequal:jwt"]).toBeUndefined();
   });
 });

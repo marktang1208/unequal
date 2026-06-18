@@ -24,3 +24,5 @@ cloudbaserc.smoke.json
 # Real deployment is on CloudBase side, so this is a local-build artifact only.
 # Phase 7 added the dir; CP-6.5 added the gitignore rule.
 apps/miniprogram/cloudfunctions/
+cloudbaserc.fn-secrets.json
+cloudbaserc.fn-all.json

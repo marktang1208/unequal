@@ -4,9 +4,10 @@ import { ensureJwt } from "./lib/auth.js";
 // @ts-expect-error mock-first wx 类型缺失（miniprogram-api-typings 未安装）
 App({
   globalData: {
-    apiBaseUrl: "https://unequal-api.<appid>.<region>.app.tcloudbase.com",  // CP-6 CloudBase 真接后 (was CF workers.dev)
-    // 真机调试时必须在微信开发者工具勾选「不校验合法域名」
-    cloudEnvId: "unequal-d4ggf7rwg82e0900b",  // CP-6: CloudBase 个人版新 env（旧 d8g4 / 公众号 d8g6 都失败；这是第 3 个）
+    // CP-6: CloudBase HTTP 触发器（ap-shanghai, 个人版 env unequal-d4ggf7rwg82e0900b, AppID 1444590671）
+    apiBaseUrl: "https://unequal-d4ggf7rwg82e0900b-1444590671.ap-shanghai.app.tcloudbase.com",
+    // 真机调试时必须在微信开发者工具勾选「不校验合法域名」（project.config.json urlCheck:false）
+    cloudEnvId: "unequal-d4ggf7rwg82e0900b",
   },
   onLaunch() {
     // CP-6: 初始化微信云开发（小程序私有协议，绕过 request 合法域名限制）

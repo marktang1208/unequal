@@ -60,12 +60,12 @@ export interface ChatResponse {
 }
 
 export interface ChatSessionRow {
-  id: string;            // ULID
-  user_id: string;
+  // CP-6 P3.9 修复：跟 server sessions-list handler 返回对齐（camelCase，原 spec snake_case 不一致）
+  id: string;
   title: string | null;
-  created_at: number;
-  last_active_at: number;
-  degraded_at: number | null;
+  messageCount: number;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface SessionsListResponse {

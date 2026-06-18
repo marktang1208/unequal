@@ -145,7 +145,7 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
       authorization: `Bearer ${env.MINIMAX_API_KEY}`,
     },
     body: JSON.stringify({
-      model: "MiniMax-chat",
+      model: "MiniMax-Text-01",
       messages: [
         { role: "system", content: systemPrompt },
         ...chatHistoryMsgs,

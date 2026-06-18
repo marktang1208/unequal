@@ -26,7 +26,7 @@ describe("ask()", () => {
 
   it("happy: 200 + JSON → 返回 AskResponse", async () => {
     const fetchMock: typeof fetch = async (input, init) => {
-      expect(input).toBe("http://localhost:8787/ask");
+      expect(input).toBe("http://localhost:8787/api-ask");
       expect(init?.method).toBe("POST");
       expect(JSON.parse(init?.body as string)).toEqual({ q: "test" });
       return new Response(JSON.stringify(happy), { status: 200, headers: { "content-type": "application/json" } });
@@ -80,7 +80,7 @@ const SAMPLE_CHAT: ChatResponse = {
 describe("chat()", () => {
   it("happy: POST /chat 200 + JSON → 返 ChatResponse（无 session_id → 服务端新建）", async () => {
     const fetchMock: typeof fetch = async (input, init) => {
-      expect(input).toBe("http://localhost:8787/chat");
+      expect(input).toBe("http://localhost:8787/api-chat");
       expect(init?.method).toBe("POST");
       const body = JSON.parse(init?.body as string);
       expect(body.q).toBe("5个月宝宝发烧");
@@ -110,12 +110,12 @@ describe("listSessions()", () => {
   it("GET /sessions 200 → 返 sessions[]", async () => {
     const sample: SessionsListResponse = {
       sessions: [
-        { id: "01HAAA00000000000000000001", user_id: "u1", title: "宝宝发烧", created_at: 100, last_active_at: 200, degraded_at: null },
-        { id: "01HAAA00000000000000000002", user_id: "u1", title: "辅食添加", created_at: 50, last_active_at: 150, degraded_at: null },
+        { id: "01HAAA00000000000000000001", title: "宝宝发烧", messageCount: 2, createdAt: 100, updatedAt: 200 },
+        { id: "01HAAA00000000000000000002", title: "辅食添加", messageCount: 4, createdAt: 50, updatedAt: 150 },
       ],
     };
     const fetchMock: typeof fetch = async (input, init) => {
-      expect(input).toBe("http://localhost:8787/sessions");
+      expect(input).toBe("http://localhost:8787/api-sessions-list");
       expect(init?.method).toBe("GET");
       return new Response(JSON.stringify(sample), { status: 200 });
     };
@@ -128,6 +128,7 @@ describe("listSessions()", () => {
 describe("renameSession() / deleteSession()", () => {
   it("PATCH /sessions/:id 200 → 返 ok", async () => {
     const fetchMock: typeof fetch = async (input, init) => {
+      // CP-6 后端暂无 renameSession handler（spec 仅 list/get/delete）；保留原 /sessions/:id 路径测试
       expect(input).toBe("http://localhost:8787/sessions/01HSESSIONID000000000000");
       expect(init?.method).toBe("PATCH");
       expect(JSON.parse(init?.body as string)).toEqual({ title: "新标题" });
@@ -138,7 +139,7 @@ describe("renameSession() / deleteSession()", () => {
 
   it("DELETE /sessions/:id 200 → 返 ok", async () => {
     const fetchMock: typeof fetch = async (input, init) => {
-      expect(input).toBe("http://localhost:8787/sessions/01HSESSIONID000000000000");
+      expect(input).toBe("http://localhost:8787/api-sessions-delete/01HSESSIONID000000000000");
       expect(init?.method).toBe("DELETE");
       return new Response(JSON.stringify({ ok: true }), { status: 200 });
     };
