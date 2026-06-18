@@ -2,6 +2,7 @@
 import { chat, updateNickname } from "../../lib/api.js";
 import { __setStorageImpl } from "../../lib/storage.js";
 import { __setSessionStorageImpl, loadCurrentSessionId, saveCurrentSessionId, hasShownNicknameModal, setShownNicknameModal, __setNicknameModalStorageImpl } from "../../lib/chat-storage.js";
+import { parseAnswerSegments } from "../../lib/citation-parser.js";
 import type { AskResponse, ChatResponse, HistoryEntry } from "../../lib/types.js";
 
 // 注入 wx storage 实现（运行时由小程序 runtime 提供，测试桩 vitest 替换）
@@ -58,6 +59,8 @@ interface MessageItem {
   text: string;
   cached: boolean;
   citations: AskResponse["citations"];
+  /** CP-7-B 新增：富文本 segments（解析 [N] 后的 text/cite 数组） */
+  segments?: ReturnType<typeof parseAnswerSegments>;
 }
 
 interface AppWithGlobals {
@@ -173,6 +176,7 @@ Page({
         text: resp.answer,
         cached: resp.cached,
         citations: resp.citations as unknown as AskResponse["citations"],
+        segments: parseAnswerSegments(resp.answer),
       };
       this.setData({
         messages: [...this.data.messages, botMsg],

@@ -16,6 +16,7 @@
         text="{{item.text}}"
         cached="{{item.cached}}"
         citations="{{item.citations}}"
+        segments="{{item.segments}}"
       />
     </view>
     <view class="loading" wx:if="{{submitting}}">

@@ -1,5 +1,21 @@
 <view class="bubble {{role === 'user' ? 'user' : 'assistant'}}">
-  <view class="bubble-text">{{text}}</view>
+  <!-- CP-7-B 富文本：assistant 消息用 segments 渲染（text + cite-n），user 消息用 text 兜底 -->
+  <view class="bubble-text">
+    <block wx:if="{{role === 'assistant' && segments.length > 0}}">
+      <block wx:for="{{segments}}" wx:key="index">
+        <text wx:if="{{item.type === 'text'}}">{{item.text}}</text>
+        <text
+          wx:elif="{{item.type === 'cite'}}"
+          class="cite-num"
+          data-cite-n="{{item.n}}"
+          bindtap="onCiteTap"
+        >[{{item.n}}]</text>
+      </block>
+    </block>
+    <block wx:else>
+      <text>{{text}}</text>
+    </block>
+  </view>
   <view class="cached-tag" wx:if="{{cached}}">已缓存</view>
   <view class="citations" wx:if="{{citations.length > 0}}">
     <citation-card

@@ -80,34 +80,37 @@ export async function listSessions(): Promise<SessionsListResponse> {
   });
 }
 
-/** PATCH /sessions/:id → 改 title（CP-6 后端暂无 handler；CP-7-B 范围） */
+/** PATCH /api-sessions-rename?id={id} body={title} → 改 title（CP-7-B handler 已 work） */
 export async function renameSession(sessionId: string, title: string): Promise<void> {
   await cloudCall({
-    path: `/sessions/${encodeURIComponent(sessionId)}`,
+    path: "/api-sessions-rename",
     httpMethod: "PATCH",
+    query: { id: sessionId },
     body: { title },
     jwt: getJwtToken() ?? undefined,
   });
 }
 
-/** DELETE /api-sessions-delete/:id → 服务端软删（标 degraded_at） */
+/** DELETE /api-sessions-delete?id={id} → 服务端软删（标 degraded_at）
+ *  CP-7-B 修复：原 path param `/api-sessions-delete/${id}` 风格与 handler `getQuery` 不一致 → 真接 400 */
 export async function deleteSession(sessionId: string): Promise<void> {
   await cloudCall({
-    path: `/api-sessions-delete/${encodeURIComponent(sessionId)}`,
+    path: "/api-sessions-delete",
     httpMethod: "DELETE",
+    query: { id: sessionId },
     jwt: getJwtToken() ?? undefined,
   });
 }
 
-/* ---------- M6.3c nickname (PATCH /user/nickname) ---------- */
+/* ---------- M6.3c nickname (CP-7-B: PATCH /api-user-nickname) ---------- */
 
 /**
- * PATCH /user/nickname → 写 miniprogram 用户的 nickname（2024 微信 nickname-input 组件触发）。
- * CP-6 后端暂无 handler；CP-7-B 范围。
+ * PATCH /api-user-nickname body={nickname} → 写 miniprogram 用户的 nickname。
+ * CP-7-B handler 已 work。
  */
 export async function updateNickname(nickname: string): Promise<void> {
   await cloudCall({
-    path: "/user/nickname",
+    path: "/api-user-nickname",
     httpMethod: "PATCH",
     body: { nickname },
     jwt: getJwtToken() ?? undefined,
