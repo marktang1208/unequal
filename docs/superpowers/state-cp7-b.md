@@ -1,8 +1,10 @@
 # CP-7-B — handler 后端补全 + [N] 引用解析 + minipgm 富文本 收尾
 
-**完成日期**：2026-06-18
+**完成日期**：2026-06-18（CP-7-B merge）/ 2026-06-19（bug fix + 真接 prep 收尾）
 **Spec**：`docs/superpowers/specs/2026-06-18-cp7-b-handler-citations-design.md`（commit `f10e7b6`，已批准 + amend）
 **Plan**：`docs/superpowers/plans/2026-06-18-cp7-b-handler-citations.md`（commit `0308c95`）
+**真接 prep 状态**：9 commit + 1 merge，CloudBase 端到端 smoke PASS（详见 §9）
+**Tag**：`cp7-b-archived`
 
 ---
 
@@ -164,15 +166,39 @@ CP-7-B 是纯前端 + 纯后端实现，不动 CloudBase env 配置。
 3. **Component mock 模式**：`Component({...})` 是 wx 全局，vitest 需 mock globalThis。教训：minipgm component 测试统一模式（已在 citation-parser.ts 文档化）。
 4. **worktree 不继承 untracked 文件**（CP-7-A lesson #4 延续）：admin CloudBaseCallTest.tsx 仍 untracked，跑全包测试前需 cp。教训：是否考虑 `git add -N` 让 untracked 暂存？或 worktree 加 `--recurse-submodules`？留作基础设施改进。
 5. **mock 返回类型严格**：`getById<T>` 默认 `Record<string, unknown>`，mock 返值需 cast `as unknown as Awaited<ReturnType<typeof getById>>`。教训：mock helper 函数返回类型严格时，统一 cast helper。
+6. **🆕 真接 prep 发现 pre-existing CP-6 bug（最关键）**：
+   - `api-sessions-list` 返 `s.id`（schema 字段，api-chat 显式 `session.id = newId()`）
+   - `api-sessions-get` / `api-sessions-delete` / CP-7-B `api-sessions-rename` 用 `getById` 查的是 CloudBase `_id`
+   - 两个是不同的 ULID → getById 总返 null → 404
+   - **mock-first 测试隐藏了 bug**（CP-6 时代 sessions-get/delete 没单元测试；CP-7-B 我新写的 rename 测试 mock `getById` 返值时也用了错误 ID）
+   - **真接 smoke 才暴露**：PATCH /api-sessions-rename 直接返 404
+   - 教训：**写新 handler 复制旧 handler 模式时，必须验证 ID 字段语义**；**handler 缺单元测试 = bug 隐藏到真接**
+   - 修复：3 handler 改 `whereQuery({id}, {limit:1})` 查 schema 字段；update/remove 用 `session._id`
+7. **🆕 CloudBase deploy 行为变化（CLI 3.5.7）**：
+   - `tcb fn deploy --all --force` **只更新函数代码**，env vars 不会被更新
+   - 必须单独跑 `tcb config update fn <name>` 才能推 env vars
+   - deploy:secrets.ts（CP-6 时代写）的 deploy 步骤只更新代码，不更新 config → smoke 显示 12 vars 注入成功但实际函数只有 7 vars
+   - 修复：deploy:secrets.ts 需改为先 `tcb fn deploy --all --force` 再 `tcb config update fn --all`；CP-7-C 候选可顺手修
+   - 教训：**deploy 工具的"成功"提示需验证实际行为**（deploy:secrets 当时是工作的，CLI 升级后变 silently broken）
+8. **🆕 gateway URL 调用模式**：
+   - 正确：`https://{envId}-{appid}.ap-shanghai.app.tcloudbase.com/{funcName}` + HTTP body = handler 期望的 JSON 直接传
+   - 错误：HTTP body 套 wrapper `{"httpMethod":"POST", "body":"{...}", ...}` → gateway 不解析 wrapper，wrapper 当作 handler 的 body
+   - 错误：`/api-router/{funcName}` 双层 → event.path 是 `/api-router/api-sessions-rename` 不会被 funcName 匹配
+   - 教训：CloudBase HTTP trigger 文档明确但首次用容易混淆
 
 ### 6.4 下一步建议
 
 1. **CP-7 真接验证**（user 操作）：
    - 微信开发者工具导入 apps/miniprogram（替换 AppID）
-   - 编译 → onLaunch → 5 步真机验证
-   - 验证：全 7 caller 走 callFunction + 401 refresh 行为 + inflight share + [N] 解析
-2. **CP-7-C 候选**：deploy 流程内化 env vars push（`tcb fn deploy --force` 重置 vars 自动化）
-3. **CP-7-D 候选**：LLM model 跨 handler 一致性 smoke（api-ask + api-chat 用统一 model name）+ 引用解析格式统一（chat 改用 [N] 还是 ask 改回 JSON 块？）
+   - 编译 → onLaunch → 5+1 步真机验证
+   - 验证：全 7 caller 走 callFunction + 401 refresh 行为 + inflight share + [N] 解析 + 修复后的 session CRUD
+2. **CP-7 真接后补完**：
+   - 真接 state 文档 `docs/superpowers/state-cp7-zhenjie.md`（参考 state-cp6 §8 格式）
+   - `git tag cp7-zhenjie-archived master`
+   - README "CP-7-B 限制" 改 "已真接验证 PASS"（待真接完成）
+3. **CP-7-C 候选**：deploy 流程内化 env vars push（修 deploy:secrets.ts + deploy:clean.ts 适配 CLI 3.5.7 行为变化）
+4. **CP-7-D 候选**：LLM model 跨 handler 一致性 smoke（api-ask + api-chat 用统一 model name）+ 引用解析格式统一（chat 改用 [N] 还是 ask 改回 JSON 块？）
+5. **🆕 补 sessions-get / sessions-delete 单元测试**（防 CP-6 时代 bug 复发）：mock `whereQuery` 返 `[]` / `[{...session}]` 覆盖 404/200/403 三种
 
 ---
 
@@ -184,9 +210,13 @@ CP-7-B 是纯前端 + 纯后端实现，不动 CloudBase env 配置。
 | 2 | `0308c95` | docs: CP-7-B plan — handler 后端补全 + [N] 引用解析 + minipgm 富文本 |
 | 3 | `aaf538a` | feat(api): CP-7-B — api-sessions-rename + api-user-nickname handlers + api-chat [N] 解析 |
 | 4 | `fb486c6` | feat(miniprogram): CP-7-B — citation-parser + caller path/method 改 + message-bubble 富文本 |
-| 5 | (待) | docs: CP-7-B — state + README + setup.md + state-cp7-a.md §6.4 |
+| 5 | `2897bab` | docs: CP-7-B — state + README + setup.md + state-cp7-a.md §6.4 标完成 |
+| 6 | `db843c0` | merge: CP-7-B → master |
+| 7 | `34e1d95` | docs: CP-7 真接验证 checklist |
+| 8 | `864610e` | fix: cloudbaserc.json envId → unequal-d4ggf7rwg82e0900b（CP-7 真接 prep） |
+| 9 | `94968ed` | **fix(api): CP-7-B bugfix — sessions handlers 查 schema id 非 CloudBase _id** |
 
-**共 5 commit + 1 merge = 6 总**
+**共 9 commit + 1 merge = 10 总**
 
 ---
 
@@ -217,7 +247,127 @@ CP-7-B 完成后，CP-7 真接验证能跑通全 7 caller（之前 rename + nick
 
 ---
 
-## 9. References
+## 9. CP-7 真接 prep 收尾（2026-06-19 真接验证发现 + bug fix）
+
+### 9.1 真接 prep 步骤执行记录
+
+| # | 步骤 | 结果 |
+|---|---|---|
+| 1 | 修 `cloudbaserc.json` envId → `unequal-d4ggf7rwg82e0900b`（d8g4 已注销）| ✅ commit `864610e` |
+| 2 | 重打 api-router bundle（含 CP-7-B 新 handler）| ✅ 327862 行（CP-6 时 327739，+123）|
+| 3 | `tcb fn deploy api-router` 上传新代码 | ✅ Nodejs20.19 / 256MB / 30s / installDependency: true |
+| 4 | 跑 `pnpm -F api deploy:secrets` 注入 4 secrets + IP allowlist | ⚠️ **silently 失败**：CLI 3.5.7 行为变化，`fn deploy --all --force` 只更新代码，不更新 env vars |
+| 5 | 单独跑 `tcb config update fn api-router` 推 12 vars | ✅ 12 vars 注入成功 |
+| 6 | smoke `/api-health` → 200 | ✅ |
+| 7 | smoke `/api-auth-admin-login` → 200 + JWT | ✅ |
+| 8 | smoke `/api-sessions-list` → 1 session | ✅ |
+| 9 | smoke `/api-sessions-rename` (CP-7-B new) → **404 NOT_FOUND** | ❌ **发现 pre-existing CP-6 bug** |
+| 10 | 修 3 sessions handler (`getById` → `whereQuery({id})`) + 1 test mock | ✅ commit `94968ed`，api 63/63 GREEN |
+| 11 | 重打 bundle + deploy | ✅ |
+| 12 | 单独推 smoke config (12 vars) | ✅ |
+| 13 | 重跑 smoke：rename / delete / get (deleted) | ✅✅✅ |
+| 14 | smoke `/api-user-nickname` (admin scope) → 404 (admin 不在 user collection) | ⚠️ 预期：user scope 真接会 work |
+
+### 9.2 Bug 根因（pre-existing CP-6）
+
+```ts
+// api-sessions-list.ts
+sessions.map((s) => ({ id: s.id, ... }))  // s.id = schema 字段（api-chat 显式 newId()）
+
+// api-sessions-rename.ts (我 CP-7-B 写的) — 复制了 sessions-delete 的错误模式
+const session = await getById<ChatSession>(COLLECTIONS.chatSession, id);  // 查 CloudBase _id
+// id="01KVD..." 是 schema id（list 返的），不是 _id → getById 返 null → 404
+```
+
+`getById` 查的是 CloudBase `_id`（`add()` 函数自动生成的 ULID），而 list 返的 `id` 是 schema 字段（api-chat handler 显式 `session.id = newId()`）。**两个不同的 ULID**。
+
+### 9.3 修复（commit `94968ed`）
+
+3 handler 改 `whereQuery({id}, {limit:1})` 查 schema 字段；update/remove 用 `session._id`（CloudBase doc id）：
+
+```ts
+// 修复后（sessions-rename.ts）
+const sessions = await whereQuery<ChatSession>(
+  COLLECTIONS.chatSession,
+  { id },                    // schema 字段
+  { limit: 1 },
+);
+const session = sessions[0];
+if (!session) return errorResponse("NOT_FOUND", ...);
+if (session.userId !== userId) return errorResponse("FORBIDDEN", ...);
+await update(COLLECTIONS.chatSession, session._id, { title, updatedAt: Date.now() });
+```
+
+### 9.4 真接 prep 工具链发现
+
+#### gateway URL 正确模式
+```bash
+# ✅ 正确：HTTP body = handler 期望的 JSON 直接传
+curl -X POST "${GATEWAY}/api-auth-admin-login" \
+  -H 'Content-Type: application/json' \
+  -d '{"token":"<ADMIN_TOKEN>"}'
+
+# ❌ 错误：HTTP body 套 wrapper (CP-7 真接 checklist 早期版本误以为是这样)
+curl -X POST "${GATEWAY}/api-router" \
+  -d '{"httpMethod":"POST","path":"/api-auth-admin-login","body":"{\"token\":\"...\"}","headers":{},"queryString":{},"isBase64Encoded":false}'
+# gateway 不解析 wrapper，wrapper 直接当 event.body，handler 解析后 body.token 是 undefined
+```
+
+#### deploy 两步走
+```bash
+# Step 1: 推代码
+tcb fn deploy api-router -e unequal-d4ggf7rwg82e0900b
+# Step 2: 推 env vars（deploy 不会自动推 config）
+tcb --config-file cloudbaserc.smoke.json config update fn api-router -e unequal-d4ggf7rwg82e0900b
+# Step 2 会出现 "Override update" prompt → Enter 选 Override
+```
+
+**deploy:secrets.ts bug**（commit `864610e` 同期发现但未修）：脚本用 `tcb fn deploy --all --force` 期望推 code + config，**实际只推 code**。需修脚本为 deploy + config update 两步。CP-7-C 候选可顺手修。
+
+#### admin login 走 body 不是 header
+```bash
+# ✅ POST /api-auth-admin-login body: {token}
+# ❌ 不是 Authorization: Bearer <token>（api-auth-wx-login 才是）
+```
+
+### 9.5 真接 prep 资源记录
+
+| 资源 | 值 | 来源 |
+|---|---|---|
+| CloudBase env | `unequal-d4ggf7rwg82e0900b` | d4gg 个人版（state-cp6 §9.1）|
+| CloudBase appid (URL) | `1444590671` | 数字 ID，URL 必填 |
+| CloudBase region | `ap-shanghai` | |
+| Gateway URL | `https://unequal-d4ggf7rwg82e0900b-1444590671.ap-shanghai.app.tcloudbase.com` | |
+| Mini-program AppID | `wxf5b8ce05a977f0c6` | 微信真实 AppID |
+| Mini-program cloudEnvId | `unequal-d4ggf7rwg82e0900b` | app.ts globalData |
+| Mini-program apiBaseUrl | `https://unequal-d4ggf7rwg82e0900b-1444590671.ap-shanghai.app.tcloudbase.com` | app.ts globalData |
+| Mini-project | `apps/miniprogram` | 微信开发者工具导入路径 |
+| 9 CloudBase collections | source / document / chunk / query_cache / chat_session / user / user_session_key / login_attempt / crawl_job | state-cp6 已建 |
+| 4 secrets | ADMIN_TOKEN / JWT_SECRET / MINIMAX_API_KEY / KEK_SECRET_V1 | deploy:secrets 注入 |
+| 8 env vars | ALLOWED_ORIGIN / DEFAULT_USER_ID / ENVIRONMENT / KEK_CURRENT_VERSION / LOGIN_MAX_ATTEMPTS / LOGIN_WINDOW_MS / MINIMAX_BASE_URL / ADMIN_IP_ALLOWLIST | cloudbaserc.smoke.json 注入 |
+| Smoke test admin token | `***REMOVED***` | dev sentinel（state-cp6 §4）|
+
+### 9.6 真接 prep 后端 smoke 全绿
+
+| 端点 | HTTP | 验证结果 |
+|---|---|---|
+| GET /api-health | 200 | `{"ok":true,"environment":"production"}` |
+| POST /api-auth-admin-login | 200 | `{jwt, user_id:"01H0000...", is_admin:true, expires_in:86400}` |
+| GET /api-sessions-list | 200 | 1 session: `01KVD0N4KZZ3DQTYDXAPFBY9EH` title="宝宝不爱吃饭怎么办" |
+| PATCH /api-sessions-rename?id=... | 200 | `{ok:true, id, title:"CP-7-B smoke test"}` ✅ **bug fix verified** |
+| DELETE /api-sessions-delete?id=... | 200 | `{ok:true, id}` ✅ **bug fix verified** |
+| GET /api-sessions-get?id=... (deleted) | 404 | `{error:"NOT_FOUND", message:"Session ... not found"}` ✅ |
+| PATCH /api-user-nickname (admin) | 404 | `{error:"NOT_FOUND", message:"User ... not found"}` ⚠️ 预期：admin 不在 user collection |
+
+### 9.7 真实微信端 5+1 步（user 操作）— 待 user 真接
+
+按 `docs/superpowers/cp7-zhenjie-checklist.md` §C / §D 跑。
+
+预估工时：30-60 min（首次部署 + 真机扫码 + 5+1 步验证）。
+
+---
+
+## 10. References
 
 - **Spec**：`docs/superpowers/specs/2026-06-18-cp7-b-handler-citations-design.md`
 - **Plan**：`docs/superpowers/plans/2026-06-18-cp7-b-handler-citations.md`
