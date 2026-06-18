@@ -12,6 +12,7 @@ import WechatMpCrawlPage from "./pages/WechatMpCrawlPage.js";
 import ChatSim from "./pages/ChatSim.js";
 import LoginPage from "./pages/LoginPage.js";
 import StatsPage from "./pages/StatsPage.js";
+import CloudBaseCallTest from "./pages/CloudBaseCallTest.js";
 
 /**
  * 路由级 auth guard：缺 localStorage.admin_token → navigate("/login")。
@@ -64,6 +65,9 @@ export default function App() {
             </Link>
             <Link to="/stats" className="text-gray-600 hover:text-gray-900">
               统计
+            </Link>
+            <Link to="/cloudbase-test" className="text-gray-600 hover:text-gray-900">
+              CB 测试
             </Link>
           </nav>
         </div>
@@ -154,6 +158,16 @@ export default function App() {
             element={
               <RequireAuth>
                 <StatsPage />
+              </RequireAuth>
+            }
+          />
+
+          {/* CP-6: CloudBase SDK 直接调函数测试（绕过个人版 HTTP 网关） */}
+          <Route
+            path="/cloudbase-test"
+            element={
+              <RequireAuth>
+                <CloudBaseCallTest />
               </RequireAuth>
             }
           />

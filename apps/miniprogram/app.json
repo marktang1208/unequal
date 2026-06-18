@@ -2,7 +2,8 @@
   "pages": [
     "pages/chat/chat",
     "pages/history/history",
-    "pages/source-detail/source-detail"
+    "pages/source-detail/source-detail",
+    "pages/cloudbase-test/cloudbase-test"
   ],
   "window": {
     "backgroundTextStyle": "light",

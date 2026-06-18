@@ -2,19 +2,14 @@
  * CP-6: 文件解析 helpers
  *
  * 支持 PDF / Word / TXT / Markdown，按文件扩展名自动选择。
- * 全部 async（pdf-parse / mammoth 内部 callback 包成 promise）。
  *
- * 限制（spec §6.7）：
- * - HTTP trigger body 4MB 上限（Phase 4 不支持更大）
- * - PDF / Word 解析失败 → 抛错，handler 层 catch 后返 400
+ * pdf-parse / mammoth 都是 CJS；用 esbuild 静态 import 即可，bundle 时会 inline。
+ * 不用 createRequire 动态 require —— 那样 esbuild 不会 bundle，runtime
+ * resolve 时 CloudBase 上找不到模块（npm install 后路径不同）。
  */
 
 import mammoth from "mammoth";
-import { createRequire } from "node:module";
-
-// pdf-parse 是 CommonJS，用 require 包一层
-const require = createRequire(import.meta.url);
-const pdfParse: (buf: Buffer) => Promise<{ text: string }> = require("pdf-parse");
+import pdfParse from "pdf-parse";
 
 export type SupportedExt = "pdf" | "docx" | "txt" | "md";
 
