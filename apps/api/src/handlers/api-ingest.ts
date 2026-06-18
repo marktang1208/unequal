@@ -79,7 +79,7 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
   const embed = createMiniMaxEmbedder({
     apiKey: env.MINIMAX_API_KEY,
     baseUrl: env.MINIMAX_BASE_URL,
-    model: "MiniMax-embeddings",
+    model: "embo-01",
   });
 
   const texts = chunks.map((c) => c.content);

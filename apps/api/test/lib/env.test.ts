@@ -68,6 +68,7 @@ describe("env loading (CP-6)", () => {
       ADMIN_IP_ALLOWLIST: "127.0.0.1",
       MINIMAX_BASE_URL: "https://api.test/v1",
       DEFAULT_USER_ID: "u1",
+      KEK_CURRENT_VERSION: "1",
     });
 
     const e1 = getEnv();

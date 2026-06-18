@@ -55,6 +55,18 @@ const startValidation = async () => {
 
 void startValidation();
 
+/**
+ * CP-6 修复：esbuild bundle 没有 server.listen() 等 keep-alive handle，
+ * `void startValidation()` 是 fire-and-forget 异步 — module load 完后 Node 进程 0 active handle → 立即 exit 0。
+ * SCF Event runtime 期望 user code 一直 run 直到 invoke 调 main()。
+ * 之前用 setInterval(1<<30) 被 SCF 当 0 active handle（InitFunction: 0ms + 0 code exit），
+ * 改用 1s 短间隔 + 真 callback 保持 event loop 真的 active。
+ */
+let keepAliveTicks = 0;
+setInterval(() => {
+  keepAliveTicks++;
+}, 1_000);
+
 /** func 名 → handler 模块映射 */
 type HandlerModule = { main: (event: HttpTriggerEvent) => Promise<HttpTriggerResponse> };
 
@@ -128,6 +140,9 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
     );
   }
 }
+
+/** SCF 兼容别名：某些版本要求 handler 名（而非 main） */
+export const handler = main;
 
 /** request log（end）—— 结构化 JSON 一行输出，便于 CloudBase 日志聚合 */
 function logEnd(

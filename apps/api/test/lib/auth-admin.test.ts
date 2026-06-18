@@ -30,6 +30,7 @@ function setupEnv(adminIpAllowlist: string) {
     ADMIN_IP_ALLOWLIST: adminIpAllowlist,
     MINIMAX_BASE_URL: "https://api.test/v1",
     DEFAULT_USER_ID: "u1",
+    KEK_CURRENT_VERSION: "1",
   });
 }
 
@@ -69,6 +70,7 @@ describe("requireAdmin (CP-6)", () => {
       ADMIN_IP_ALLOWLIST: "127.0.0.1",
       MINIMAX_BASE_URL: "https://api.test/v1",
       DEFAULT_USER_ID: "u1",
+      KEK_CURRENT_VERSION: "1",
     });
     // 直接测白名单外的 IP 也通过：parseAdminIpAllowlist 设计上"白名单空=行为不变"
     // 这里测试默认白名单 = ["127.0.0.1"]，client = "127.0.0.1" → 命中 → ok

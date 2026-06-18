@@ -6,6 +6,8 @@ export interface MiniMaxEmbedderConfig {
   apiKey: string;
   baseUrl: string;
   model: string;
+  /** MiniMax embedding `type` 字段：db = 文档入库, query = 查询向量。默认 db */
+  type?: "db" | "query";
   fetchImpl?: typeof fetch;
   maxRetries?: number;
 }
@@ -13,6 +15,7 @@ export interface MiniMaxEmbedderConfig {
 export function createMiniMaxEmbedder(config: MiniMaxEmbedderConfig): Embedder {
   const f = config.fetchImpl ?? fetch;
   const maxRetries = config.maxRetries ?? 3;
+  const embedType = config.type ?? "db";
 
   return {
     async embed(texts: string[]): Promise<number[][]> {
@@ -29,7 +32,8 @@ export function createMiniMaxEmbedder(config: MiniMaxEmbedderConfig): Embedder {
             },
             body: JSON.stringify({
               model: config.model,
-              input: texts,
+              texts,
+              type: embedType,
             }),
           });
 
@@ -39,12 +43,19 @@ export function createMiniMaxEmbedder(config: MiniMaxEmbedderConfig): Embedder {
           }
 
           const json = (await res.json()) as {
-            data: Array<{ embedding: number[] }>;
+            vectors: number[][] | null;
+            base_resp?: { status_code: number; status_msg: string };
           };
-          return json.data.map((d) => d.embedding);
+
+          if (!json.vectors || json.vectors.length !== texts.length) {
+            throw new Error(
+              `MiniMax embedding returned ${json.vectors?.length ?? 0} vectors for ${texts.length} inputs (base_resp: ${JSON.stringify(json.base_resp)})`,
+            );
+          }
+
+          return json.vectors;
         } catch (e) {
           lastError = e;
-          // 指数退避：100ms, 200ms, 400ms
           await new Promise((r) => setTimeout(r, 100 * Math.pow(2, attempt)));
         }
       }

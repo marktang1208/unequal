@@ -1,14 +1,8 @@
 /**
  * CP-6: Bundle src/index.ts → functions/api-router/（esbuild）
- *
- * tcb CLI 期望结构：functionRoot/{funcName}/{entry.js, package.json}
- * 我们用 functions/api-router/ 作为单入口函数部署目录。
- *
- * 用法：pnpm -F api deploy:build
- * 输出：apps/api/functions/api-router/index.js + package.json
  */
 import { build } from "esbuild";
-import { writeFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const FUNC_DIR = join(process.cwd(), "functions/api-router");
@@ -20,20 +14,38 @@ await build({
   entryPoints: ["src/index.ts"],
   bundle: true,
   platform: "node",
-  target: "node18",
-  format: "esm",
+  target: "node20",
+  format: "cjs",
   outfile: join(FUNC_DIR, "index.js"),
   external: ["node:*"],
   conditions: ["worker", "node"],
   minify: false,
   sourcemap: false,
   logLevel: "info",
+  plugins: [
+    {
+      name: "patch-pdf-parse",
+      setup(build) {
+        build.onLoad({ filter: /pdf-parse[\\/]index\.js$/ }, async (args) => {
+          let src = readFileSync(args.path, "utf-8");
+          src = src.replace(
+            /var isDebugMode = !module2?\.parent\s*;/,
+            "var isDebugMode = false; // patched by deploy-build.ts (was: !module2.parent)",
+          );
+          src = src.replace(
+            /let isDebugMode = !module\.parent\s*;/,
+            "let isDebugMode = false; // patched by deploy-build.ts (was: !module.parent)",
+          );
+          return { contents: src, loader: "js" };
+        });
+      },
+    },
+  ],
 });
 
 const pkgJson = {
   name: "unequal-api-router",
   version: "0.0.1",
-  type: "module",
   main: "index.js",
   dependencies: {
     "@cloudbase/node-sdk": "^3.18.1",

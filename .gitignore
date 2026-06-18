@@ -17,3 +17,4 @@ coverage/
 apps/api/.test-bundle/---
 apps/api/functions/
 apps/api/dist/
+cloudbaserc.smoke.json

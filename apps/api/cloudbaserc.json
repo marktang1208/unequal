@@ -1,16 +1,26 @@
 {
   "$schema": "https://static.cloudbase.net/cli/cloudbaserc.schema.json",
   "version": "2.0",
-  "envId": "unequal-d8g4fjk0x5ea36822",
+  "envId": "unequal-d4ggf7rwg82e0900b",
   "functionRoot": "functions",
   "functions": [
     {
       "name": "api-router",
-      "runtime": "Nodejs18.15",
+      "type": "Event",
+      "runtime": "Nodejs20.19",
       "handler": "index.main",
       "timeout": 30,
       "memorySize": 256,
-      "installDependency": true
+      "installDependency": true,
+      "envVariables": {
+        "ENVIRONMENT": "production",
+        "ALLOWED_ORIGIN": "*",
+        "MINIMAX_BASE_URL": "https://api.MiniMax.chat/v1",
+        "DEFAULT_USER_ID": "01H0000000000000000000000",
+        "LOGIN_MAX_ATTEMPTS": "5",
+        "LOGIN_WINDOW_MS": "900000",
+        "KEK_CURRENT_VERSION": "1"
+      }
     }
   ]
 }

@@ -53,10 +53,10 @@ function validateEnvObject(source: NodeJS.ProcessEnv | Record<string, string | u
     "JWT_SECRET",
     "MINIMAX_API_KEY",
     "KEK_SECRET_V1",
+    "ADMIN_IP_ALLOWLIST",
     "ENVIRONMENT",
     "ALLOWED_ORIGIN",
-    "ADMIN_IP_ALLOWLIST",
-    "MINIMAX_BASE_URL",
+    "KEK_CURRENT_VERSION",
     "DEFAULT_USER_ID",
   ];
 
@@ -74,11 +74,11 @@ function validateEnvObject(source: NodeJS.ProcessEnv | Record<string, string | u
     ENVIRONMENT: source.ENVIRONMENT!,
     ALLOWED_ORIGIN: source.ALLOWED_ORIGIN!,
     ADMIN_IP_ALLOWLIST: source.ADMIN_IP_ALLOWLIST!,
-    MINIMAX_BASE_URL: source.MINIMAX_BASE_URL!,
+    MINIMAX_BASE_URL: source.MINIMAX_BASE_URL ?? "https://api.minimax.chat/v1",
     DEFAULT_USER_ID: source.DEFAULT_USER_ID!,
     LOGIN_MAX_ATTEMPTS: parseInt(source.LOGIN_MAX_ATTEMPTS ?? "5", 10),
     LOGIN_WINDOW_MS: parseInt(source.LOGIN_WINDOW_MS ?? "900000", 10),
-    KEK_CURRENT_VERSION: source.KEK_CURRENT_VERSION ?? "1",
+    KEK_CURRENT_VERSION: source.KEK_CURRENT_VERSION!,
 
     TCB_ENV: source.TCB_ENV,
   };
@@ -103,7 +103,7 @@ export async function validateEmbeddingDim(): Promise<void> {
   const embed = createMiniMaxEmbedder({
     apiKey: process.env.MINIMAX_API_KEY!,
     baseUrl: process.env.MINIMAX_BASE_URL!,
-    model: "MiniMax-embeddings",
+    model: "embo-01",
   });
 
   const result = await embed.embed(["dimension probe"]);

@@ -29,6 +29,7 @@ describe("validateEmbeddingDim (CP-6 启动时硬验证)", () => {
       ADMIN_IP_ALLOWLIST: "127.0.0.1",
       MINIMAX_BASE_URL: "https://api.test/v1",
       DEFAULT_USER_ID: "u1",
+      KEK_CURRENT_VERSION: "1",
     });
     await expect(validateEmbeddingDim()).resolves.toBeUndefined();
   });
@@ -44,6 +45,7 @@ describe("validateEmbeddingDim (CP-6 启动时硬验证)", () => {
       ADMIN_IP_ALLOWLIST: "127.0.0.1",
       MINIMAX_BASE_URL: "https://api.test/v1",
       DEFAULT_USER_ID: "u1",
+      KEK_CURRENT_VERSION: "1",
     });
     await expect(validateEmbeddingDim()).resolves.toBeUndefined();
   });

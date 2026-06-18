@@ -312,3 +312,124 @@ pnpm deploy:secrets        # 注入 4 secrets + 8 vars
 - **README**：v1 / v0 段已加
 - **腾讯 CloudBase 文档**：https://docs.cloudbase.net/
 - **@cloudbase/node-sdk**：https://docs.cloudbase.net/api-reference/server/node-sdk.html
+---
+
+## 9. 附录：CP-6.5 部署阻塞报告（2026-06-18 凌晨）
+
+### 9.1 时间线
+- 2026-06-17 17:53: **第一次成功 deploy**（`tcb fn deploy`）到旧 env `unequal-d8g4fjk0x5ea36822`（个人版，¥19.9/月）— 当时配置是 **Nodejs20.19 + handler=index.main + installDependency=true**（cloudbaserc.json 写 Nodejs18.15 但 tcb CLI 用 default Nodejs20.19）
+- 2026-06-17 18:00-23:00: **HTTP 网关调试 8 次请求 0 成功** —— `prod.ap-shanghai.service.tencentcloudbase.com` API gateway 8 次调用 0 成功
+- 2026-06-17 23:00 之后: 旧 env 用户**主动注销**（个人版 ¥19.9/月停用）
+- 2026-06-17 23:30-00:00: 公众号云开发新 env `unequal-d8g6n8kopd2da46d0` — 公众号云开发部署 IDE 同步 + Monaco 代码 editor 验证，**但 SCF Node 18 runtime 触发 `writeRuntimeFile toString undefined` 错**（不同 bug）
+- 2026-06-18 00:00-01:00: 新个人版 env `unequal-d4ggf7rwg82e0900b` 开通（用新主 API key `***REMOVED***`），tcb CLI 凭证切换
+- 2026-06-18 01:00-01:15: **所有 deploy 100% 失败** —— `bash: mjs: command not found` 错（包括 207 字节 helloworld）
+- **诊断：北京时间 01:11（凌晨）= 腾讯云 SCF 系统运维窗口**（通常 02:00-06:00），BuildCodeViaSCF 镜像 mjs 工具维护期间被下掉
+
+### 9.2 已完成的修复（独立于 SCF 平台 bug）
+1. ✅ `apps/api/src/index.ts` export `handler = main`（兼容 SCF handler 字段）
+2. ✅ esbuild bundle 14.5MB（`@cloudbase/node-sdk`, `jose`, `mammoth`, `pdf-parse`, `ulid`, `zod` 全 inline）
+3. ✅ `apps/api/scripts/deploy-build.ts` — 自动化 build + scf_bootstrap + package.json 写
+4. ✅ pdf-parse 1.1.1 兼容（esbuild plugin 在 transform 阶段 patch `isDebugMode = !module.parent` → `false`）
+5. ✅ `apps/api/cloudbaserc.json` — 17:53 成功配置：`runtime: Nodejs20.19 + handler: index.main + installDependency: true`
+6. ✅ 3 处 envId 引用统一到 `unequal-d4ggf7rwg82e0900b`（miniprogram app.ts / admin .env / cloudbaserc.json）
+7. ✅ 19 个 env vars 全部注入（`tcb fn detail` 验证：admin_token / jwt_secret / minimax_api_key / kek_secret_v1 / admin_ip_allowlist / wechat_appid+secret / embedding_* / allowed_origin / environment / minimax_base_url / default_user_id / login_* / kek_current_version / node_env）
+8. ✅ miniprogram 测试页 `pages/cloudbase-test/`（4 文件：ts/wxml/wxss/json）+ `app.ts` 加 `wx.cloud.init`
+9. ✅ admin 测试页 `pages/CloudBaseCallTest.tsx` + `src/lib/cloudbase.ts`（fetch + 匿名 login）+ `.env.local.example`
+
+### 9.5 CP-6.5 部署修复 + smoke 报告（2026-06-18 上午）
+
+### 9.5.1 真实根因（凌晨 1 点误判）
+
+凌晨 §9.1 误判是腾讯云 SCF 凌晨运维下掉 mjs 工具。**实际根因是 esbuild ESM bundle 与 axios ESM 互操作**：
+
+`apps/api/scripts/deploy-build.ts` 用 `format: "esm"`，但 axios（@cloudbase/node-sdk 依赖）内部用 `require("http")` 调 Node native module。ESM 模式下 esbuild 把 native require 替换成抛错：
+
+```
+Error: Dynamic require of "http" is not supported
+  at functions/api-router/index.js:11:9
+```
+
+`require("http")` 在 bundle line 11（module top-level），`setInterval(1_000)` keep-alive 在 line 327000+（load 完后），**module load 即 throw → 进程 crash → SCF 报 "0 code exit unexpected"**。凌晨所有 deploy 0% 成功是因为 bundle 一直有问题，跟 SCF 凌晨运维无关。
+
+### 9.5.2 修复（3 文件）
+
+| 文件 | 改动 |
+|---|---|
+| `apps/api/scripts/deploy-build.ts` | `format: "esm" → "cjs"`, `target: node18 → node20`, pkgJson 模板去 `"type": "module"` |
+| `apps/api/functions/api-router/package.json` | 删 `"type": "module"`（deploy-build 模板同步去） |
+| `apps/api/cloudbaserc.json` | `type: "HTTP" → "Event"`, `runtime: Nodejs18.15 → 20.19`, 加 `envVariables` (7 稳定 vars) |
+
+**额外**：删 `apps/api/src/http-server.ts`（Web 函数实验遗留，Event 模式不需要）。
+
+### 9.5.3 9 必填 env vars 验证
+
+§9.4 临时回退项 1/2/3 全部生效：
+- `apps/api/src/lib/env.ts` 改回 9 必填（ADMIN_TOKEN / JWT_SECRET / MINIMAX_API_KEY / KEK_SECRET_V1 / ADMIN_IP_ALLOWLIST / ENVIRONMENT / ALLOWED_ORIGIN / KEK_CURRENT_VERSION / DEFAULT_USER_ID）
+- `apps/miniprogram/app.json` cloudbase-test 仍在 pages 数组最后（master 已是对的状态）
+- `apps/api/src/http-server.ts` 已删
+
+cloudbaserc.json 只配 7 个稳定 vars，4 secrets + IP allowlist 走临时 **cloudbaserc.smoke.json**（gitignored）注入 12 env vars。
+
+### 9.5.4 MiniMax embedding 协议 bug
+
+smoke step 3/4/5/6 暴露 **MiniMax embedding 协议错配**：embedder 用 OpenAI 兼容（`{model, input}` → `data.embedding`），但 MiniMax API 实际用自家协议（`{model, texts, type}` → `vectors`）。
+
+修：
+- `packages/shared/src/embedding.ts` — 改 MiniMax 协议，加 `type` config (default `db`)
+- 5 个 handler + 1 处 env.ts validateEmbeddingDim 改 model name `MiniMax-embeddings` → `embo-01`（不是 `em-01`）
+- `packages/shared/test/embedding.test.ts` — mock 改 MiniMax 协议，加 `type=query` + `vectors count mismatch` 2 个新 test
+
+### 9.5.5 Smoke 6 步结果
+
+| Step | Result | Notes |
+|---|---|---|
+| 1 health | ✅ 200 | `environment: production` |
+| 2 admin-login | ✅ 200 | JWT 返，ADMIN_IP_ALLOWLIST IPv6 命中 |
+| 3 upload | ✅ 200 | `chunks_inserted:1, chunks_failed:0`（mini-smoke 文件 1 chunk） |
+| 4 search | ✅ 200 | 1 chunk 召回 score 0.64；`chunkId:""` 是次要 bug（DB 写入 chunkId 没传） |
+| 5 ask | ❌ 502 | `unknown model 'minimax-chat'` — chat 真实 model name 待查（spec 阶段漏验） |
+| 6 stats | ⚠️ 200 | 返 `{total:0, totalSuccess:0, ...}` — admin-login 走过 2 次但 total=0；`login_attempt` collection 没记录或聚合 SQL 缺 index |
+
+**4/6 步核心通**（health/admin-login/upload/search）。Step 5/6 留 P3 后续。
+
+### 9.5.6 deploy-collections.ts 没跑通
+
+CAM 永久 key (AKID...) 直接调 @cloudbase/node-sdk 报 `SIGN_PARAM_INVALID`。**根因**：CloudBase OpenAPI 需要 STS 临时凭证（accessKeyId + secretAccessKey + token），不是 CAM 永久 key。SDK 默认不自动拿 STS 凭证，**必须从函数 runtime context 或预先 STS 化**。
+
+修法（留 P3）：
+- 改 deploy-collections.ts 先用 CAM key 调 STS API 拿临时凭证 → 用临时凭证 init SDK
+- 或重写 deploy-collections.ts 走 tcb CLI 内部机制
+
+短期：用户手动在 CloudBase 控制台建 9 collection（已建）。
+
+### 9.5.7 教训（给后续 checkpoint）
+
+1. **凌晨报错不一定是平台问题** — §9.1 凌晨报错被误判为 SCF 运维，实际是 bundle bug。**先看 invariant log（"0 code exit unexpected"）反推根因**，不要从 timing 猜。
+2. **CAM key ≠ CloudBase OpenAPI 凭证** — 腾讯云 CAM 永久 key 不能直接调 CloudBase OpenAPI（需要 STS 临时凭证）。SDK 不会自动转换。
+3. **spec 阶段必须验外部 API 协议** — MiniMax embedding 真实协议（`texts` + `type` + `vectors`）跟 spec 设计的 OpenAI 兼容协议（`input` + `data.embedding`）不一致，导致 4 个 handler 写错。**必须在 spec 阶段真打一次 API 验证**。
+4. **CJS bundle 在 Node 20 兼容更好** — 大量 node lib（axios / pdf-parse）依赖 native require，ESM bundle 容易踩 "Dynamic require" 坑。**生产 bundle 默认 CJS**。
+5. **cloudbaserc.json 是 deploy-only，secrets 不应进 git** — 用 gitignored `cloudbaserc.smoke.json` 临时注入 4 secrets + IP allowlist。`tcb --config-file` flag 支持指定 config path。
+
+## 10. P3 待办（继承自 §8.3 + 新增）
+
+1. ~~CloudBase 环境创建 + 13 函数部署~~ (已 deploy api-router 1 个)
+2. **MiniMax chat model name 实测** — 试 `MiniMax-01` / `abab-6.5s-chat` / `MiniMax-Text-01` 等
+3. **stats handler 修** — login_attempt 记录 + 聚合逻辑
+4. **search chunkId 空 bug** — 查 DB schema 写入是否漏 chunkId 字段
+5. **deploy-collections.ts 重写** — 用 CAM key 走 STS 拿临时凭证
+6. **deploy-indexes.ts 同上**
+7. **9 个 field index** 创建（spec §3.3）
+8. KEK 轮换演练 (M6.8)
+9. v0 资源销毁决策 (1 个月后)
+10. **cloudbaserc.smoke.json secrets cleanup** — smoke 后跑一次 `tcb --config-file cloudbaserc.json fn deploy` (7 vars 干净版) 清 4 secrets
+
+### 9.4 临时回退项（早 7-8 点 deploy 成功后改回）
+- `apps/api/src/lib/env.ts` line 51-60: required 列表从 `["ALLOWED_ORIGIN"]` 改回 9 个必填
+- `apps/miniprogram/app.json` pages 数组：把 `pages/cloudbase-test/cloudbase-test` 移回最后（chat 是首页）
+- `apps/api/src/http-server.ts` 删掉（Web 函数实验遗留，Event 函数不需要）
+
+### 9.5 备选路径（CP-7 时评估）
+- **个人版 CloudBase**（已用）：¥19.9/月，依赖 SCF 平台稳定性
+- **公众号云开发**（试过）：免费，但 SCF Node runtime 同样有 bug
+- **Cloudflare Workers**（CP-5 老路）：免费 + 稳定，但国内访问慢，miniprogram 需备案域名
+- **阿里云函数计算 / AWS Lambda**：要新账号，1-2 周迁移
