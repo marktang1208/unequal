@@ -14,8 +14,10 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 24rpx 0;
+  padding: 24rpx 0 24rpx;
   overflow-y: auto;
+  /* 不裁右下角的气泡 box-shadow */
+  overflow-x: visible;
   position: relative;
   z-index: 1;
 }
@@ -79,15 +81,15 @@
 /* 提问按钮 — 启用态：暖橙 + 粗描边 + 偏移阴影 */
 .input-bar .btn-send {
   flex-shrink: 0;
-  margin: 0;
+  margin: 0 6rpx 0 0; /* 右侧留 shadow 空间 */
   padding: 0 40rpx;
   height: 80rpx;
-  line-height: 76rpx;
+  line-height: 74rpx;
   background: #ff8a65;
   color: #ffffff;
   font-size: 28rpx;
   font-weight: 800;
-  border: 2px solid #3d2914;
+  border: 3px solid #3d2914;
   border-radius: 24rpx;
   box-shadow: 6rpx 6rpx 0 0 #3d2914;
   letter-spacing: 1rpx;
@@ -106,6 +108,6 @@
 .input-bar .btn-send[disabled] {
   background: #ffd0b8;
   color: #ffffff;
-  border-color: #3d2914;
+  border: 3px solid #3d2914;
   box-shadow: 4rpx 4rpx 0 0 #a89887;
 }
