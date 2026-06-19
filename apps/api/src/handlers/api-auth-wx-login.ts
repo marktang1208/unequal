@@ -54,6 +54,8 @@ export async function main(event: unknown): Promise<HttpTriggerResponse> {
   let isNewUser = false;
 
   if (!user) {
+    // 注：db.add() 生成 CloudBase _id（ULID）；schema id 字段不用，永远空
+    // 用 _id 作 user 身份（JWT.sub）
     const newUser: User = {
       id: "",
       wxOpenid: openid,
@@ -67,9 +69,9 @@ export async function main(event: unknown): Promise<HttpTriggerResponse> {
     return errorResponse("INTERNAL_ERROR", "user upsert failed", 500);
   }
 
-  // 3. sign JWT
+  // 3. sign JWT — sub = CloudBase _id（user 身份），nickname handler 用 _id 查
   const jwt = await signJwt({
-    userId: user.id,
+    userId: user._id,
     scope: "user",
     secret: env.JWT_SECRET,
   });
@@ -77,7 +79,7 @@ export async function main(event: unknown): Promise<HttpTriggerResponse> {
   // 4. 返
   const resp: WXLoginResponse = {
     jwt,
-    user_id: user.id,
+    user_id: user._id,
     is_new_user: isNewUser,
   };
   return jsonResponse(resp);

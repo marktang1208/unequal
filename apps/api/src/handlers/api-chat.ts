@@ -167,7 +167,19 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
   ]);
 
   // 6. MiniMax chat completion（带 system + history + 当前 q）
-  const systemPrompt = `你是"不等号"——一个育儿知识库助手。仅基于下方参考资料回答；引用用 [N] 格式；不要兜底常识。\n\n参考资料：\n${contextLines || "(无)"}`;
+  // CP-7-B bugfix：原 prompt "引用用 [N] 格式" 被 LLM 误解为字面字符串 [N]。
+  // 改为明确说明 N 是 1-5 的具体数字，并给出示例，避免 LLM 抄字面占位符。
+  const systemPrompt = `你是"不等号"——一个育儿知识库助手。
+
+# 回答规则
+1. **仅基于下方参考资料**回答，不要兜底常识。
+2. **引用格式**：在引用某条资料时，紧跟句尾标注 \`[1]\` \`[2]\` \`[3]\` \`[4]\` \`[5]\`（具体数字对应资料编号），**不要写字面的 [N]**。
+   - 正确示例："新生儿每日睡眠 14-17 小时[1]，可以尝试规律作息[2]。"
+   - 错误示例："新生儿每日睡眠 14-17 小时[N]。"  ← 禁止
+3. 如果资料里没有相关信息，直接说"参考资料中未涉及此问题"，不要编造。
+
+# 参考资料
+${contextLines || "(无)"}`;
 
   const res = await fetch(`${env.MINIMAX_BASE_URL}/chat/completions`, {
     method: "POST",

@@ -1,11 +1,14 @@
 /**
- * api-user-nickname handler（CP-7-B）
+ * api-user-nickname handler（CP-7-B + JWT.sub bugfix）
  * PATCH /api-user-nickname
  *
  * Body: { nickname: string }
  * Auth: JWT user scope
  *
  * 改 user.nickname；不存在 → 404（不 upsert，spec D-3）。
+ *
+ * CP-7-B bugfix（user 真接发现）：JWT.sub 现在是 CloudBase _id（wx-login 已同步修）。
+ * `getById` 期望 _id → 这里直接用 userId 当 _id 查（与 update 一致）。
  */
 
 import {
@@ -56,7 +59,7 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
     return errorResponse("INVALID_REQUEST", `'nickname' exceeds ${MAX_NICKNAME_LEN} chars`, 400);
   }
 
-  // user lookup by _id (JWT sub = CloudBase _id)
+  // userId = CloudBase _id (wx-login JWT.sub fix 后)
   const user = await getById(COLLECTIONS.user, userId);
   if (!user) {
     return errorResponse("NOT_FOUND", `User ${userId} not found`, 404);
