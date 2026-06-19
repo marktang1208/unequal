@@ -25,11 +25,14 @@
       data-title="{{item.title}}"
       bindtap="onTapSession"
       bindlongpress="onLongPressSession"
+      hover-class="session-hover"
+      hover-stay-time="50"
     >
+      <view class="hint">长按操作</view>
       <view class="title">{{item.title || '未命名会话'}}</view>
       <view class="meta">
-        <text class="msg-count">{{item.messageCount}} 条消息</text>
-        <text class="ts">{{item.updatedAt}}</text>
+        <text class="msg-count">{{item.messageCount}} 条</text>
+        <text class="ts">{{item.updatedAtText}}</text>
       </view>
     </view>
   </view>

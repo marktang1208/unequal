@@ -7,6 +7,31 @@ interface AppWithGlobals {
   globalData: { apiBaseUrl: string };
 }
 
+/** CP-7-B round 4: epoch ms → 友好相对时间（今天/昨天/N天前/日期） */
+function formatRelativeTime(ts: number): string {
+  if (!ts || !Number.isFinite(ts)) return "";
+  const now = Date.now();
+  const diffMs = now - ts;
+  const min = 60 * 1000;
+  const hr = 60 * min;
+  const day = 24 * hr;
+
+  if (diffMs < min) return "刚刚";
+  if (diffMs < hr) return `${Math.floor(diffMs / min)} 分钟前`;
+  if (diffMs < day) return `${Math.floor(diffMs / hr)} 小时前`;
+  if (diffMs < 2 * day) return "昨天";
+  if (diffMs < 7 * day) return `${Math.floor(diffMs / day)} 天前`;
+
+  // 超过 7 天显示日期
+  const d = new Date(ts);
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const date = String(d.getDate()).padStart(2, "0");
+  if (d.getFullYear() === new Date().getFullYear()) {
+    return `${month}/${date}`;
+  }
+  return `${d.getFullYear()}/${month}/${date}`;
+}
+
 Page({
   data: {
     sessions: [] as ChatSessionRow[],
@@ -25,7 +50,12 @@ Page({
     this.setData({ loading: true, error: "" });
     try {
       const res = await listSessions({ baseUrl });
-      this.setData({ sessions: res.sessions, loading: false });
+      // CP-7-B round 4: 给每个 session 加 updatedAtText（格式化时间戳）
+      const sessions = res.sessions.map((s) => ({
+        ...s,
+        updatedAtText: formatRelativeTime(s.updatedAt),
+      }));
+      this.setData({ sessions, loading: false });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "加载失败";
       this.setData({ loading: false, error: msg });
