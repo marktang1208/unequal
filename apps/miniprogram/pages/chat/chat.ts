@@ -145,8 +145,8 @@ Page({
       text: q,
       cached: false,
       citations: [],
-      // CP-7-B bugfix：message-bubble 要求 segments 是数组（user msg 无 [N] 解析需求，传空数组）
-      segments: { rawNums: [], citedNums: [] } as unknown as ReturnType<typeof parseAnswerSegments>,
+      // CP-7-B bugfix：message-bubble 要求 segments 是 Segment[] 数组（user msg 无 [N] 解析需求，传空数组）
+      segments: [],
     };
     this.setData({
       messages: [...this.data.messages, userMsg],

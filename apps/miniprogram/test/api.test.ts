@@ -173,7 +173,7 @@ describe("adminLogin()", () => {
     const callArg = mockCloudCall.mock.calls[0]![0]!;
     expect(callArg.path).toBe("/api-auth-admin-login");
     expect(callArg.httpMethod).toBe("POST");
-    expect(callArg.body).toEqual({ admin_token: "test-token-please-change" });
+    expect(callArg.body).toEqual({ token: "test-token-please-change" });
     // adminLogin 不依赖 jwt（无 jwt header）
     expect(callArg.jwt).toBeUndefined();
   });

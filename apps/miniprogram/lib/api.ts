@@ -38,7 +38,7 @@ export async function adminLogin(adminToken: string): Promise<AdminLoginResponse
   return cloudCall<AdminLoginResponse>({
     path: "/api-auth-admin-login",
     httpMethod: "POST",
-    body: { admin_token: adminToken },
+    body: { token: adminToken },
   });
 }
 
