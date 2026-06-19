@@ -154,7 +154,6 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
   const docIds = Array.from(new Set(top.map((t) => findChunk(t.chunkId)?.documentId).filter(Boolean) as string[]));
   // chunk.documentId = ingest 时 add() 生成的 CloudBase `_id`（add 返 _id 当 documentId 存）
   // 用 getById 查（按 _id），不是 whereQuery({id})
-  const { getById } = await import("../lib/db.js");
   const docs = await Promise.all(docIds.map((id) => getById<Document>(COLLECTIONS.document, id)));
   // docMap 用 _id 作 key（与 chunk.documentId 对齐）
   const docMap = new Map(docs.filter(Boolean).map((d) => [d!._id, d!]));
