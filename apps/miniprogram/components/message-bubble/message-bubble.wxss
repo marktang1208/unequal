@@ -1,41 +1,41 @@
-/* CP-7-B round 7: 06 童心日历风格 — message-bubble
- * user 气泡：橙黄 #ffb84d + 粗描边 + 偏移阴影
- * assistant 气泡：白卡 + 粗描边 + 偏移橙阴影
- * [N] cite：圆形暖橙白字（小圆徽章）
- * cached tag：薄荷绿 + 粗描边
+/* CP-7-B round 8: 06 童心日历 — px 单位修描边渲染问题
+ * 小程序 view 对 rpx 边框 < 2px 时可能被吃掉，改用 px 强制保留
  *
- * 设计要点：圆角不对称（左上 vs 右上）+ 粗描边 + 阴影偏移 = 明信片
+ * Design token：
+ *   背景米黄 #fff9e6
+ *   主深棕 #3d2914
+ *   暖橙 #ff8a65
+ *   橙黄 #ffb84d
  */
 
 .bubble {
   max-width: 80%;
   padding: 22rpx 28rpx;
-  margin: 18rpx 24rpx;
+  margin: 22rpx 24rpx;
   word-break: break-word;
   box-sizing: border-box;
   position: relative;
 }
 
-/* user 气泡：橙黄 + 粗描边 + 偏移阴影 */
+/* user 气泡：橙黄 + 2px 深棕粗描边 + 6px 金黄偏移阴影 */
 .bubble.user {
   align-self: flex-end;
   background: #ffb84d;
   color: #3d2914;
-  border: 3rpx solid #3d2914;
-  /* 右下角小、其它大 → 明信片折角感 */
+  border: 2px solid #3d2914;
   border-radius: 24rpx 8rpx 24rpx 24rpx;
-  box-shadow: 4rpx 4rpx 0 #f5a623;
+  box-shadow: 6rpx 6rpx 0 0 #f5a623;
   font-weight: 600;
 }
 
-/* assistant 气泡：白卡 + 粗描边 + 偏移橙阴影 */
+/* assistant 气泡：白卡 + 2px 深棕粗描边 + 6px 橙黄偏移阴影 */
 .bubble.assistant {
   align-self: flex-start;
   background: #ffffff;
   color: #3d2914;
-  border: 3rpx solid #3d2914;
+  border: 2px solid #3d2914;
   border-radius: 8rpx 24rpx 24rpx 24rpx;
-  box-shadow: 4rpx 4rpx 0 #ffb84d;
+  box-shadow: 6rpx 6rpx 0 0 #ffb84d;
   font-weight: 500;
 }
 
@@ -43,9 +43,10 @@
   font-size: 28rpx;
   line-height: 1.7;
   white-space: pre-wrap;
+  color: #3d2914;
 }
 
-/* cached tag：薄荷绿圆胶囊 + 粗描边 */
+/* cached tag */
 .cached-tag {
   display: inline-block;
   margin-top: 14rpx;
@@ -54,9 +55,9 @@
   color: #ffffff;
   font-size: 20rpx;
   font-weight: 800;
-  border: 2rpx solid #3d2914;
+  border: 1.5px solid #3d2914;
   border-radius: 100rpx;
-  box-shadow: 2rpx 2rpx 0 #3d2914;
+  box-shadow: 3rpx 3rpx 0 0 #3d2914;
   letter-spacing: 0.3rpx;
 }
 
@@ -64,27 +65,26 @@
   margin-top: 18rpx;
 }
 
-/* CP-7-B 富文本 cite-num：圆形小徽章 */
+/* [N] 圆形小徽章 */
 .cite-num {
   display: inline-block;
-  min-width: 32rpx;
-  height: 32rpx;
-  line-height: 30rpx;
-  padding: 0 8rpx;
+  min-width: 36rpx;
+  height: 36rpx;
+  line-height: 32rpx;
+  padding: 0 10rpx;
   margin: 0 4rpx;
   background: #ff8a65;
   color: #ffffff;
   font-weight: 800;
   font-size: 22rpx;
   text-align: center;
-  border: 2rpx solid #3d2914;
+  border: 1.5px solid #3d2914;
   border-radius: 100rpx;
-  box-shadow: 2rpx 2rpx 0 #3d2914;
+  box-shadow: 3rpx 3rpx 0 0 #3d2914;
   vertical-align: middle;
-  transition: transform 0.1s ease, box-shadow 0.1s ease;
 }
 
 .cite-num:active {
-  transform: translate(1rpx, 1rpx);
-  box-shadow: 1rpx 1rpx 0 #3d2914;
+  transform: translate(2rpx, 2rpx);
+  box-shadow: 1rpx 1rpx 0 0 #3d2914;
 }

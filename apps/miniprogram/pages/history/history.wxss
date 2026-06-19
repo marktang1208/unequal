@@ -1,11 +1,4 @@
-/* CP-7-B round 7: 06 童心日历风格 — 手绘明信片 · 粗描边 · 偏移阴影
- * Design token：
- *   背景米黄    #fff9e6
- *   主深棕      #3d2914 (粗描边 / 主文)
- *   暖橙强调    #ff8a65 (标题 / chip / tab active)
- *   橙黄气泡    #ffb84d (user 气泡)
- *   金黄阴影    #f5a623 (偏移阴影)
- *   柔棕次文    #a89887
+/* CP-7-B round 8: 06 童心日历 — history px 单位修描边
  */
 
 .page {
@@ -28,7 +21,6 @@
   z-index: 1;
 }
 
-/* 标题：暖橙 + Georgia serif（手绘感） */
 .header-title {
   font-size: 44rpx;
   font-weight: 800;
@@ -69,32 +61,29 @@
   font-weight: 600;
 }
 
-/* 列表区 */
 .session-list {
   padding: 16rpx 28rpx 120rpx;
   position: relative;
   z-index: 1;
 }
 
-/* 童趣卡片：粗描边 + 偏移阴影 */
+/* 童趣卡片：2px 粗描边 + 6rpx 偏移阴影 */
 .session {
   background: #ffffff;
-  border: 4rpx solid #3d2914;
-  border-radius: 4rpx 28rpx 28rpx 28rpx; /* 左上小、其它大 */
-  padding: 28rpx 32rpx;
-  margin-bottom: 28rpx;
-  box-shadow: 6rpx 6rpx 0 #ffb84d;
+  border: 2px solid #3d2914;
+  border-radius: 8rpx 32rpx 32rpx 32rpx;
+  padding: 32rpx;
+  margin-bottom: 32rpx;
+  box-shadow: 6rpx 6rpx 0 0 #ffb84d;
   position: relative;
   overflow: visible;
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
 
 .session:active {
   transform: translate(3rpx, 3rpx);
-  box-shadow: 3rpx 3rpx 0 #ffb84d;
+  box-shadow: 3rpx 3rpx 0 0 #ffb84d;
 }
 
-/* 卡片标题 */
 .session .title {
   font-size: 30rpx;
   font-weight: 700;
@@ -109,7 +98,6 @@
   letter-spacing: -0.2rpx;
 }
 
-/* 元信息行 */
 .session .meta {
   display: flex;
   align-items: center;
@@ -117,7 +105,7 @@
   font-size: 24rpx;
 }
 
-/* 消息数 chip — 圆形暖橙 */
+/* 消息数 chip */
 .session .msg-count {
   display: inline-flex;
   align-items: center;
@@ -128,11 +116,10 @@
   font-size: 22rpx;
   font-weight: 800;
   letter-spacing: 0.3rpx;
-  border: 2rpx solid #3d2914;
-  box-shadow: 2rpx 2rpx 0 #3d2914;
+  border: 1.5px solid #3d2914;
+  box-shadow: 3rpx 3rpx 0 0 #3d2914;
 }
 
-/* 时间戳 — 深棕 */
 .session .ts {
   color: #8b5a2b;
   margin-left: auto;
@@ -140,7 +127,6 @@
   font-weight: 600;
 }
 
-/* 长按提示 — 柔棕 */
 .session .hint {
   position: absolute;
   top: 14rpx;

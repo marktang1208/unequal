@@ -1,15 +1,4 @@
-/* CP-7-B round 7: 06 童心日历风格 — chat 页同步
- * 与 history.wxss 共享 design token：
- *   背景米黄 #fff9e6
- *   主深棕 #3d2914
- *   暖橙强调 #ff8a65
- *   橙黄气泡 #ffb84d
- *   金黄阴影 #f5a623
- *
- * 设计要点：
- * - 粗 4rpx 描边 + 偏移阴影 = 手绘明信片
- * - 虚线分隔 = 童趣
- * - 圆角不规则（破对称感）
+/* CP-7-B round 8: 06 童心日历 — chat 页 px 单位修描边
  */
 
 .chat-page {
@@ -31,7 +20,6 @@
   z-index: 1;
 }
 
-/* 正在思考 loading */
 .loading {
   align-self: center;
   padding: 16rpx 32rpx;
@@ -39,48 +27,47 @@
   font-size: 24rpx;
   font-weight: 600;
   background: #ffffff;
-  border: 3rpx solid #3d2914;
+  border: 2px solid #3d2914;
   border-radius: 100rpx;
   margin: 16rpx;
-  box-shadow: 3rpx 3rpx 0 #ffb84d;
+  box-shadow: 4rpx 4rpx 0 0 #ffb84d;
 }
 
-/* 错误条 */
 .error-bar {
   background: #fff0e0;
   color: #d63a1a;
-  padding: 16rpx 24rpx;
+  padding: 18rpx 24rpx;
   font-size: 26rpx;
   font-weight: 600;
   text-align: center;
-  border-top: 3rpx dashed #3d2914;
-  border-bottom: 3rpx dashed #3d2914;
+  border-top: 2px dashed #3d2914;
+  border-bottom: 2px dashed #3d2914;
   position: relative;
   z-index: 1;
 }
 
-/* 输入区 — 虚线分割 */
+/* 输入区 */
 .input-bar {
   display: flex;
   align-items: flex-end;
   gap: 16rpx;
-  padding: 22rpx 24rpx;
-  padding-bottom: calc(22rpx + env(safe-area-inset-bottom));
+  padding: 24rpx 24rpx;
+  padding-bottom: calc(24rpx + env(safe-area-inset-bottom));
   background: #fff9e6;
-  border-top: 4rpx dashed #3d2914;
+  border-top: 2px dashed #3d2914;
   box-sizing: border-box;
   position: relative;
   z-index: 1;
 }
 
-/* 输入框：白底 + 粗深棕描边 */
+/* 输入框 */
 .input-bar .input {
   flex: 1;
   min-height: 72rpx;
   max-height: 200rpx;
   padding: 18rpx 24rpx;
   background: #ffffff;
-  border: 3rpx solid #3d2914;
+  border: 2px solid #3d2914;
   border-radius: 24rpx;
   font-size: 28rpx;
   line-height: 1.5;
@@ -89,22 +76,21 @@
   font-weight: 500;
 }
 
-/* 提问按钮：暖橙 + 粗描边 + 偏移阴影 */
+/* 提问按钮 — 启用态：暖橙 + 粗描边 + 偏移阴影 */
 .input-bar .btn-send {
   flex-shrink: 0;
   margin: 0;
-  padding: 0 36rpx;
+  padding: 0 40rpx;
   height: 80rpx;
-  line-height: 76rpx; /* -4 for border */
+  line-height: 76rpx;
   background: #ff8a65;
   color: #ffffff;
   font-size: 28rpx;
   font-weight: 800;
-  border: 3rpx solid #3d2914;
+  border: 2px solid #3d2914;
   border-radius: 24rpx;
-  box-shadow: 4rpx 4rpx 0 #3d2914;
-  letter-spacing: 0.5rpx;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: 6rpx 6rpx 0 0 #3d2914;
+  letter-spacing: 1rpx;
 }
 
 .input-bar .btn-send::after {
@@ -112,14 +98,14 @@
 }
 
 .input-bar .btn-send:active {
-  transform: translate(2rpx, 2rpx);
-  box-shadow: 2rpx 2rpx 0 #3d2914;
+  transform: translate(3rpx, 3rpx);
+  box-shadow: 3rpx 3rpx 0 0 #3d2914;
 }
 
-/* 禁用态：灰金黄 + 阴影消失 */
+/* 禁用态：暖橙降饱和度 + 阴影保留（保持视觉一致性） */
 .input-bar .btn-send[disabled] {
-  background: #f5d99a;
+  background: #ffd0b8;
   color: #ffffff;
-  border-color: #8b7355;
-  box-shadow: none;
+  border-color: #3d2914;
+  box-shadow: 4rpx 4rpx 0 0 #a89887;
 }
