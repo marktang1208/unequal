@@ -27,6 +27,8 @@ interface IngestRequest {
   title?: string;
   url?: string;
   trust_level?: 0 | 1 | 2 | 3;
+  /** CP-7-B round 9: 可指定 userId，让 chunks 绑给真实 wx user（不指定则用 DEFAULT_USER_ID） */
+  user_id?: string;
 }
 
 export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse> {
@@ -42,13 +44,15 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
   }
 
   const trustLevel = body.trust_level ?? 0;
+  // CP-7-B round 9: user_id 可选；缺省 DEFAULT_USER_ID
+  const targetUserId = body.user_id || env.DEFAULT_USER_ID;
 
   // 1. source
   let sourceId = body.source_id;
   if (!sourceId) {
     const newSource: Source = {
       id: "",
-      userId: env.DEFAULT_USER_ID,
+      userId: targetUserId,
       type: "webpage",
       title: body.title,
       url: body.url,
@@ -65,7 +69,7 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
   const docId = await add<Document>(COLLECTIONS.document, {
     id: "",
     sourceId,
-    userId: env.DEFAULT_USER_ID,
+    userId: targetUserId,
     title: body.title ?? body.url,
     rawPath: "",
     previewSnippet: body.content.slice(0, 200),
@@ -102,7 +106,7 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
         id: "",
         documentId: docId,
         sourceId,
-        userId: env.DEFAULT_USER_ID,
+        userId: targetUserId,
         idx: i,
         content: chunks[i]!.content,
         embedding: embeddings[i]!,
