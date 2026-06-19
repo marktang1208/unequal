@@ -1,58 +1,74 @@
+/* CP-7-B round 6: message-bubble 温暖调
+ * user 气泡：粉茶 → 驼金 渐变 + 白字
+ * assistant 气泡：象牙白底 + 暖边 + 深棕字
+ * [N] cite：粉茶强调色（与按钮 / 装饰条呼应）
+ * cached tag：薄荷绿（与 history chip 一致）
+ */
+
 .bubble {
   max-width: 80%;
-  padding: 20rpx 24rpx;
-  border-radius: 16rpx;
-  margin: 16rpx 24rpx;
+  padding: 20rpx 26rpx;
+  border-radius: 24rpx;
+  margin: 14rpx 24rpx;
   word-break: break-word;
   box-sizing: border-box;
 }
 
+/* user 气泡：粉茶 → 驼金 渐变 */
 .bubble.user {
   align-self: flex-end;
-  background: #2563eb;
+  background: linear-gradient(135deg, #c4847a 0%, #d4a574 100%);
   color: #ffffff;
-  border-bottom-right-radius: 4rpx;
+  border-bottom-right-radius: 6rpx;
+  box-shadow: 0 2rpx 10rpx rgba(196, 132, 122, 0.25);
 }
 
+/* assistant 气泡：象牙白 + 暖边 */
 .bubble.assistant {
   align-self: flex-start;
   background: #ffffff;
-  color: #1f2937;
-  border: 1rpx solid #e5e7eb;
-  border-bottom-left-radius: 4rpx;
-  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+  color: #4a2c2a;
+  border: 1rpx solid #f0e6d2;
+  border-bottom-left-radius: 6rpx;
+  box-shadow: 0 2rpx 12rpx rgba(155, 100, 80, 0.06);
 }
 
 .bubble-text {
   font-size: 28rpx;
-  line-height: 1.6;
+  line-height: 1.65;
   white-space: pre-wrap;
 }
 
+/* cached tag：薄荷绿（与 history msg-count chip 同色系） */
 .cached-tag {
   display: inline-block;
-  margin-top: 10rpx;
-  padding: 2rpx 12rpx;
-  background: #10b981;
+  margin-top: 12rpx;
+  padding: 4rpx 14rpx;
+  background: #a8c8a0;
   color: #ffffff;
   font-size: 20rpx;
-  border-radius: 6rpx;
+  font-weight: 600;
+  border-radius: 100rpx;
+  box-shadow: 0 1rpx 4rpx rgba(168, 200, 160, 0.4);
 }
 
 .citations {
   margin-top: 16rpx;
 }
 
-/* CP-7-B 富文本 cite-num 样式（[N] 可点击） */
+/* CP-7-B 富文本 cite-num：粉茶（呼应主题色） */
 .cite-num {
   display: inline;
-  padding: 0 4rpx;
-  color: #2563eb;
-  font-weight: 600;
-  border-radius: 4rpx;
-  background: rgba(37, 99, 235, 0.08);
+  padding: 2rpx 8rpx;
+  margin: 0 2rpx;
+  color: #c4847a;
+  font-weight: 700;
+  border-radius: 6rpx;
+  background: rgba(196, 132, 122, 0.10);
+  transition: background 0.15s ease;
 }
 
 .cite-num:active {
-  background: rgba(37, 99, 235, 0.18);
+  background: rgba(196, 132, 122, 0.25);
+  color: #9b3a2e;
 }
