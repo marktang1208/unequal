@@ -71,3 +71,21 @@ export interface ChatSessionRow {
 export interface SessionsListResponse {
   sessions: ChatSessionRow[];
 }
+
+/* ---------- CP-7-B 真接 round 3：getSession 返单 session 详情含 messages ---------- */
+
+export interface ChatMessageRow {
+  role: "user" | "assistant";
+  content: string;
+  createdAt: number;
+}
+
+export interface SessionDetailResponse {
+  _id?: string;
+  id: string;
+  userId?: string;
+  title?: string;
+  messages: ChatMessageRow[];
+  createdAt: number;
+  updatedAt: number;
+}

@@ -20,6 +20,7 @@ import type {
   ChatRequest,
   ChatResponse,
   SessionsListResponse,
+  SessionDetailResponse,
 } from "./types.js";
 import { cloudCall } from "./cloud-call.js";
 import { getJwtToken } from "./auth.js";
@@ -76,6 +77,17 @@ export async function listSessions(): Promise<SessionsListResponse> {
   return cloudCall<SessionsListResponse>({
     path: "/api-sessions-list",
     httpMethod: "GET",
+    jwt: getJwtToken() ?? undefined,
+  });
+}
+
+/** GET /api-sessions-get?id={id} → 返单 session 完整详情（含 messages）
+ *  CP-7-B 真接 round 3：history 切回 chat 后能复显历史消息 */
+export async function getSession(sessionId: string): Promise<SessionDetailResponse> {
+  return cloudCall<SessionDetailResponse>({
+    path: "/api-sessions-get",
+    httpMethod: "GET",
+    query: { id: sessionId },
     jwt: getJwtToken() ?? undefined,
   });
 }

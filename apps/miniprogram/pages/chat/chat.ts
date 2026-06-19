@@ -1,5 +1,5 @@
 // @ts-nocheck wx 全局类型 mock-first 缺失（miniprogram-api-typings 未安装，按 CP-1 决策容忍）
-import { chat, updateNickname } from "../../lib/api.js";
+import { chat, updateNickname, getSession } from "../../lib/api.js";
 import { __setStorageImpl } from "../../lib/storage.js";
 import { __setSessionStorageImpl, loadCurrentSessionId, saveCurrentSessionId, hasShownNicknameModal, setShownNicknameModal, __setNicknameModalStorageImpl } from "../../lib/chat-storage.js";
 import { parseAnswerSegments } from "../../lib/citation-parser.js";
@@ -123,6 +123,32 @@ Page({
     const sid = loadCurrentSessionId();
     if (sid && sid !== this.data.sessionId) {
       this.setData({ sessionId: sid, messages: [] });
+      // CP-7-B 真接 round 3：拉历史消息（rename/历史回看）
+      void this.loadSessionMessages(sid);
+    }
+  },
+
+  /** 拉 session 完整详情 → 转 MessageItem[] 含 segments（CP-7-B 真接 round 3） */
+  async loadSessionMessages(sid: string): Promise<void> {
+    try {
+      const detail = await getSession(sid);
+      const messages: MessageItem[] = detail.messages.map((m, i) => ({
+        id: `${sid}-${i}-${m.role}`,
+        role: m.role,
+        text: m.content,
+        cached: false,
+        citations: [],
+        // user msg segments 空；assistant msg 解析 [N] 富文本
+        segments: m.role === "assistant" ? parseAnswerSegments(m.content) : [],
+      }));
+      this.setData({
+        messages,
+        sessionTitle: detail.title ?? "",
+      });
+    } catch (err) {
+      // 拉失败仅 warn；不阻塞页面（user 可以继续问新问题，但旧消息看不到）
+      // eslint-disable-next-line no-console
+      console.warn("[unequal] loadSessionMessages failed:", err instanceof Error ? err.message : err);
     }
   },
 

@@ -34,6 +34,9 @@ Page({
 
   /** 点击 session → 切到 chat 页继续对话 */
   onTapSession(e: WechatMiniprogram.TouchEvent): void {
+    // longpress 触发后 350ms 内 tap 也会触发；用 flag 抑制紧随其后的 tap
+    // @ts-expect-error data 临时挂载
+    if (this.data._suppressTap) return;
     const id = (e.currentTarget.dataset.id as string | undefined) ?? "";
     if (!id) return;
     saveCurrentSessionId(id);
@@ -43,6 +46,10 @@ Page({
 
   /** 长按 → 弹"重命名 / 删除"操作表 */
   onLongPressSession(e: WechatMiniprogram.TouchEvent): void {
+    // 标记 1s 内 tap 跳过（longpress 后会跟一个 tap，需要抑制）
+    this.setData({ _suppressTap: true });
+    setTimeout(() => this.setData({ _suppressTap: false }), 1000);
+
     const id = (e.currentTarget.dataset.id as string | undefined) ?? "";
     const title = (e.currentTarget.dataset.title as string | undefined) ?? "";
     if (!id) return;
