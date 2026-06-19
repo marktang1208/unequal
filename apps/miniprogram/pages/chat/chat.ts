@@ -122,8 +122,12 @@ Page({
     // history 页切换 session 后回 chat 页会触发 onShow → 用最新 sid
     const sid = loadCurrentSessionId();
     if (sid && sid !== this.data.sessionId) {
+      // 切到不同 session → 清空 + 拉新历史
       this.setData({ sessionId: sid, messages: [] });
-      // CP-7-B 真接 round 3：拉历史消息（rename/历史回看）
+      void this.loadSessionMessages(sid);
+    } else if (sid && this.data.messages.length === 0) {
+      // CP-7-B round 9 bugfix：同 sid 但 messages 为空（冷启动 / 首次点击恰好命中持久化 sid）
+      // 此时也需要拉历史，否则页面永远是空白
       void this.loadSessionMessages(sid);
     }
   },
