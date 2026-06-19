@@ -1,53 +1,38 @@
-/* CP-7-B round 6: B 温暖调 — 米色 + 粉茶 / 薄荷绿 chip / 粉茶装饰条
+/* CP-7-B round 7: 06 童心日历风格 — 手绘明信片 · 粗描边 · 偏移阴影
  * Design token：
- *   背景米色      #faf5ed
- *   卡片象牙白    #ffffff
- *   暖边框        #f0e6d2
- *   深棕主文      #4a2c2a
- *   中棕次文      #8a6850
- *   粉茶强调      #c4847a (装饰条 gradient end)
- *   驼金强调      #d4a574 (装饰条 gradient start)
- *   薄荷绿 chip   #a8c8a0
- *   柔金提示      #c4a890
+ *   背景米黄    #fff9e6
+ *   主深棕      #3d2914 (粗描边 / 主文)
+ *   暖橙强调    #ff8a65 (标题 / chip / tab active)
+ *   橙黄气泡    #ffb84d (user 气泡)
+ *   金黄阴影    #f5a623 (偏移阴影)
+ *   柔棕次文    #a89887
  */
 
 .page {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  background: #faf5ed;
+  background: #fff9e6;
   box-sizing: border-box;
   position: relative;
-}
-
-/* 右上角柔光：暖驼色 */
-.page::before {
-  content: "";
-  position: fixed;
-  top: -200rpx;
-  right: -200rpx;
-  width: 600rpx;
-  height: 600rpx;
-  background: radial-gradient(circle, rgba(212, 165, 116, 0.15) 0%, transparent 70%);
-  pointer-events: none;
-  z-index: 0;
 }
 
 .header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 32rpx 32rpx 16rpx;
+  padding: 32rpx 32rpx 20rpx;
   background: transparent;
   border-bottom: none;
   position: relative;
   z-index: 1;
 }
 
+/* 标题：暖橙 + Georgia serif（手绘感） */
 .header-title {
-  font-size: 40rpx;
-  font-weight: 700;
-  color: #4a2c2a;
+  font-size: 44rpx;
+  font-weight: 800;
+  color: #ff8a65;
   letter-spacing: -0.5rpx;
 }
 
@@ -57,11 +42,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #8a6850;
+  color: #a89887;
   font-size: 28rpx;
   padding: 120rpx 0;
   position: relative;
   z-index: 1;
+  font-weight: 600;
 }
 
 .error {
@@ -77,59 +63,42 @@
 }
 
 .error text {
-  color: #b91c1c;
+  color: #d63a1a;
   font-size: 28rpx;
   text-align: center;
+  font-weight: 600;
 }
 
 /* 列表区 */
 .session-list {
-  padding: 16rpx 24rpx 120rpx;
+  padding: 16rpx 28rpx 120rpx;
   position: relative;
   z-index: 1;
 }
 
-/* 温暖卡片 */
+/* 童趣卡片：粗描边 + 偏移阴影 */
 .session {
   background: #ffffff;
-  border: 1rpx solid #f0e6d2;
-  border-radius: 20rpx;
+  border: 4rpx solid #3d2914;
+  border-radius: 4rpx 28rpx 28rpx 28rpx; /* 左上小、其它大 */
   padding: 28rpx 32rpx;
-  margin-bottom: 20rpx;
-  box-shadow:
-    0 2rpx 12rpx rgba(155, 100, 80, 0.06),
-    inset 0 1rpx 0 rgba(255, 255, 255, 0.9);
-  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+  margin-bottom: 28rpx;
+  box-shadow: 6rpx 6rpx 0 #ffb84d;
   position: relative;
-  overflow: hidden;
-}
-
-/* 卡片左侧装饰条：驼金→粉茶渐变 */
-.session::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 24rpx;
-  bottom: 24rpx;
-  width: 4rpx;
-  background: linear-gradient(180deg, #d4a574 0%, #c4847a 100%);
-  border-radius: 0 4rpx 4rpx 0;
-  opacity: 0.85;
+  overflow: visible;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
 
 .session:active {
-  transform: scale(0.98);
-  background: #fdf9f1;
-  box-shadow:
-    0 1rpx 4rpx rgba(155, 100, 80, 0.10),
-    inset 0 1rpx 0 rgba(255, 255, 255, 0.9);
+  transform: translate(3rpx, 3rpx);
+  box-shadow: 3rpx 3rpx 0 #ffb84d;
 }
 
 /* 卡片标题 */
 .session .title {
   font-size: 30rpx;
-  font-weight: 600;
-  color: #4a2c2a;
+  font-weight: 700;
+  color: #3d2914;
   line-height: 1.45;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -148,34 +117,35 @@
   font-size: 24rpx;
 }
 
-/* 消息数 chip — 薄荷绿 */
+/* 消息数 chip — 圆形暖橙 */
 .session .msg-count {
   display: inline-flex;
   align-items: center;
-  background: #a8c8a0;
+  background: #ff8a65;
   color: #ffffff;
-  padding: 6rpx 18rpx;
+  padding: 6rpx 20rpx;
   border-radius: 100rpx;
   font-size: 22rpx;
-  font-weight: 600;
+  font-weight: 800;
   letter-spacing: 0.3rpx;
-  box-shadow: 0 2rpx 6rpx rgba(168, 200, 160, 0.4);
+  border: 2rpx solid #3d2914;
+  box-shadow: 2rpx 2rpx 0 #3d2914;
 }
 
-/* 时间戳 — 中棕 */
+/* 时间戳 — 深棕 */
 .session .ts {
-  color: #8a6850;
+  color: #8b5a2b;
   margin-left: auto;
   font-size: 22rpx;
-  font-weight: 500;
+  font-weight: 600;
 }
 
-/* 长按提示 — 柔金 */
+/* 长按提示 — 柔棕 */
 .session .hint {
   position: absolute;
-  top: 16rpx;
+  top: 14rpx;
   right: 20rpx;
   font-size: 20rpx;
-  color: #c4a890;
-  font-weight: 500;
+  color: #a89887;
+  font-weight: 600;
 }

@@ -1,119 +1,125 @@
-/* CP-7-B round 6: 问答 tab 同步 B 温暖调
+/* CP-7-B round 7: 06 童心日历风格 — chat 页同步
  * 与 history.wxss 共享 design token：
- *   背景米色 #faf5ed
- *   卡片象牙白 #ffffff
- *   暖边框 #f0e6d2
- *   user 气泡：粉茶 #c4847a → 驼金 #d4a574 渐变
- *   assistant 气泡：象牙白底 + 暖边
- *   输入区：浅米底 + 暖边
- *   提问按钮：粉茶 / 禁用驼茶
+ *   背景米黄 #fff9e6
+ *   主深棕 #3d2914
+ *   暖橙强调 #ff8a65
+ *   橙黄气泡 #ffb84d
+ *   金黄阴影 #f5a623
+ *
+ * 设计要点：
+ * - 粗 4rpx 描边 + 偏移阴影 = 手绘明信片
+ * - 虚线分隔 = 童趣
+ * - 圆角不规则（破对称感）
  */
 
 .chat-page {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: #faf5ed;
+  background: #fff9e6;
   box-sizing: border-box;
   position: relative;
-}
-
-/* 右上角柔光：暖驼色（与 history 一致） */
-.chat-page::before {
-  content: "";
-  position: fixed;
-  top: -200rpx;
-  right: -200rpx;
-  width: 600rpx;
-  height: 600rpx;
-  background: radial-gradient(circle, rgba(212, 165, 116, 0.15) 0%, transparent 70%);
-  pointer-events: none;
-  z-index: 0;
 }
 
 .message-list {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 20rpx 0;
+  padding: 24rpx 0;
   overflow-y: auto;
   position: relative;
   z-index: 1;
 }
 
+/* 正在思考 loading */
 .loading {
   align-self: center;
   padding: 16rpx 32rpx;
-  color: #8a6850;
+  color: #8b5a2b;
   font-size: 24rpx;
+  font-weight: 600;
   background: #ffffff;
-  border: 1rpx solid #f0e6d2;
-  border-radius: 16rpx;
-  margin: 12rpx;
-  box-shadow: 0 2rpx 8rpx rgba(155, 100, 80, 0.06);
+  border: 3rpx solid #3d2914;
+  border-radius: 100rpx;
+  margin: 16rpx;
+  box-shadow: 3rpx 3rpx 0 #ffb84d;
 }
 
+/* 错误条 */
 .error-bar {
-  background: #fef0eb;
-  color: #9b3a2e;
+  background: #fff0e0;
+  color: #d63a1a;
   padding: 16rpx 24rpx;
-  font-size: 24rpx;
+  font-size: 26rpx;
+  font-weight: 600;
   text-align: center;
-  border-top: 1rpx solid #f0d6c8;
+  border-top: 3rpx dashed #3d2914;
+  border-bottom: 3rpx dashed #3d2914;
   position: relative;
   z-index: 1;
 }
 
-/* 输入区 */
+/* 输入区 — 虚线分割 */
 .input-bar {
   display: flex;
   align-items: flex-end;
   gap: 16rpx;
-  padding: 20rpx 24rpx;
-  padding-bottom: calc(20rpx + env(safe-area-inset-bottom));
-  background: #ffffff;
-  border-top: 1rpx solid #f0e6d2;
+  padding: 22rpx 24rpx;
+  padding-bottom: calc(22rpx + env(safe-area-inset-bottom));
+  background: #fff9e6;
+  border-top: 4rpx dashed #3d2914;
   box-sizing: border-box;
   position: relative;
   z-index: 1;
 }
 
+/* 输入框：白底 + 粗深棕描边 */
 .input-bar .input {
   flex: 1;
-  min-height: 64rpx;
+  min-height: 72rpx;
   max-height: 200rpx;
-  padding: 16rpx 22rpx;
-  background: #faf5ed;
-  border: 1rpx solid #f0e6d2;
-  border-radius: 20rpx;
+  padding: 18rpx 24rpx;
+  background: #ffffff;
+  border: 3rpx solid #3d2914;
+  border-radius: 24rpx;
   font-size: 28rpx;
   line-height: 1.5;
-  color: #4a2c2a;
+  color: #3d2914;
   box-sizing: border-box;
+  font-weight: 500;
 }
 
-/* 提问按钮：粉茶 → 驼金渐变 */
+/* 提问按钮：暖橙 + 粗描边 + 偏移阴影 */
 .input-bar .btn-send {
   flex-shrink: 0;
   margin: 0;
   padding: 0 36rpx;
-  height: 72rpx;
-  line-height: 72rpx;
-  background: linear-gradient(135deg, #c4847a 0%, #d4a574 100%);
+  height: 80rpx;
+  line-height: 76rpx; /* -4 for border */
+  background: #ff8a65;
   color: #ffffff;
   font-size: 28rpx;
-  font-weight: 600;
-  border-radius: 20rpx;
-  box-shadow: 0 2rpx 8rpx rgba(196, 132, 122, 0.3);
+  font-weight: 800;
+  border: 3rpx solid #3d2914;
+  border-radius: 24rpx;
+  box-shadow: 4rpx 4rpx 0 #3d2914;
   letter-spacing: 0.5rpx;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
 .input-bar .btn-send::after {
   border: none;
 }
 
+.input-bar .btn-send:active {
+  transform: translate(2rpx, 2rpx);
+  box-shadow: 2rpx 2rpx 0 #3d2914;
+}
+
+/* 禁用态：灰金黄 + 阴影消失 */
 .input-bar .btn-send[disabled] {
-  background: #e8d5c4;
+  background: #f5d99a;
   color: #ffffff;
+  border-color: #8b7355;
   box-shadow: none;
 }
