@@ -147,15 +147,21 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
   });
 
   // 3. 取 doc titles
-  // chunk.documentId = upload 时 newId() 生成的 ULID（schema `id` 字段），不是 CloudBase `_id`
-  // query 用 schema `id` 字段；docMap 用 `d.id` 作 key
-  const docIds = Array.from(new Set(top.map((t) => chunksWithEmb.find((c) => c.id === t.chunkId)?.documentId).filter(Boolean) as string[]));
-  const docs = await Promise.all(docIds.map((id) => whereQuery<Document>(COLLECTIONS.document, { id }, { limit: 1 }).then((r) => r[0])));
-  const docMap = new Map(docs.filter(Boolean).map((d) => [d!.id, d!]));
+  // CP-7-B round 9 bugfix：searchChunks 返的 chunkId 是 `_id ?? id`（retrieval.ts:88）
+  // 这里 find 时也用 `_id ?? id` 对齐，避免 chunk.id="" 时永远 find 不到
+  const findChunk = (chunkId: string) =>
+    chunksWithEmb.find((c) => (c._id ?? c.id) === chunkId);
+  const docIds = Array.from(new Set(top.map((t) => findChunk(t.chunkId)?.documentId).filter(Boolean) as string[]));
+  // chunk.documentId = ingest 时 add() 生成的 CloudBase `_id`（add 返 _id 当 documentId 存）
+  // 用 getById 查（按 _id），不是 whereQuery({id})
+  const { getById } = await import("../lib/db.js");
+  const docs = await Promise.all(docIds.map((id) => getById<Document>(COLLECTIONS.document, id)));
+  // docMap 用 _id 作 key（与 chunk.documentId 对齐）
+  const docMap = new Map(docs.filter(Boolean).map((d) => [d!._id, d!]));
 
   // 4. 拼 context
   const contextLines = top.slice(0, 5).map((t, i) => {
-    const chunk = chunksWithEmb.find((c) => c.id === t.chunkId);
+    const chunk = findChunk(t.chunkId);
     const doc = chunk ? docMap.get(chunk.documentId) : undefined;
     return `[${i + 1}] 《${doc?.title ?? "?"}》 ${chunk?.content.slice(0, 200) ?? ""}`;
   }).join("\n");
@@ -244,7 +250,7 @@ ${contextLines || "(无)"}`;
       const idx = n - 1;
       const t = topChunks[idx];
       if (!t) return null;
-      const chunk = chunksWithEmb.find((c) => c.id === t.chunkId);
+      const chunk = findChunk(t.chunkId);
       const doc = chunk ? docMap.get(chunk.documentId) : undefined;
       return {
         n,
