@@ -18,6 +18,7 @@ apps/api/.test-bundle/---
 apps/api/functions/
 apps/api/dist/
 cloudbaserc.smoke.json
+cloudbaserc.smoke.*.json
 
 # Miniprogram cloudfunctions dir: holds a copy of the api-router bundle (14.5MB)
 # that wx devtools expects to exist locally for `wx.cloud.callFunction` upload.
@@ -26,3 +27,7 @@ cloudbaserc.smoke.json
 apps/miniprogram/cloudfunctions/
 cloudbaserc.fn-secrets.json
 cloudbaserc.fn-all.json
+
+# CP-7-C #2 deployment artifacts (contain INGEST_PROXY_SECRET / ADMIN_TOKEN plaintext)
+ac-verify-cp7c2.sh
+cloudbaserc.smoke.cp7c2.json
