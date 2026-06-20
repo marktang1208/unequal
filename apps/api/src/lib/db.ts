@@ -18,13 +18,16 @@ export function newId(): string {
   return ulid();
 }
 
-/** add：插入新 doc，返回 _id */
+/** add：插入新 doc，返回 _id；CP-7-C #4: caller 没提供有效 id 时自动填 = _id（避免 id: "" 污染） */
 export async function add<T>(
   collection: CollectionName,
   data: T,
 ): Promise<string> {
   const _id = newId();
-  await DB().collection(collection).add({ _id, ...(data as Record<string, unknown>) });
+  const dataRecord = data as Record<string, unknown>;
+  const providedId = typeof dataRecord.id === "string" ? dataRecord.id : "";
+  const finalId = providedId.trim() !== "" ? providedId : _id;
+  await DB().collection(collection).add({ ...dataRecord, _id, id: finalId });
   return _id;
 }
 
