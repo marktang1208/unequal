@@ -1,43 +1,38 @@
-import type { CrawledDocument, IngestPayload } from "./types.js";
+import type { CrawledDocument, IngestBody } from "./types.js";
 
-export interface BuildPayloadOptions {
-  userId: string;
+export interface BuildBodyOptions {
   trustLevel: 0 | 1 | 2 | 3;
+  /**
+   * 缺省 undefined：CLI 不传 --user-id → 字段从 body 完全省略。
+   * 传具体 user_id：CLI 传 --user-id <X> → body 含 user_id: X。
+   * 注意：admin 路径禁止 user_id（CLI 层 fail-fast 拦截）。
+   */
+  userId?: string;
 }
 
-export function buildIngestPayload(doc: CrawledDocument, opts: BuildPayloadOptions): IngestPayload {
-  const safeTitle = doc.title || doc.url;
-  const sourceId = "01H" + cryptoRandomHex(24);
-  const documentId = "01H" + cryptoRandomHex(24);
+export function buildIngestBody(doc: CrawledDocument, opts: BuildBodyOptions): IngestBody {
   return {
-    source: {
-      type: "webpage",
-      title: safeTitle,
-      url: doc.url,
-      trust_level: opts.trustLevel,
-      meta: { source_id: sourceId, fetched_at: doc.fetchedAt },
-    },
-    document: {
-      title: safeTitle,
-      raw_path: `raw/${opts.userId}/crawl/${documentId}.html`,
-      parsed_text: doc.paragraphs.join("\n\n"),
-    },
-    chunks: doc.paragraphs.map((content, idx) => ({
-      idx,
-      content,
-      token_count: content.length,  // 简化：1 char = 1 token（中文 heuristic）
-      trust_level: opts.trustLevel,
-    })),
+    content: doc.paragraphs.join("\n\n"),
+    title: doc.title || doc.url,
+    url: doc.url,
+    trust_level: opts.trustLevel,
+    ...(opts.userId ? { user_id: opts.userId } : {}),
   };
 }
 
 export interface SubmitOptions {
   ingestUrl: string;
-  token: string;
-  userId: string;
-  trustLevel: 0 | 1 | 2 | 3;
-  /** CP-7-C #2: 传 secret 时同时附 X-Ingest-Proxy-Secret header；不传则走 admin 路径 */
+  /**
+   * auth：proxy secret 与 token 互斥（CLI 层 enforce；submitToIngest 也防御性 throw）。
+   * - ingestProxySecret 有值 → headers 含 x-ingest-proxy-secret（只发这一个）
+   * - token 有值 → headers 含 authorization: Bearer（只发这一个）
+   * - 两者都有/都无 → throw Error
+   */
   ingestProxySecret?: string;
+  token?: string;
+  /** undefined → body 不含 user_id 字段 */
+  userId?: string;
+  trustLevel: 0 | 1 | 2 | 3;
   fetchImpl?: typeof fetch;
 }
 
@@ -49,39 +44,33 @@ export async function submitToIngest(
   doc: CrawledDocument,
   opts: SubmitOptions,
 ): Promise<SubmitResult> {
-  const payload = buildIngestPayload(doc, { userId: opts.userId, trustLevel: opts.trustLevel });
-
-  const f = opts.fetchImpl ?? fetch;
-  const headers: Record<string, string> = {
-    "content-type": "application/json",
-    authorization: `Bearer ${opts.token}`,
-  };
-  if (opts.ingestProxySecret) {
-    headers["x-ingest-proxy-secret"] = opts.ingestProxySecret;
+  const hasProxy = !!opts.ingestProxySecret;
+  const hasToken = !!opts.token;
+  if (hasProxy === hasToken) {
+    throw new Error("submitToIngest: exactly one of ingestProxySecret/token must be provided");
   }
 
+  const body = buildIngestBody(doc, { trustLevel: opts.trustLevel, userId: opts.userId });
+
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (hasProxy) {
+    headers["x-ingest-proxy-secret"] = opts.ingestProxySecret!;
+  } else {
+    headers["authorization"] = `Bearer ${opts.token!}`;
+  }
+
+  const f = opts.fetchImpl ?? fetch;
   const res = await f(opts.ingestUrl, {
     method: "POST",
     headers,
-    body: JSON.stringify(payload),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    return { ok: false, status: res.status, error: body.error ?? `HTTP ${res.status}` };
+    const errBody = (await res.json().catch(() => ({}))) as { error?: string };
+    return { ok: false, status: res.status, error: errBody.error ?? `HTTP ${res.status}` };
   }
 
-  const body = (await res.json()) as { ok?: boolean; sourceId?: string; documentId?: string };
-  return { ok: true, sourceId: body.sourceId, documentId: body.documentId };
-}
-
-/** 26 hex chars — 简化版 ulid 替代 */
-function cryptoRandomHex(len: number): string {
-  const bytes = new Uint8Array(Math.ceil(len / 2));
-  if (typeof globalThis.crypto?.getRandomValues === "function") {
-    globalThis.crypto.getRandomValues(bytes);
-  } else {
-    for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
-  }
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("").slice(0, len);
+  const okBody = (await res.json()) as { ok?: boolean; sourceId?: string; documentId?: string };
+  return { ok: true, sourceId: okBody.sourceId, documentId: okBody.documentId };
 }

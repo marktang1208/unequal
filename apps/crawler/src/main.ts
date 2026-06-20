@@ -11,7 +11,7 @@
 import { fetchUrl } from "./sources/webpage.js";
 import { fetchXiaohongshuNote } from "./sources/xiaohongshu.js";
 import { fetchWechatMpArticle } from "./sources/wechat-mp.js";
-import { buildIngestPayload, submitToIngest } from "./ingest.js";
+import { submitToIngest } from "./ingest.js";
 import type { CrawledDocument } from "./types.js";
 
 function parseArgs(argv: string[]): Record<string, string | boolean> {
@@ -46,10 +46,10 @@ async function main() {
   }
 
   const ingestUrl = (args["ingest-url"] as string) ?? "http://localhost:8787/ingest";
-  // CP-7-C #2: proxy secret 优先（来自 CLI flag 或 env），fallback ADMIN_TOKEN
+  // CP-7-C #3: proxy secret 与 token 互斥；CLI 层 fail-fast 拦截双传/都缺
   const ingestProxySecret = (args["ingest-proxy-secret"] as string) ?? process.env.INGEST_PROXY_SECRET;
   const token = (args.token as string) ?? process.env.ADMIN_TOKEN ?? "";
-  const userId = (args["user-id"] as string) ?? "01H0000000000000000000000";
+  const userIdArg = args["user-id"] as string | undefined;
   const trustLevel = parseInt((args.trust as string) ?? "2", 10) as 0 | 1 | 2 | 3;
   const noIngest = args["no-ingest"] === true;
 
@@ -71,18 +71,28 @@ async function main() {
     return;
   }
 
-  if (!token && !ingestProxySecret) {
+  // ─── CP-7-C #3: fail-fast 三种错误组合 ────────────────────
+  if (ingestProxySecret && token) {
+    console.error("[crawler] --token and --ingest-proxy-secret are mutually exclusive (pick one auth path)");
+    process.exit(1);
+  }
+  if (!ingestProxySecret && !token) {
     console.error("[crawler] --token (ADMIN_TOKEN) or --ingest-proxy-secret / INGEST_PROXY_SECRET required for ingest (or pass --no-ingest)");
     process.exit(1);
   }
+  if (userIdArg && !ingestProxySecret) {
+    console.error("[crawler] --user-id requires --ingest-proxy-secret (admin path can only ingest to DEFAULT_USER_ID)");
+    process.exit(1);
+  }
 
-  console.log(`[crawler] submit to ${ingestUrl} (auth: ${ingestProxySecret ? "ingest_proxy" : "admin_token"})`);
+  console.log(
+    `[crawler] submit to ${ingestUrl} (auth: ${ingestProxySecret ? "ingest_proxy" : "admin_token"}${userIdArg ? `, target userId=${userIdArg}` : ""})`,
+  );
   const result = await submitToIngest(doc, {
     ingestUrl,
-    token,
-    userId,
+    ...(ingestProxySecret ? { ingestProxySecret } : { token }),
+    userId: userIdArg,
     trustLevel,
-    ...(ingestProxySecret ? { ingestProxySecret } : {}),
   });
   if (result.ok) {
     console.log(`[crawler] ingest ok: sourceId=${result.sourceId ?? "?"} documentId=${result.documentId ?? "?"}`);

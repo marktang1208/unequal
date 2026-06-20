@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildIngestPayload, submitToIngest } from "../src/ingest.js";
+import { buildIngestBody, submitToIngest } from "../src/ingest.js";
 import type { CrawledDocument } from "../src/types.js";
 
 const sample: CrawledDocument = {
@@ -13,49 +13,111 @@ const sample: CrawledDocument = {
   fetchedAt: 1718400000000,
 };
 
-describe("buildIngestPayload", () => {
-  it("CrawledDocument → IngestPayload (source.type='webpage' + document + chunks)", () => {
-    const p = buildIngestPayload(sample, { userId: "01H0000000000000000000000", trustLevel: 2 });
-    expect(p.source.type).toBe("webpage");
-    expect(p.source.title).toBe("婴儿发烧 38.5℃ 的家庭处理");
-    expect(p.source.url).toBe("https://example.com/article");
-    expect(p.source.trust_level).toBe(2);
-    expect(p.document.title).toBe("婴儿发烧 38.5℃ 的家庭处理");
-    expect(p.document.parsed_text).toContain("婴儿发烧时先观察精神状态");
-    expect(p.chunks.length).toBe(2);
-    expect(p.chunks[0]?.idx).toBe(0);
-    expect(p.chunks[0]?.content).toBe("婴儿发烧时先观察精神状态比体温数字更重要。");
-    expect(p.chunks[0]?.token_count).toBeGreaterThan(0);
-    expect(p.chunks[0]?.trust_level).toBe(2);
+describe("buildIngestBody", () => {
+  it("基础: 无 userId → body 不含 user_id 字段 (CP-7-C #3)", () => {
+    const b = buildIngestBody(sample, { trustLevel: 2 });
+    expect(b.content).toContain("婴儿发烧时先观察精神状态");
+    expect(b.title).toBe("婴儿发烧 38.5℃ 的家庭处理");
+    expect(b.url).toBe("https://example.com/article");
+    expect(b.trust_level).toBe(2);
+    expect("user_id" in b).toBe(false);
+  });
+
+  it("userId undefined → 字段省略 (CP-7-C #3)", () => {
+    const b = buildIngestBody(sample, { trustLevel: 2 });
+    expect(b.user_id).toBeUndefined();
+  });
+
+  it("userId 空字符串 → 字段省略 (CP-7-C #3)", () => {
+    const b = buildIngestBody(sample, { trustLevel: 2, userId: "" });
+    expect("user_id" in b).toBe(false);
+  });
+
+  it("userId 传具体值 → body 含 user_id: X (CP-7-C #3)", () => {
+    const b = buildIngestBody(sample, { trustLevel: 2, userId: "01KVCZ..." });
+    expect(b.user_id).toBe("01KVCZ...");
+  });
+
+  it("段落拼接 → content = paragraphs.join('\\n\\n') (CP-7-C #3)", () => {
+    const b = buildIngestBody(sample, { trustLevel: 2 });
+    expect(b.content).toBe(sample.paragraphs.join("\n\n"));
+  });
+
+  it("title 缺省 → fallback 到 url (CP-7-C #3)", () => {
+    const noTitle: CrawledDocument = { ...sample, title: "" };
+    const b = buildIngestBody(noTitle, { trustLevel: 2 });
+    expect(b.title).toBe(sample.url);
+  });
+
+  it("trustLevel 透传 (CP-7-C #3)", () => {
+    const b0 = buildIngestBody(sample, { trustLevel: 0 });
+    const b3 = buildIngestBody(sample, { trustLevel: 3 });
+    expect(b0.trust_level).toBe(0);
+    expect(b3.trust_level).toBe(3);
   });
 });
 
 describe("submitToIngest", () => {
-  it("200 + JSON → 返回 ok=true", async () => {
-    const fetchMock: typeof fetch = async (input, init) => {
-      const url = typeof input === "string" ? input : input.toString();
-      expect(url).toBe("http://localhost:8787/ingest");
-      const body = JSON.parse(init?.body as string);
-      expect(body.source.type).toBe("webpage");
-      return new Response(JSON.stringify({ ok: true, sourceId: "01H...", documentId: "01H..." }), { status: 200 });
+  // ─── 200 成功路径 ──────────────────────────────────────────
+
+  it("proxy + userId → headers 仅 x-ingest-proxy-secret, body 含 user_id, 200 → ok (CP-7-C #3)", async () => {
+    let captured: { headers: Record<string, string>; body: string } | undefined;
+    const fetchMock: typeof fetch = async (_input, init) => {
+      captured = {
+        headers: init?.headers as Record<string, string>,
+        body: init?.body as string,
+      };
+      return new Response(JSON.stringify({ ok: true, sourceId: "01H", documentId: "01H" }), { status: 200 });
     };
     const r = await submitToIngest(sample, {
       ingestUrl: "http://localhost:8787/ingest",
-      token: "test-token-please-change",
-      userId: "01H0000000000000000000000",
+      ingestProxySecret: "proxy-secret-001",
+      userId: "01KVCZ...",
       trustLevel: 2,
       fetchImpl: fetchMock,
     });
     expect(r.ok).toBe(true);
+    expect(captured).toBeDefined();
+    expect(captured!.headers["x-ingest-proxy-secret"]).toBe("proxy-secret-001");
+    expect(captured!.headers["authorization"]).toBeUndefined();  // CP-7-C #3: 互斥
+    const parsedBody = JSON.parse(captured!.body);
+    expect(parsedBody.user_id).toBe("01KVCZ...");
+    expect(parsedBody.content).toContain("婴儿发烧时先观察精神状态");
+    expect(parsedBody.url).toBe("https://example.com/article");
+    expect(parsedBody.trust_level).toBe(2);
   });
 
-  it("401 (token invalid) → 返回 ok=false 含 status 401", async () => {
+  it("token + 无 userId → headers 仅 authorization, body 不含 user_id, 200 → ok (CP-7-C #3)", async () => {
+    let captured: { headers: Record<string, string>; body: string } | undefined;
+    const fetchMock: typeof fetch = async (_input, init) => {
+      captured = {
+        headers: init?.headers as Record<string, string>,
+        body: init?.body as string,
+      };
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    };
+    const r = await submitToIngest(sample, {
+      ingestUrl: "http://localhost:8787/ingest",
+      token: "admin-token-please-change",
+      trustLevel: 2,
+      fetchImpl: fetchMock,
+    });
+    expect(r.ok).toBe(true);
+    expect(captured).toBeDefined();
+    expect(captured!.headers["authorization"]).toBe("Bearer admin-token-please-change");
+    expect(captured!.headers["x-ingest-proxy-secret"]).toBeUndefined();  // CP-7-C #3: 互斥
+    const parsedBody = JSON.parse(captured!.body);
+    expect("user_id" in parsedBody).toBe(false);
+  });
+
+  // ─── 401 / 403 HTTP 错误 ──────────────────────────────────
+
+  it("401 (token invalid) → ok=false 含 status 401 + error", async () => {
     const fetchMock: typeof fetch = async () =>
       new Response(JSON.stringify({ error: "Invalid token" }), { status: 401 });
     const r = await submitToIngest(sample, {
-      ingestUrl: "http://localhost:8787/ingest",
+      ingestUrl: "http://x",
       token: "bad-token",
-      userId: "01H...",
       trustLevel: 2,
       fetchImpl: fetchMock,
     });
@@ -66,42 +128,41 @@ describe("submitToIngest", () => {
     }
   });
 
-  // ─── CP-7-C #2: ingestProxySecret 透传 ─────────────────────────
-
-  it("传 ingestProxySecret → headers 含 x-ingest-proxy-secret + 仍含 authorization (CP-7-C #2)", async () => {
-    let capturedHeaders: Record<string, string> | undefined;
-    const fetchMock: typeof fetch = async (_input, init) => {
-      capturedHeaders = init?.headers as Record<string, string>;
-      return new Response(JSON.stringify({ ok: true, sourceId: "01H", documentId: "01H" }), { status: 200 });
-    };
-    await submitToIngest(sample, {
-      ingestUrl: "http://localhost:8787/ingest",
-      token: "test-token",
-      userId: "u1",
+  it("403 (IP not allowed) → ok=false 含 status 403 + error (CP-7-C #3)", async () => {
+    const fetchMock: typeof fetch = async () =>
+      new Response(JSON.stringify({ error: "IP_NOT_ALLOWED" }), { status: 403 });
+    const r = await submitToIngest(sample, {
+      ingestUrl: "http://x",
+      token: "ok-token",
       trustLevel: 2,
-      ingestProxySecret: "proxy-secret-001",
       fetchImpl: fetchMock,
     });
-    expect(capturedHeaders).toBeDefined();
-    expect(capturedHeaders!["x-ingest-proxy-secret"]).toBe("proxy-secret-001");
-    expect(capturedHeaders!["authorization"]).toBe("Bearer test-token"); // 双 header 同时存在
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.status).toBe(403);
+      expect(r.error).toContain("IP_NOT_ALLOWED");
+    }
   });
 
-  it("不传 ingestProxySecret → headers 仅 authorization 无 x-ingest-proxy-secret (CP-7-C #2)", async () => {
-    let capturedHeaders: Record<string, string> | undefined;
-    const fetchMock: typeof fetch = async (_input, init) => {
-      capturedHeaders = init?.headers as Record<string, string>;
-      return new Response(JSON.stringify({ ok: true }), { status: 200 });
-    };
-    await submitToIngest(sample, {
-      ingestUrl: "http://localhost:8787/ingest",
-      token: "test-token",
-      userId: "u1",
-      trustLevel: 2,
-      fetchImpl: fetchMock,
-    });
-    expect(capturedHeaders).toBeDefined();
-    expect(capturedHeaders!["x-ingest-proxy-secret"]).toBeUndefined();
-    expect(capturedHeaders!["authorization"]).toBe("Bearer test-token");
+  // ─── auth 互斥 throw ──────────────────────────────────────
+
+  it("proxy + token 都有 → throw Error (CP-7-C #3)", async () => {
+    await expect(
+      submitToIngest(sample, {
+        ingestUrl: "http://x",
+        ingestProxySecret: "secret-1",
+        token: "tok-1",
+        trustLevel: 2,
+      }),
+    ).rejects.toThrow("exactly one of ingestProxySecret/token");
+  });
+
+  it("proxy + token 都无 → throw Error (CP-7-C #3)", async () => {
+    await expect(
+      submitToIngest(sample, {
+        ingestUrl: "http://x",
+        trustLevel: 2,
+      }),
+    ).rejects.toThrow("exactly one of ingestProxySecret/token");
   });
 });

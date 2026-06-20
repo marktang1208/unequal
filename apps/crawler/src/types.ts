@@ -37,26 +37,14 @@ export interface CrawledDocument {
 }
 
 /**
- * 调 /ingest 时的 payload（与 apps/api M0+M1 ingest schema 对齐）。
- * source.type = 'webpage'（schema CHECK 已支持）。
+ * 调 /api-ingest 的 body（与 apps/api IngestRequest 对齐）。
+ * - user_id 缺省时不写该字段；CLI 必须配 --ingest-proxy-secret 才能传 user_id
+ * - 不嵌 chunks（api 端 chunkText 自己生成）
  */
-export interface IngestPayload {
-  source: {
-    type: "file" | "webpage" | "xiaohongshu" | "wechat-mp";
-    title: string;
-    url: string;
-    trust_level: 0 | 1 | 2 | 3;
-    meta?: Record<string, unknown>;
-  };
-  document: {
-    title: string;
-    raw_path: string;
-    parsed_text: string;
-  };
-  chunks: Array<{
-    idx: number;
-    content: string;
-    token_count: number;
-    trust_level: 0 | 1 | 2 | 3;
-  }>;
+export interface IngestBody {
+  content: string;
+  title?: string;
+  url: string;
+  trust_level: 0 | 1 | 2 | 3;
+  user_id?: string;
 }
