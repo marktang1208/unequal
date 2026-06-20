@@ -41,8 +41,6 @@ import * as authWxLogin from "./handlers/api-auth-wx-login.js";
 import * as authAdminLogin from "./handlers/api-auth-admin-login.js";
 import * as cronCleanup from "./handlers/api-cron-cleanup.js";
 import * as health from "./handlers/api-health.js";
-import * as debugChunks from "./handlers/api-debug-chunks.js";
-import * as debugDocs from "./handlers/api-debug-docs.js";
 
 // 启动时硬验证（生产期）
 const startValidation = async () => {
@@ -90,8 +88,6 @@ const HANDLER_MAP: Record<string, HandlerModule> = {
   "api-auth-admin-login": authAdminLogin as unknown as HandlerModule,
   "api-cron-cleanup": cronCleanup as unknown as HandlerModule,
   "api-health": health as unknown as HandlerModule,
-  "api-debug-chunks": debugChunks as unknown as HandlerModule,
-  "api-debug-docs": debugDocs as unknown as HandlerModule,
 };
 
 /** 兼容 /health 短路径（admin 历史惯例） */
