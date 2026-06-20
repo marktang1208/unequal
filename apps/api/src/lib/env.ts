@@ -20,6 +20,8 @@ export interface AppEnv {
   JWT_SECRET: string;
   MINIMAX_API_KEY: string;
   KEK_SECRET_V1: string;
+  /** CP-7-C #2: 可空 — 未配时 ingest proxy 路径自动 401；admin 路径仍可用 */
+  INGEST_PROXY_SECRET?: string;
 
   // Vars
   ENVIRONMENT: string;
@@ -70,6 +72,7 @@ function validateEnvObject(source: NodeJS.ProcessEnv | Record<string, string | u
     JWT_SECRET: source.JWT_SECRET!,
     MINIMAX_API_KEY: source.MINIMAX_API_KEY!,
     KEK_SECRET_V1: source.KEK_SECRET_V1!,
+    INGEST_PROXY_SECRET: source.INGEST_PROXY_SECRET, // 可空（dev 不配）
 
     ENVIRONMENT: source.ENVIRONMENT!,
     ALLOWED_ORIGIN: source.ALLOWED_ORIGIN!,

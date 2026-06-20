@@ -1,7 +1,7 @@
 /**
  * CP-6: CloudBase NoSQL collection 名称常量 + 类型守卫
  *
- * 9 collection（spec §3.1，1:1 映射 v0 D1 表）：
+ * 10 collection（spec §3.1，1:1 映射 v0 D1 表）：
  *   - source
  *   - document
  *   - chunk
@@ -11,6 +11,7 @@
  *   - user_session_key
  *   - login_attempt
  *   - crawl_job
+ *   - audit_log (CP-7-C #2)
  *
  * CloudBase 控制台需手动创建（无 SDK migration）；用 init-collections.ts 脚本可批量创建。
  */
@@ -26,6 +27,7 @@ import type {
   LoginAttempt,
   CrawlJob,
 } from "@unequal/shared/types";
+import type { AuditEntry } from "./audit.js";
 
 export const COLLECTIONS = {
   source: "source",
@@ -37,6 +39,7 @@ export const COLLECTIONS = {
   userSessionKey: "user_session_key",
   loginAttempt: "login_attempt",
   crawlJob: "crawl_job",
+  auditLog: "audit_log",
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];
@@ -52,6 +55,7 @@ export interface CollectionDocMap {
   user_session_key: UserSessionKey;
   login_attempt: LoginAttempt;
   crawl_job: CrawlJob;
+  audit_log: AuditEntry;
 }
 
 export const COLLECTION_DOC_TYPES: { [K in CollectionName]: keyof CollectionDocMap } = {
@@ -64,6 +68,7 @@ export const COLLECTION_DOC_TYPES: { [K in CollectionName]: keyof CollectionDocM
   user_session_key: "user_session_key",
   login_attempt: "login_attempt",
   crawl_job: "crawl_job",
+  audit_log: "audit_log",
 };
 
 /** 需要在 CloudBase 控制台建的 field index（spec §3.3） */
@@ -80,4 +85,6 @@ export const REQUIRED_INDEXES: Array<{
   { collection: COLLECTIONS.userSessionKey, field: "userId" },
   { collection: COLLECTIONS.crawlJob, field: "sourceId" },
   { collection: COLLECTIONS.crawlJob, field: "status" },
+  { collection: COLLECTIONS.auditLog, field: "timestamp" },
+  { collection: COLLECTIONS.auditLog, field: "actor.via" },
 ];

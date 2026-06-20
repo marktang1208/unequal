@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { requireAdmin } from "../../src/lib/auth-admin.js";
+import { requireAdmin, requireIngestProxy } from "../../src/lib/auth-admin.js";
 import { signJwt } from "../../src/lib/jwt.js";
 import { loadEnvForTest, resetEnv } from "../../src/lib/env.js";
 import type { HttpTriggerEvent } from "../../src/lib/handler-utils.js";
@@ -122,5 +122,107 @@ describe("requireAdmin (CP-6)", () => {
       env,
     );
     expect(result.ok).toBe(true);
+  });
+});
+
+/**
+ * CP-7-C #2: requireIngestProxy（独立 INGEST_PROXY_SECRET + X-Ingest-Proxy-Secret header）
+ */
+function setupEnvProxy(adminIpAllowlist: string, proxySecret: string | undefined) {
+  resetEnv();
+  return loadEnvForTest({
+    ADMIN_TOKEN: ADMIN,
+    JWT_SECRET: SECRET,
+    MINIMAX_API_KEY: "sk-test",
+    KEK_SECRET_V1: "kek-secret-32-bytes-min-aaaaaaaaaaaa",
+    ENVIRONMENT: "test",
+    ALLOWED_ORIGIN: "*",
+    ADMIN_IP_ALLOWLIST: adminIpAllowlist,
+    MINIMAX_BASE_URL: "https://api.test/v1",
+    DEFAULT_USER_ID: "u1",
+    KEK_CURRENT_VERSION: "1",
+    ...(proxySecret !== undefined ? { INGEST_PROXY_SECRET: proxySecret } : {}),
+  });
+}
+
+describe("requireIngestProxy (CP-7-C #2)", () => {
+  it("proxy 正确值 + IP 在白名单 → ok via ingest_proxy", async () => {
+    const env = setupEnvProxy("127.0.0.1", "test-proxy-secret");
+    const result = await requireIngestProxy(
+      makeEvent({ "x-ingest-proxy-secret": "test-proxy-secret" }),
+      env,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.via).toBe("ingest_proxy");
+      expect(result.scope).toBe("admin");
+    }
+  });
+
+  it("proxy 错值 → 401 INVALID_PROXY", async () => {
+    const env = setupEnvProxy("127.0.0.1", "test-proxy-secret");
+    const result = await requireIngestProxy(
+      makeEvent({ "x-ingest-proxy-secret": "wrong-value" }),
+      env,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.statusCode).toBe(401);
+      const body = JSON.parse(result.response.body);
+      expect(body.error).toBe("INVALID_PROXY");
+    }
+  });
+
+  it("proxy 缺 header → 401 AUTH_FAILED", async () => {
+    const env = setupEnvProxy("127.0.0.1", "test-proxy-secret");
+    const result = await requireIngestProxy(makeEvent({}), env);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.statusCode).toBe(401);
+      const body = JSON.parse(result.response.body);
+      expect(body.error).toBe("AUTH_FAILED");
+    }
+  });
+
+  it("proxy 正确值 + IP 不在白名单 → 403 IP_NOT_ALLOWED", async () => {
+    const env = setupEnvProxy("127.0.0.1", "test-proxy-secret");
+    const result = await requireIngestProxy(
+      makeEvent({ "x-ingest-proxy-secret": "test-proxy-secret" }, "8.8.8.8"),
+      env,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.statusCode).toBe(403);
+      const body = JSON.parse(result.response.body);
+      expect(body.error).toBe("IP_NOT_ALLOWED");
+    }
+  });
+
+  it("服务端 INGEST_PROXY_SECRET 未配 → 401 INVALID_PROXY（dev mode 退化）", async () => {
+    const env = setupEnvProxy("127.0.0.1", undefined);
+    const result = await requireIngestProxy(
+      makeEvent({ "x-ingest-proxy-secret": "any-value" }),
+      env,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.statusCode).toBe(401);
+      const body = JSON.parse(result.response.body);
+      expect(body.error).toBe("INVALID_PROXY");
+    }
+  });
+
+  it("proxy 与 admin 路径互斥（proxy 通过后需另调 requireAdmin 才返回 admin scope）", async () => {
+    const env = setupEnvProxy("127.0.0.1", "test-proxy-secret");
+    const result = await requireIngestProxy(
+      makeEvent({ "x-ingest-proxy-secret": "test-proxy-secret" }),
+      env,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // requireIngestProxy 通过即返 via="ingest_proxy"，admin 路径需另调 requireAdmin
+      expect(result.via).toBe("ingest_proxy");
+      // 不能再直接当 admin 用（ingest 内部决定 user_id 行为；其它 handler 应继续走 requireAdmin）
+    }
   });
 });

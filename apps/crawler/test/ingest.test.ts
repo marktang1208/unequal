@@ -65,4 +65,43 @@ describe("submitToIngest", () => {
       expect(r.error).toContain("Invalid token");
     }
   });
+
+  // ─── CP-7-C #2: ingestProxySecret 透传 ─────────────────────────
+
+  it("传 ingestProxySecret → headers 含 x-ingest-proxy-secret + 仍含 authorization (CP-7-C #2)", async () => {
+    let capturedHeaders: Record<string, string> | undefined;
+    const fetchMock: typeof fetch = async (_input, init) => {
+      capturedHeaders = init?.headers as Record<string, string>;
+      return new Response(JSON.stringify({ ok: true, sourceId: "01H", documentId: "01H" }), { status: 200 });
+    };
+    await submitToIngest(sample, {
+      ingestUrl: "http://localhost:8787/ingest",
+      token: "test-token",
+      userId: "u1",
+      trustLevel: 2,
+      ingestProxySecret: "proxy-secret-001",
+      fetchImpl: fetchMock,
+    });
+    expect(capturedHeaders).toBeDefined();
+    expect(capturedHeaders!["x-ingest-proxy-secret"]).toBe("proxy-secret-001");
+    expect(capturedHeaders!["authorization"]).toBe("Bearer test-token"); // 双 header 同时存在
+  });
+
+  it("不传 ingestProxySecret → headers 仅 authorization 无 x-ingest-proxy-secret (CP-7-C #2)", async () => {
+    let capturedHeaders: Record<string, string> | undefined;
+    const fetchMock: typeof fetch = async (_input, init) => {
+      capturedHeaders = init?.headers as Record<string, string>;
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    };
+    await submitToIngest(sample, {
+      ingestUrl: "http://localhost:8787/ingest",
+      token: "test-token",
+      userId: "u1",
+      trustLevel: 2,
+      fetchImpl: fetchMock,
+    });
+    expect(capturedHeaders).toBeDefined();
+    expect(capturedHeaders!["x-ingest-proxy-secret"]).toBeUndefined();
+    expect(capturedHeaders!["authorization"]).toBe("Bearer test-token");
+  });
 });

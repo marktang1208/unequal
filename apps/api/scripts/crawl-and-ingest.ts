@@ -1,23 +1,27 @@
 /**
  * 临时脚本：从公众号 URL 拉文章 → 调 /api-ingest → chunks 绑给真 wx user
- * Usage: ADMIN_TOKEN=xx WX_USER_ID=xx tsx scripts/crawl-and-ingest.ts <url>
+ *
+ * CP-7-C #2: 改走 INGEST_PROXY_SECRET 路径（admin 路径禁止指定 user_id）
+ *
+ * Usage: INGEST_PROXY_SECRET=xx WX_USER_ID=xx tsx scripts/crawl-and-ingest.ts <url>
  */
 import * as cheerio from "cheerio";
 
 const URL = process.argv[2];
-const ADMIN_TOKEN = process.env.ADMIN_TOKEN;
+const INGEST_PROXY_SECRET = process.env.INGEST_PROXY_SECRET;
 const WX_USER_ID = process.env.WX_USER_ID;
 const GATEWAY = "https://unequal-d4ggf7rwg82e0900b-1444590671.ap-shanghai.app.tcloudbase.com";
 
-if (!URL || !ADMIN_TOKEN || !WX_USER_ID) {
-  console.error("Usage: ADMIN_TOKEN=xx WX_USER_ID=xx tsx scripts/crawl-and-ingest.ts <url>");
+if (!URL || !INGEST_PROXY_SECRET || !WX_USER_ID) {
+  console.error("Usage: INGEST_PROXY_SECRET=xx WX_USER_ID=xx tsx scripts/crawl-and-ingest.ts <url>");
+  console.error("(CP-7-C #2 改动：admin_token 路径已禁止指定 user_id；改用 INGEST_PROXY_SECRET)");
   process.exit(1);
 }
 
 const WX_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.49 (0x18003130) NetType/WIFI Language/zh_CN";
 
 async function main() {
-  console.log("[1/4] fetching wechat-mp article...");
+  console.log("[1/3] fetching wechat-mp article...");
   const res = await fetch(URL!, { headers: { "user-agent": WX_UA } });
   if (!res.ok) throw new Error(`fetch failed ${res.status}`);
   const html = await res.text();
@@ -33,27 +37,14 @@ async function main() {
     .filter((p) => p.length > 0);
   const content = paragraphs.join("\n\n");
 
-  console.log(`[2/4] parsed: title="${title}" / ${paragraphs.length} paragraphs / ${content.length} chars`);
-  console.log(`[3/4] login admin...`);
-  const loginRes = await fetch(`${GATEWAY}/api-auth-admin-login`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ token: ADMIN_TOKEN }),
-  });
-  const loginData = await loginRes.json();
-  if (!loginRes.ok) {
-    console.error("admin login failed:", loginData);
-    process.exit(1);
-  }
-  const jwt = (loginData as { jwt: string }).jwt;
-  console.log("  ✓ admin jwt obtained");
+  console.log(`[2/3] parsed: title="${title}" / ${paragraphs.length} paragraphs / ${content.length} chars`);
 
-  console.log(`[4/4] POST /api-ingest with user_id=${WX_USER_ID}...`);
+  console.log(`[3/3] POST /api-ingest with X-Ingest-Proxy-Secret + user_id=${WX_USER_ID}...`);
   const ingestRes = await fetch(`${GATEWAY}/api-ingest`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${jwt}`,
+      "x-ingest-proxy-secret": INGEST_PROXY_SECRET!,
     },
     body: JSON.stringify({
       title,

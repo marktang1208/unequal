@@ -20,6 +20,58 @@ export type AdminCheckResult =
   | { ok: true; scope: "admin"; via: "admin_token" | "admin_jwt" }
   | { ok: false; response: HttpTriggerResponse };
 
+/**
+ * CP-7-C #2: Ingest proxy 鉴权
+ *
+ * 与 requireAdmin 解耦：用于 crawler CLI / 临时脚本指定 user_id 灌数据
+ * 头部：X-Ingest-Proxy-Secret
+ * 服务端 env：INGEST_PROXY_SECRET（dev 未配 → 全部 401 INVALID_PROXY）
+ *
+ * 同样强制 IP allowlist（与 requireAdmin 共用 ADMIN_IP_ALLOWLIST）
+ */
+export type IngestProxyCheckResult =
+  | { ok: true; scope: "admin"; via: "ingest_proxy" }
+  | { ok: false; response: HttpTriggerResponse };
+
+export async function requireIngestProxy(
+  event: HttpTriggerEvent,
+  env: AppEnv,
+): Promise<IngestProxyCheckResult> {
+  const provided = event.headers["x-ingest-proxy-secret"] || event.headers["X-Ingest-Proxy-Secret"] || "";
+
+  if (!provided) {
+    return {
+      ok: false,
+      response: errorResponse("AUTH_FAILED", "Missing X-Ingest-Proxy-Secret header", 401),
+    };
+  }
+
+  if (!env.INGEST_PROXY_SECRET || provided !== env.INGEST_PROXY_SECRET) {
+    return {
+      ok: false,
+      response: errorResponse("INVALID_PROXY", "X-Ingest-Proxy-Secret does not match", 401),
+    };
+  }
+
+  // 复用 IP allowlist 强制
+  const clientIp = getClientIp(event);
+  const allowlist = parseAdminIpAllowlist({ ADMIN_IP_ALLOWLIST: env.ADMIN_IP_ALLOWLIST });
+  const isAdminIp = isAdminIpAllowed(clientIp, allowlist);
+
+  if (allowlist.length > 0 && !isAdminIp) {
+    return {
+      ok: false,
+      response: errorResponse(
+        "IP_NOT_ALLOWED",
+        `clientIp=${clientIp} not in ADMIN_IP_ALLOWLIST`,
+        403,
+      ),
+    };
+  }
+
+  return { ok: true, scope: "admin", via: "ingest_proxy" };
+}
+
 export async function requireAdmin(
   event: HttpTriggerEvent,
   env: AppEnv,

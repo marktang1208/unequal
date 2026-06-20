@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 /**
- * CLI 入口：node apps/crawler/src/main.ts --url <URL> [--ingest-url <URL>] [--token <T>] [--user-id <U>] [--trust 0-3] [--no-ingest]
+ * CLI 入口：node apps/crawler/src/main.ts --url <URL> [--ingest-url <URL>] [--token <T>] [--ingest-proxy-secret <S>] [--user-id <U>] [--trust 0-3] [--no-ingest]
  *
  * 默认：抓取 + 调 /ingest。
  * --no-ingest: 只抓取不调 ingest（调试用）。
+ *
+ * CP-7-C #2: 优先用 --ingest-proxy-secret / INGEST_PROXY_SECRET env（推荐），
+ * 缺省回退到 --token (ADMIN_TOKEN)。proxy secret 路径可指定 user_id；token 路径仅 DEFAULT_USER_ID。
  */
 import { fetchUrl } from "./sources/webpage.js";
 import { fetchXiaohongshuNote } from "./sources/xiaohongshu.js";
@@ -38,12 +41,14 @@ async function main() {
     process.exit(1);
   }
   if (!url) {
-    console.error("Usage: --url <URL> [--source-type webpage|xiaohongshu|wechat-mp] [--ingest-url <URL>] [--token <T>] [--user-id <U>] [--trust 0-3] [--no-ingest]");
+    console.error("Usage: --url <URL> [--source-type webpage|xiaohongshu|wechat-mp] [--ingest-url <URL>] [--token <T> | --ingest-proxy-secret <S>] [--user-id <U>] [--trust 0-3] [--no-ingest]");
     process.exit(1);
   }
 
   const ingestUrl = (args["ingest-url"] as string) ?? "http://localhost:8787/ingest";
-  const token = (args.token as string) ?? "";
+  // CP-7-C #2: proxy secret 优先（来自 CLI flag 或 env），fallback ADMIN_TOKEN
+  const ingestProxySecret = (args["ingest-proxy-secret"] as string) ?? process.env.INGEST_PROXY_SECRET;
+  const token = (args.token as string) ?? process.env.ADMIN_TOKEN ?? "";
   const userId = (args["user-id"] as string) ?? "01H0000000000000000000000";
   const trustLevel = parseInt((args.trust as string) ?? "2", 10) as 0 | 1 | 2 | 3;
   const noIngest = args["no-ingest"] === true;
@@ -66,13 +71,19 @@ async function main() {
     return;
   }
 
-  if (!token) {
-    console.error("[crawler] --token required for ingest (or pass --no-ingest)");
+  if (!token && !ingestProxySecret) {
+    console.error("[crawler] --token (ADMIN_TOKEN) or --ingest-proxy-secret / INGEST_PROXY_SECRET required for ingest (or pass --no-ingest)");
     process.exit(1);
   }
 
-  console.log(`[crawler] submit to ${ingestUrl}`);
-  const result = await submitToIngest(doc, { ingestUrl, token, userId, trustLevel });
+  console.log(`[crawler] submit to ${ingestUrl} (auth: ${ingestProxySecret ? "ingest_proxy" : "admin_token"})`);
+  const result = await submitToIngest(doc, {
+    ingestUrl,
+    token,
+    userId,
+    trustLevel,
+    ...(ingestProxySecret ? { ingestProxySecret } : {}),
+  });
   if (result.ok) {
     console.log(`[crawler] ingest ok: sourceId=${result.sourceId ?? "?"} documentId=${result.documentId ?? "?"}`);
   } else {

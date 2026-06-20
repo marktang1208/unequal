@@ -36,6 +36,8 @@ export interface SubmitOptions {
   token: string;
   userId: string;
   trustLevel: 0 | 1 | 2 | 3;
+  /** CP-7-C #2: 传 secret 时同时附 X-Ingest-Proxy-Secret header；不传则走 admin 路径 */
+  ingestProxySecret?: string;
   fetchImpl?: typeof fetch;
 }
 
@@ -50,12 +52,17 @@ export async function submitToIngest(
   const payload = buildIngestPayload(doc, { userId: opts.userId, trustLevel: opts.trustLevel });
 
   const f = opts.fetchImpl ?? fetch;
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    authorization: `Bearer ${opts.token}`,
+  };
+  if (opts.ingestProxySecret) {
+    headers["x-ingest-proxy-secret"] = opts.ingestProxySecret;
+  }
+
   const res = await f(opts.ingestUrl, {
     method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${opts.token}`,
-    },
+    headers,
     body: JSON.stringify(payload),
   });
 
