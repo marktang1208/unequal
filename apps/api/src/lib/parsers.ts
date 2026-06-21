@@ -3,13 +3,18 @@
  *
  * 支持 PDF / Word / TXT / Markdown，按文件扩展名自动选择。
  *
+ * pdf-parse 1.1.1 默认入口（`pdf-parse`）会触发 debug 模式读 `./test/data/05-versions-space.pdf`
+ * 在 ESM + 不在仓库根目录运行时直接 ENOENT 报错。我们用深路径 `pdf-parse/lib/pdf-parse.js`
+ * 跳过默认入口的副作用（实际逻辑相同）。
+ *
  * pdf-parse / mammoth 都是 CJS；用 esbuild 静态 import 即可，bundle 时会 inline。
  * 不用 createRequire 动态 require —— 那样 esbuild 不会 bundle，runtime
  * resolve 时 CloudBase 上找不到模块（npm install 后路径不同）。
  */
 
+// @ts-expect-error - pdf-parse 无 types
+import pdfParse from "pdf-parse/lib/pdf-parse.js";
 import mammoth from "mammoth";
-import pdfParse from "pdf-parse";
 
 export type SupportedExt = "pdf" | "docx" | "txt" | "md";
 

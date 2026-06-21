@@ -1,0 +1,248 @@
+/**
+ * LocalIngestMiddleware 单元测试
+ *
+ * 测 POST /api/upload + GET /api/ingest-status + POST /api/retry
+ * 用 supertest 模拟 HTTP 请求 + Connect.Server
+ */
+
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import request from "supertest";
+import { StatusStore } from "../../server/status-store.js";
+import { ConcurrencyGate } from "../../server/concurrency-gate.js";
+import {
+  IngestOrchestrator,
+  type LocalParser,
+  type LocalEmbedder,
+  type CloudPusher,
+  type ChunkText,
+} from "../../server/ingest-orchestrator.js";
+import { localIngestMiddleware, __setDepsForTest, __resetForTest } from "../../server/local-ingest.js";
+
+// T2 测试用 mock：注入 stub parser/embedder/pusher/chunker 避免 T5/T6/T8 真实依赖
+function setupMockDeps(orchestrator: IngestOrchestrator): void {
+  const mockParser: LocalParser = {
+    parseAuto: async () => "# Mock Markdown\n\nParsed content",
+  };
+  const mockEmbedder: LocalEmbedder = {
+    embedBatch: async (texts) => texts.map(() => new Array(1536).fill(0.01)),
+  };
+  const mockPusher: CloudPusher = {
+    push: async () => ({ source_id: "01KSRC_MOCK", document_id: "01KDOC_MOCK" }),
+  };
+  const mockChunker: ChunkText = {
+    chunkText: async (text) => [{ idx: 0, content: text, tokenCount: text.length }],
+  };
+  orchestrator.setParser(mockParser);
+  orchestrator.setEmbedder(mockEmbedder);
+  orchestrator.setPusher(mockPusher);
+  orchestrator.setChunker(mockChunker);
+}
+
+describe("LocalIngestMiddleware (CP-7-C T2)", () => {
+  let tmpDir: string;
+  let store: StatusStore;
+  let gate: ConcurrencyGate;
+  let orchestrator: IngestOrchestrator;
+  let handler: any;
+
+  beforeEach(async () => {
+    tmpDir = mkdtempSync(join(tmpdir(), "local-ingest-"));
+    store = new StatusStore(join(tmpDir, "test.db"));
+    gate = new ConcurrencyGate();
+    orchestrator = new IngestOrchestrator(store, gate);
+    setupMockDeps(orchestrator);
+    __setDepsForTest({ store, orchestrator, gate });
+    handler = localIngestMiddleware;
+  });
+
+  afterEach(() => {
+    __resetForTest();
+    store.close();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function makeRequest(): any {
+    // supertest 不能直接用 Connect.Server；用 http.createServer 包装
+    const http = require("node:http");
+    return (req: any, res: any, next: any) => {
+      const wrapped = handler(req, res, next);
+      if (wrapped && typeof wrapped.then === "function") {
+        return wrapped;
+      }
+    };
+  }
+
+  it("POST /api/upload: 单文件 → 202 + batch_id + file_id", async () => {
+    // 用 http server 包装 Connect middleware（supertest 模式）
+    const http = await import("node:http");
+    const server = http.createServer((req, res) => {
+      void handler(req as any, res as any, () => {
+        res.statusCode = 404;
+        res.end();
+      });
+    });
+    await new Promise((r) => server.listen(0, r));
+    const port = (server.address() as any).port;
+
+    const res = await request(`http://localhost:${port}`)
+      .post("/api/upload")
+      .field("trust_level", "2")
+      .attach("file", Buffer.from("# Hello\n\nWorld"), { filename: "hello.md" });
+
+    expect(res.status).toBe(202);
+    expect(res.body.batch_id).toBeDefined();
+    expect(res.body.files).toHaveLength(1);
+    expect(res.body.files[0].filename).toBe("hello.md");
+    expect(res.body.files[0].status).toBe("pending");
+
+    server.close();
+  });
+
+  it("POST /api/upload: 5 文件 → 5 file_id + 同一 batch_id", async () => {
+    const http = await import("node:http");
+    const server = http.createServer((req, res) => {
+      void handler(req as any, res as any, () => { res.statusCode = 404; res.end(); });
+    });
+    await new Promise((r) => server.listen(0, r));
+    const port = (server.address() as any).port;
+
+    const res = await request(`http://localhost:${port}`)
+      .post("/api/upload")
+      .field("trust_level", "1")
+      .attach("file", Buffer.from("a"), { filename: "a.md" })
+      .attach("file", Buffer.from("b"), { filename: "b.md" })
+      .attach("file", Buffer.from("c"), { filename: "c.md" })
+      .attach("file", Buffer.from("d"), { filename: "d.md" })
+      .attach("file", Buffer.from("e"), { filename: "e.md" });
+
+    expect(res.status).toBe(202);
+    expect(res.body.files).toHaveLength(5);
+    const ids = res.body.files.map((f: any) => f.file_id);
+    console.log("file_ids:", ids);
+    console.log("batch_ids:", res.body.files.map((f: any) => f.batch_id));
+    console.log("top batch_id:", res.body.batch_id);
+    expect(new Set(ids).size).toBe(5);  // 5 个不同 file_id
+    expect(res.body.files.every((f: any) => f.batch_id === res.body.batch_id)).toBe(true);
+
+    server.close();
+  });
+
+  it("POST /api/upload: 无文件 → 400 INVALID_REQUEST", async () => {
+    const http = await import("node:http");
+    const server = http.createServer((req, res) => {
+      void handler(req as any, res as any, () => { res.statusCode = 404; res.end(); });
+    });
+    await new Promise((r) => server.listen(0, r));
+    const port = (server.address() as any).port;
+
+    const res = await request(`http://localhost:${port}`)
+      .post("/api/upload")
+      .field("trust_level", "1");
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("INVALID_REQUEST");
+    server.close();
+  });
+
+  it("POST /api/upload: trust_level 越界 → 400", async () => {
+    const http = await import("node:http");
+    const server = http.createServer((req, res) => {
+      void handler(req as any, res as any, () => { res.statusCode = 404; res.end(); });
+    });
+    await new Promise((r) => server.listen(0, r));
+    const port = (server.address() as any).port;
+
+    const res = await request(`http://localhost:${port}`)
+      .post("/api/upload")
+      .field("trust_level", "5")  // out of range
+      .attach("file", Buffer.from("x"), { filename: "x.md" });
+    expect(res.status).toBe(400);
+    server.close();
+  });
+
+  it("GET /api/ingest-status: 返 batch files", async () => {
+    const http = await import("node:http");
+    const server = http.createServer((req, res) => {
+      void handler(req as any, res as any, () => { res.statusCode = 404; res.end(); });
+    });
+    await new Promise((r) => server.listen(0, r));
+    const port = (server.address() as any).port;
+
+    // 先上传
+    const uploadRes = await request(`http://localhost:${port}`)
+      .post("/api/upload")
+      .field("trust_level", "1")
+      .attach("file", Buffer.from("a"), { filename: "a.md" });
+    const batchId = uploadRes.body.batch_id;
+
+    // 查 status
+    const statusRes = await request(`http://localhost:${port}`)
+      .get(`/api/ingest-status?batch_id=${batchId}`);
+    expect(statusRes.status).toBe(200);
+    expect(statusRes.body.batch_id).toBe(batchId);
+    expect(statusRes.body.files).toHaveLength(1);
+    expect(statusRes.body.files[0].filename).toBe("a.md");
+    server.close();
+  });
+
+  it("GET /api/ingest-status: 缺 batch_id → 400", async () => {
+    const http = await import("node:http");
+    const server = http.createServer((req, res) => {
+      void handler(req as any, res as any, () => { res.statusCode = 404; res.end(); });
+    });
+    await new Promise((r) => server.listen(0, r));
+    const port = (server.address() as any).port;
+
+    const res = await request(`http://localhost:${port}`).get("/api/ingest-status");
+    expect(res.status).toBe(400);
+    server.close();
+  });
+
+  it("POST /api/retry: file_id 不存在 → 404", async () => {
+    const http = await import("node:http");
+    const server = http.createServer((req, res) => {
+      void handler(req as any, res as any, () => { res.statusCode = 404; res.end(); });
+    });
+    await new Promise((r) => server.listen(0, r));
+    const port = (server.address() as any).port;
+
+    const res = await request(`http://localhost:${port}`).post("/api/retry?file_id=nope");
+    expect(res.status).toBe(404);
+    server.close();
+  });
+
+  it("GET /api/llm-status: 返 200 + 占位数据", async () => {
+    const http = await import("node:http");
+    const server = http.createServer((req, res) => {
+      void handler(req as any, res as any, () => { res.statusCode = 404; res.end(); });
+    });
+    await new Promise((r) => server.listen(0, r));
+    const port = (server.address() as any).port;
+
+    const res = await request(`http://localhost:${port}`).get("/api/llm-status");
+    expect(res.status).toBe(200);
+    expect(res.body.omlx).toBeDefined();
+    server.close();
+  });
+
+  it("非 /api 路径 → 调 next() (404)", async () => {
+    const http = await import("node:http");
+    let nextCalled = false;
+    const server = http.createServer((req, res) => {
+      void handler(req as any, res as any, () => {
+        nextCalled = true;
+        res.statusCode = 404;
+        res.end();
+      });
+    });
+    await new Promise((r) => server.listen(0, r));
+    const port = (server.address() as any).port;
+
+    const res = await request(`http://localhost:${port}`).get("/not-api");
+    expect(nextCalled).toBe(true);
+    expect(res.status).toBe(404);
+    server.close();
+  });
+});
