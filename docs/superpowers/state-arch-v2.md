@@ -309,4 +309,234 @@ actor: {
 
 ---
 
-**最后更新**：2026-06-22 决策记录
+## 9. 决策补充：统一 markdown 中间格式 + 单一 ingest 接口
+
+**日期**：2026-06-22
+**触发**：用户 2 次重要架构调整
+**原因**：业界 PDF 解析工具已成熟（marker / pymupdf4llm / minireu / unstructured 等），**所有文档统一先转 markdown 再入库**，让：
+- 入库接口单一（只收 markdown 文本 + metadata，不再收 chunks）
+- 解析手段按需选择（PDF 用 marker、docx 用 mammoth、网页用 cheerio 转 md 等）
+
+### 9.1 调整前 vs 调整后
+
+#### 调整前（arch-v2 §3 方案）
+```
+/api-ingest 接：content 字符串 OR chunks[] 数组
+云上：自动 chunkText + embed（content 路径）/ 直接入库（chunks 路径）
+```
+
+#### 调整后（arch-v2.1）
+```
+/api-ingest 接：markdown 字符串 + 元数据（单一格式）
+本地：fetchXxx → 解析（PDF 用 marker / docx 用 mammoth / webpage 用 cheerio+md 模板 / ...） → 输出 markdown
+云上：只做 chunkText + embed + 入库（不再做"哪类怎么解析"的判断）
+```
+
+**关键变化**：
+- ❌ 删 chunks 直传路径（arch-v2 §3 那个）
+- ✅ 所有 source 输出统一是 **markdown 文本**
+- ✅ 云上 ingest 永远走 chunkText + embed（不再有"云上不切分"分支）
+
+### 9.2 5 类 source → markdown 转换矩阵
+
+| source-type | 本地 fetch | 本地 → markdown 转换 | 工具 | 备注 |
+|---|---|---|---|---|
+| `webpage` | `fetchWebpage()` (curl + cheerio) | cheerio 提取 main + readability 模板 → markdown | `cheerio` + 自定义模板 | 列表/导航/广告自动过滤 |
+| `pdf` | `readFileSync()` | **PDF → markdown 转换器** | `marker-pdf` ⭐ 或 `pymupdf4llm` 或 `unstructured` | **业界成熟** |
+| `docx` | `readFileSync()` | mammoth extractRawText → 简单 markdown 包装 | `mammoth` | 表格/列表转 md 表格/列表 |
+| `txt` | `readFileSync()` | 文本本身 ≈ markdown（直接传入）| — | 几乎无处理 |
+| `md` | `readFileSync()` | 原样 | — | 几乎无处理 |
+| `xiaohongshu` | `fetchXiaohongshuNote()` (cheerio) | cheerio 提取正文 → md | `cheerio` + 模板 | 反爬需代理 IP |
+| `wechat-mp` | `fetchWechatMpArticle()` (cheerio) | cheerio 提取正文 → md | `cheerio` + 模板 | 反爬需第三方聚合 |
+
+### 9.3 PDF → Markdown 库选择（**2026-06 业界对比**）
+
+| 库 | 优势 | 劣势 | 适合 |
+|---|---|---|---|
+| **`marker-pdf`** ⭐推荐 | GPU 加速；表格/公式/图片都识别；输出干净 md | 需要 Python + 模型下载 ~1GB | 高质量 PDF（学术/书籍/报告）|
+| **`pymupdf4llm`** | PyMuPDF 的 LLM 友好封装；纯 CPU；速度快 | 表格识别一般 | 简单结构 PDF（合同/发票）|
+| **`minireu`** | 纯 Python 轻量；中等质量 | 表格/公式一般 | 简单 PDF 快速场景 |
+| **`unstructured`** | 通用（PDF/DOCX/HTML/...）| 输出格式自定义麻烦 | 多格式混合场景 |
+| **`pdf-parse`** (当前) | npm 纯 JS | 只提文本，无结构 ❌ | **不推荐做新架构** |
+
+**决策**：
+- **首选 marker-pdf**（GPU 加速 + 表格/公式 + md 干净）
+- **回退 pymupdf4llm**（纯 CPU，部署简单）
+- **当前 pdf-parse 弃用**（无 md 能力）
+
+### 9.4 新 /api-ingest 协议（markdown 单一格式）
+
+#### Request body
+```typescript
+{
+  // source metadata
+  url: string;              // 原始 URL 或本地路径
+  type: "webpage" | "pdf" | "docx" | "xiaohongshu" | "wechat-mp" | "txt" | "md";
+  title?: string;
+  trust_level: 0 | 1 | 2 | 3;
+  user_id?: string;          // proxy path 必填，admin path 缺省 DEFAULT_USER_ID
+
+  // document metadata
+  document: {
+    title: string;
+    rawPath?: string;
+    previewSnippet?: string;
+  };
+
+  // ⭐ 关键：本地已转好 markdown
+  markdown: string;          // 完整 markdown 文本（含 # ## - 1. 等结构）
+  //   - 来源是 markdown/txt：原内容
+  //   - 来源是 PDF：marker-pdf 输出
+  //   - 来源是 docx：mammoth 转换
+  //   - 来源是 webpage：cheerio 模板输出
+  //   - 来源是 xiaohongshu/wechat-mp：cheerio 模板输出
+
+  // 兼容：旧 chunks[] 字段（deprecated 警告但仍接受）
+  chunks?: Array<...>;
+
+  // 兼容：旧 content 字段（deprecated 警告但仍接受）
+  content?: string;
+}
+```
+
+#### 云上处理（永远统一）
+```typescript
+if (body.markdown) {
+  parsedText = body.markdown;  // 直接用，不解析
+} else if (body.content) {
+  // 旧路径：deprecated，warn
+  parsedText = body.content;
+  console.warn("[ingest] DEPRECATED: content 路径，请改用 markdown 字段");
+} else if (body.chunks) {
+  // 旧路径：deprecated，warn
+  // 走 chunks 直传（arch-v2 §3 方案，v2 弃用）
+}
+
+chunks = chunkText(parsedText);     // 永远云上切分
+embeddings = await embed(chunks);   // 永远云上 embed
+await addChunk(...);                // 入库
+```
+
+#### Response
+```typescript
+{
+  source_id: string;
+  document_id: string;
+  chunks_inserted: number;
+  chunks_failed: number;
+  markdown_chars: number;    // ⭐ 新字段：源 markdown 长度
+  parse_path: "markdown" | "content" | "chunks";  // ⭐ 用了哪条路径
+}
+```
+
+### 9.5 5 类 source 处理流程（统一图）
+
+```
+┌──────────────────────────────────────────────┐
+│ Mac 本地                                        │
+│                                              │
+│  fetchXxx (webpage/xhs/wx-mp)                │
+│      OR                                       │
+│  readFileSync (pdf/docx/txt/md)              │
+│      ↓                                        │
+│  ★ 解析为 markdown 文本                       │
+│   ├─ pdf     → marker-pdf / pymupdf4llm        │
+│   ├─ docx    → mammoth                        │
+│   ├─ webpage → cheerio + readability 模板     │
+│   ├─ xhs     → cheerio 模板                    │
+│   ├─ wx-mp   → cheerio 模板                    │
+│   ├─ txt     → 直接用                          │
+│   └─ md      → 直接用                          │
+│      ↓                                        │
+│  POST /api-ingest { markdown, source, ... }    │
+│      ↓                                        │
+└──────│───────────────────────────────────────┘
+       ↓
+┌──────│────────────────────────────────────────┐
+│ CloudBase (腾讯云)                                │
+│  - 鉴权 (JWT + IP allowlist)                   │
+│  - chunkText (云上, 不变)                       │
+│  - MiniMax embed (云上, 不变)                  │
+│  - 入库 (source + document + chunk)            │
+│  - audit_log 记录 (actor.via = "local_ingest")  │
+└──────────────────────────────────────────────────┘
+```
+
+### 9.6 PDF 解析工具栈（Mac 本地）
+
+**推荐组合**：
+```bash
+# 安装 marker（GPU 推荐；CPU 也能跑，慢）
+pip install marker-pdf
+
+# 安装 pymupdf4llm（轻量回退）
+pip install pymupdf4llm
+
+# 验证
+marker_single /path/to/test.pdf --output_format markdown
+```
+
+**Mac 本地调用（Node 调 Python）**：
+```typescript
+// apps/crawler/src/parsers/pdf-to-markdown.ts
+import { spawn } from "node:child_process";
+
+export async function pdfToMarkdown(filePath: string): Promise<string> {
+  // 调 marker-pdf Python CLI
+  const { stdout } = await execFile("marker_single", [filePath, "--output_format", "markdown"]);
+  return stdout;
+}
+```
+
+**或者用 Node 纯 JS 替代**（如果不想装 Python）：
+- `pdfjs-dist` (v4.x 解析) + 自写 md 转换（**质量不如 marker**，但 bundle 一致）
+- **生产推荐 marker**
+
+### 9.7 数据兼容（arch-v2 §6 升级）
+
+现有 28 records **已经是 chunks 形式**（content + embedding in DB）— **不受新架构影响**：
+- DB schema 不变
+- ingest 路径变了（content 流程被替换为 markdown 流程）
+- 旧 `content` 路径保留但 deprecated
+- 旧 `chunks` 路径保留但 deprecated（v2 弃用）
+
+### 9.8 修订后的迁移计划
+
+#### Phase 1: API 兼容（1-2 天）
+- [ ] 新 `markdown` 字段加到 `IngestRequest` type（取代 `chunks` 直传作为主推）
+- [ ] `/api-ingest` handler 路由：markdown 优先 → content 走旧路径 → chunks 走旧路径
+- [ ] 三条路径都加 deprecation warning（log）
+- [ ] 单测覆盖 3 条路径 + 优先级
+- [ ] 部署（不破现有 28 records）
+
+#### Phase 2: 本地 markdown 工具（3-5 天）— **arch-v2.1 核心**
+- [ ] `apps/crawler/src/parsers/pdf-to-markdown.ts`（调 marker-pdf / pymupdf4llm）
+- [ ] `apps/crawler/src/parsers/docx-to-markdown.ts`（mammoth 包装）
+- [ ] `apps/crawler/src/parsers/webpage-to-markdown.ts`（cheerio + 模板）
+- [ ] `apps/crawler/src/ingest-markdown.ts` 新 CLI（统一 5 类 → markdown → /api-ingest）
+- [ ] 5 类真接测（覆盖 PDF 中英文 / docx / 网页 / xhs / wx-mp）
+- [ ] 升级 `pdf-parse` → 删除（不再用）
+
+#### Phase 3: minipgm 上传 UI（v2）
+- [ ] 选 R2 中转 / 本地 worker bridge 方案
+- [ ] 实现 + 真机测
+
+#### Phase 4: 旧路径弃用（v3）
+- [ ] `/api-ingest` 旧 `content` + `chunks` 路径返 410 Gone
+- [ ] 旧 API 文档标注 deprecated
+
+---
+
+## 10. References 更新
+
+- 构想.md §四.1 数据来源优先级（已被本决策升级）
+- state-cp6.md §2-3 CloudBase 架构
+- state-cp7-zhenjie.md §3 Round 9 RAG 链路
+- state-cp7-zhenjie.md §8 CP-7-C 真接全 PASS
+- spec/2026-06-21-cp7-c-ingest-audit-design.md (CP-7-C #2)
+- marker-pdf: https://github.com/datalab-to/marker
+- pymupdf4llm: https://github.com/pymupdf/pymupdf4llm
+
+---
+
+**最后更新**：2026-06-22 决策记录（v2.1 补充统一 markdown 中间格式）
