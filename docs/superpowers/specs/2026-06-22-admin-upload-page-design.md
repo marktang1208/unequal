@@ -39,7 +39,7 @@
 |---|---|---|
 | **Server 架构** | Vite middleware（同进程 5173）| 简单 + 零额外进程 |
 | **PDF → md 库** | mineru（用户已装）| 业界 SOTA + 中文强 |
-| **爬虫解析 LLM** | Qwen 2.5 14B（mlx-community, 9GB）| 中文 SOTA，避 Gemma 中文弱 |
+| **爬虫解析 LLM** | **Qwen3.6 35B-A3B 4bit**（mlx-community, ~11.5GB）| 2025 末最新 + 中文 SOTA + 工具调用 ★★★★★ + MoE 激活少（3B）速度也快 |
 | **Embedding** | bge-m3 (mlx-community, 1.2GB, 1536 dim matryoshka) | 兼容现有 1536 维数据 |
 | **LLM runtime** | OMLX（Apple MLX 优化）| M1 Pro 性能优 30-50% + 内存省 1-2GB |
 | **上传后行为** | 上传即推云（自动）| happy path 一步到位 |
@@ -134,12 +134,12 @@ Promise.allSettled([t1, t2, t3, t4, t5])
 
 | 组件 | RAM |
 |---|---|
-| Qwen 2.5 14B (Q4) | 9 GB |
+| Qwen3.6 35B-A3B 4bit (MoE 激活 3B) | 11.5 GB |
 | bge-m3 | 1.2 GB |
 | mineru (CPU) | 2 GB |
 | OS + 浏览器 | 8 GB |
 | admin dev server | 0.5 GB |
-| **余量** | **11.3 GB** |
+| **余量** | **8.8 GB** |
 | **总计** | 32 GB ✅ |
 
 ---
@@ -329,7 +329,8 @@ pnpm -F admin dev
 ### Phase C: PDF 库验证（半天）
 - 装 mineru (用户已装)
 - 装 bge-m3 MLX 版
-- 真接测 PDF 中文 + 英文
+- 装 Qwen3.6 35B-A3B 4bit (mlx-community)
+- 真接测 PDF 中文 + 英文 + xhs HTML 转 md
 
 ### Phase D: minipgm 上传（v2，独立项）
 - R2 中转 / 本地 worker bridge 方案（arch-v2 §9.5）
@@ -349,7 +350,7 @@ pnpm -F admin dev
 - spec/2026-06-21-cp7-c-ingest-audit-design.md (CP-7-C #2)
 - mineru: https://github.com/opendatalab/MinerU
 - bge-m3: https://huggingface.co/BAAI/bge-m3
-- Qwen 2.5 14B MLX: https://huggingface.co/mlx-community/Qwen2.5-14B-Instruct-4bit
+- Qwen3.6 35B-A3B 4bit (mlx-community): https://huggingface.co/mlx-community (Qwen3.6 35B-A3B-4bit)
 - OMLX: Apple MLX runtime
 - vite middleware: https://vitejs.dev/guide/api-plugin.html#configureserver
 
@@ -364,7 +365,8 @@ pnpm -F admin dev
 | 上传后行为 | 上传即推云 |
 | SQLite 暂存 | 是 + 补推 UI |
 | LLM runtime | OMLX（Apple MLX）|
-| 爬虫 LLM | Qwen 14B（中文优先）|
+| 爬虫 LLM 候选 | Qwen2.5 14B / Qwen3 14B / Qwen3 30B-A3B / Qwen3.6 35B-A3B / Gemma 4 12B |
+| **爬虫 LLM 终选** | **Qwen3.6 35B-A3B 4bit**（2025 末最新 + 中文 SOTA + MoE 3B 激活）|
 | Gemma vs Qwen | Qwen 胜出（中文强）|
 
 ---
