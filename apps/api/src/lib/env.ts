@@ -14,6 +14,10 @@
 
 const EMBEDDING_DIM = 1536;
 
+/** CP-7-D #1: LLM model 集中管理（之前硬编码在 ask/chat handler） */
+const LLM_MODEL_DEFAULT = "MiniMax-Text-01";
+const EMBED_MODEL_DEFAULT = "embo-01";
+
 export interface AppEnv {
   // Secrets
   ADMIN_TOKEN: string;
@@ -32,6 +36,9 @@ export interface AppEnv {
   LOGIN_MAX_ATTEMPTS: number;
   LOGIN_WINDOW_MS: number;
   KEK_CURRENT_VERSION: string;
+  /** CP-7-D #1: 抽到 env；未来切换 model 不用改代码 */
+  LLM_MODEL: string;
+  EMBED_MODEL: string;
 
   // CloudBase specific (auto-injected by runtime)
   TCB_ENV?: string;
@@ -83,6 +90,10 @@ function validateEnvObject(source: NodeJS.ProcessEnv | Record<string, string | u
     LOGIN_WINDOW_MS: parseInt(source.LOGIN_WINDOW_MS ?? "900000", 10),
     KEK_CURRENT_VERSION: source.KEK_CURRENT_VERSION!,
 
+    // CP-7-D #1: defaults 防 drift；user 改 LLM_MODEL / EMBED_MODEL env 不需改代码
+    LLM_MODEL: source.LLM_MODEL ?? LLM_MODEL_DEFAULT,
+    EMBED_MODEL: source.EMBED_MODEL ?? EMBED_MODEL_DEFAULT,
+
     TCB_ENV: source.TCB_ENV,
   };
 }
@@ -106,7 +117,8 @@ export async function validateEmbeddingDim(): Promise<void> {
   const embed = createMiniMaxEmbedder({
     apiKey: process.env.MINIMAX_API_KEY!,
     baseUrl: process.env.MINIMAX_BASE_URL!,
-    model: "embo-01",
+    // CP-7-D #1: 跟随 env.EMBED_MODEL（默认 embo-01）
+    model: process.env.EMBED_MODEL ?? EMBED_MODEL_DEFAULT,
   });
 
   const result = await embed.embed(["dimension probe"]);

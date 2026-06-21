@@ -2,7 +2,10 @@
  * api-ask handler（CP-6 Phase 5 完整实现）
  * POST /api-ask { q: "..." }
  *
- * admin auth + MiniMax embed query + retrieval + MiniMax chat + citations
+ * admin auth + MiniMax embed query + retrieval + MiniMax chat + [N] citations
+ *
+ * CP-7-D #2-a: 引用格式从 {"citations":[N]} JSON 块 改为 [N] 内联标记
+ * （对齐 api-chat，复用 parseAnswerSegments）。
  */
 import {
   errorResponse,
@@ -19,6 +22,7 @@ import { searchChunks, type ChunkWithEmbedding } from "@unequal/shared/retrieval
 import { buildAskPrompt, DISCLAIMER_TEXT } from "@unequal/shared/prompt";
 import { COLLECTIONS } from "../lib/collections.js";
 import { getAllByFilter } from "../lib/db.js";
+import { parseAnswerSegments } from "./api-chat.js";
 import type { Chunk, Document } from "@unequal/shared/types";
 
 interface AskRequest {
@@ -41,22 +45,6 @@ interface AskResponse {
   disclaimer: string;
 }
 
-function parseCitationsJson(answer: string): number[] {
-  // 抓答案末尾的 {"citations": [...]} JSON 块
-  const m = answer.match(/\{"citations":\s*\[([^\]]*)\]\s*\}/);
-  if (!m) return [];
-  const inner = m[1] ?? "";
-  return inner
-    .split(",")
-    .map((s) => parseInt(s.trim(), 10))
-    .filter((n) => Number.isFinite(n));
-}
-
-function stripCitationsJson(answer: string): string {
-  // 去掉末尾的 JSON 块，保留正文
-  return answer.replace(/\s*\{"citations":\s*\[[^\]]*\]\s*\}\s*$/, "").trim();
-}
-
 export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse> {
   const env = getEnv();
   if (event.httpMethod === "OPTIONS") return optionsResponse(env.ALLOWED_ORIGIN);
@@ -77,7 +65,7 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
   const embed = createMiniMaxEmbedder({
     apiKey: env.MINIMAX_API_KEY,
     baseUrl: env.MINIMAX_BASE_URL,
-    model: "embo-01",
+    model: env.EMBED_MODEL,
   });
   const queryVec = (await embed.embed([q]))[0] ?? [];
 
@@ -106,17 +94,17 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
   });
 
   // 3. fetch docs for titles (denormalize: chunk has documentId, doc has title)
-  // chunk.documentId = upload 时 newId() 生成的 ULID（写 schema `id` 字段，不是 CloudBase `_id`）
-  // query 必须按 schema `id` 字段，不是 CloudBase `_id`（auto-generated 与 schema id 不同）
-  const docIds = Array.from(new Set(top.map((t) => chunksWithEmb.find((c) => c._id === t.chunkId)?.documentId).filter(Boolean) as string[]));
+  // CP-7-C #6 迁移后 chunk.documentId 已是 schema `id`（= _id）。chat 用 getById(_id)，ask 用 whereQuery({id}) 兼容性等价（id == _id after migration）
+  const findChunk = (chunkId: string) =>
+    chunksWithEmb.find((c) => (c._id ?? c.id) === chunkId);
+  const docIds = Array.from(new Set(top.map((t) => findChunk(t.chunkId)?.documentId).filter(Boolean) as string[]));
   const docs = await Promise.all(docIds.map((id) => getAllByFilter<Document>(COLLECTIONS.document, { id }, 1).then((r) => r[0])));
   const docMap = new Map(docs.filter(Boolean).map((d) => [d!.id, d!]));
 
   // 4. build prompt
   const ctx = {
     chunks: top.slice(0, 5).map((t, i) => {
-      // t.chunkId 是 CloudBase _id（P3.3 修复后），必须用 chunksWithEmb[i]._id 比较
-      const chunk = chunksWithEmb.find((c) => c._id === t.chunkId);
+      const chunk = findChunk(t.chunkId);
       const doc = chunk ? docMap.get(chunk.documentId) : undefined;
       return {
         n: (i + 1) as 1 | 2 | 3 | 4 | 5,
@@ -136,7 +124,7 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
       authorization: `Bearer ${env.MINIMAX_API_KEY}`,
     },
     body: JSON.stringify({
-      model: "MiniMax-Text-01",
+      model: env.LLM_MODEL,
       messages: [
         { role: "system", content: system },
         { role: "user", content: user },
@@ -151,21 +139,20 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
   }
 
   const chatRes = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
-  const rawAnswer = chatRes.choices?.[0]?.message?.content ?? "";
+  const answer = chatRes.choices?.[0]?.message?.content ?? "";
 
-  // 6. parse citations
-  const citedNums = parseCitationsJson(rawAnswer);
-  const cleanAnswer = stripCitationsJson(rawAnswer);
+  // 6. CP-7-D #2-a: 解析 [N] 引用（复用 chat 的 parseAnswerSegments）
+  const topChunks = top.slice(0, 5);
+  const { citedNums } = parseAnswerSegments(answer, topChunks.length);
+  // 过滤越界（保 citedNums 顺序）
+  const validCitedNums = citedNums.filter((n) => n >= 1 && n <= topChunks.length);
 
-  const citations: CitationOut[] = citedNums
+  const citations: CitationOut[] = validCitedNums
     .map((n) => {
       const i = n - 1;
-      if (i < 0 || i >= top.length) return null;
-      const t = top[i];
+      const t = topChunks[i];
       if (!t) return null;
-      // t.chunkId 是 CloudBase _id（P3.3 修复后），必须用 c._id 比较
-      const chunk = chunksWithEmb.find((c) => c._id === t.chunkId);
-      // docMap key 是 d._id（不是 d.id，id 字段 upload 写时为 ""）
+      const chunk = findChunk(t.chunkId);
       const doc = chunk ? docMap.get(chunk.documentId) : undefined;
       return {
         n,
@@ -180,7 +167,7 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
     .filter((c): c is CitationOut => c !== null);
 
   const response: AskResponse = {
-    answer: cleanAnswer,
+    answer,
     citations,
     disclaimer: DISCLAIMER_TEXT,
   };

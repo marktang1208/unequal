@@ -229,9 +229,31 @@ CP-7-C 候选（独立项目）—— **2026-06-21 真接全 PASS**：
    - **特性**：dry-run 默认 true + 自动 dump 备份到 `/tmp/migration-backup-{ts}.json`（含 collection/_id/oldId/newId）支持回滚；filter 用 `$or` 覆盖 `id==""`、`id==null`、id 字段缺失 3 种情况
    - **真接验证**：apply 28/28 成功；迁移后 4 个 collection count `id==""` 全部为 0
 
+## 9. CP-7-D 真接（2026-06-21）
+
+LLM model 跨 handler 一致性 + 引用格式统一 — 真接 PASS：
+
+### 9.1 D-1: Model 抽到 env
+
+- **改动**：`apps/api/src/lib/env.ts` 加 `LLM_MODEL`（默认 `MiniMax-Text-01`）+ `EMBED_MODEL`（默认 `embo-01`）；`api-ask.ts` + `api-chat.ts` 改用 `env.LLM_MODEL` / `env.EMBED_MODEL`（移除硬编码字符串）
+- **优势**：未来切换 model 不用改代码（设 env 即可）+ 集中管理防 drift
+- **真接验证**：deploy 后 admin 跑 `/api-ask` 返 200，bundle 用 env 模型名（不再是硬编码字符串）
+
+### 9.2 D-2-a: 引用格式统一为 [N]
+
+- **改动**：`packages/shared/src/prompt.ts` `ASK_SYSTEM_TEMPLATE` 改用 [N] 内联引用（对齐 api-chat）+ 正反例防 LLM 抄字面 [N]；`api-ask.ts` 删 `parseCitationsJson` + `stripCitationsJson`，改用 `parseAnswerSegments` from `api-chat.ts`（统一 [N] 解析）
+- **新测试**：`apps/api/test/handlers/api-ask.test.ts`（6 个用例：model override + [N] 解析 + 越界 + 空 + API 失败）
+- **真接验证**：灌一篇断奶文章到 DEFAULT_USER + 问「宝宝断奶的最佳时机」→ 答案含 `[1]`、`citations` 数组按 [1] 解析正确、`title="CP-7-D 断奶测试"`、`chunkId` 来自真 topChunk
+
+### 9.3 累计测试 + 部署
+
+- api 单测：102 → **108 tests**（含 6 个新 ask test）
+- shared 单测：48 → 49 tests（含 D-2 prompt 验证）
+- deploy: 13 env vars 完整保留（deploy:secrets 两步法）
+
 ---
 
-## 9. References
+## 10. References
 
 - **CP-7-A state**：`docs/superpowers/state-cp7-a.md`
 - **CP-7-B state**：`docs/superpowers/state-cp7-b.md`

@@ -18,13 +18,18 @@ describe("buildAskPrompt", () => {
     expect(p.system).toContain("(信源等级: 一般)");
   });
 
-  it("system 含 ASK_SYSTEM_TEMPLATE 5 条硬约束", () => {
+  it("system 含 [N] 引用规则 + 正反例（CP-7-D #2-a 统一 [N] 格式）", () => {
     const p = buildAskPrompt("q", { chunks: top3 });
-    expect(p.system).toContain("【硬约束】");
-    expect(p.system).toContain("不得使用任何不在参考资料里的常识");
-    expect(p.system).toContain("答案末尾必须且只能输出一个 JSON 块");
-    expect(p.system).toContain('{"citations": [N, M, ...]}');
-    expect(p.system).toContain('"未在知识库中找到可靠来源"');
+    expect(p.system).toContain("**仅基于下方参考资料**");
+    expect(p.system).toContain("**引用格式**");
+    expect(p.system).toContain("`[1]` `[2]` `[3]` `[4]` `[5]`");
+    expect(p.system).toContain("**不要写字面的 [N]**");
+    expect(p.system).toContain("正确示例");
+    expect(p.system).toContain("错误示例");
+    expect(p.system).toContain("参考资料中未涉及此问题");
+    // 确认旧的 JSON 块约束已删
+    expect(p.system).not.toContain("【硬约束】");
+    expect(p.system).not.toContain('{"citations":');
   });
 
   it("user prompt = 原问题", () => {

@@ -119,7 +119,7 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
   const embed = createMiniMaxEmbedder({
     apiKey: env.MINIMAX_API_KEY,
     baseUrl: env.MINIMAX_BASE_URL,
-    model: "embo-01",
+    model: env.EMBED_MODEL,
   });
   const queryVec = (await embed.embed([q]))[0] ?? [];
 
@@ -193,7 +193,7 @@ ${contextLines || "(无)"}`;
       authorization: `Bearer ${env.MINIMAX_API_KEY}`,
     },
     body: JSON.stringify({
-      model: "MiniMax-Text-01",
+      model: env.LLM_MODEL,
       messages: [
         { role: "system", content: systemPrompt },
         ...chatHistoryMsgs,
