@@ -213,7 +213,7 @@ describe("LocalIngestMiddleware (CP-7-C T2)", () => {
     server.close();
   });
 
-  it("GET /api/llm-status: 返 200 + 占位数据", async () => {
+  it("POST /api/retry: 缺 file_id → 400", async () => {
     const http = await import("node:http");
     const server = http.createServer((req, res) => {
       void handler(req as any, res as any, () => { res.statusCode = 404; res.end(); });
@@ -221,10 +221,112 @@ describe("LocalIngestMiddleware (CP-7-C T2)", () => {
     await new Promise((r) => server.listen(0, r));
     const port = (server.address() as any).port;
 
-    const res = await request(`http://localhost:${port}`).get("/api/llm-status");
-    expect(res.status).toBe(200);
-    expect(res.body.omlx).toBeDefined();
+    const res = await request(`http://localhost:${port}`).post("/api/retry");
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("INVALID_REQUEST");
     server.close();
+  });
+
+  it("POST /api/retry: retryable=0 文件 → 400 NOT_RETRYABLE", async () => {
+    // 显式造一个 retryable=0 的 record（模拟 ParseFailedError 后果）
+    store.create({
+      file_id: "f-not-retryable",
+      batch_id: "b-nr",
+      filename: "bad.pdf",
+      ext: "pdf",
+      tmp_data: Buffer.from("x"),
+      status: "failed",
+      retryable: 0,
+      retry_count: 1,
+      error_code: "ParseFailed",
+      error_message: "PDF 加密",
+    });
+
+    const http = await import("node:http");
+    const server = http.createServer((req, res) => {
+      void handler(req as any, res as any, () => { res.statusCode = 404; res.end(); });
+    });
+    await new Promise((r) => server.listen(0, r));
+    const port = (server.address() as any).port;
+
+    const res = await request(`http://localhost:${port}`).post("/api/retry?file_id=f-not-retryable");
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("NOT_RETRYABLE");
+    expect(res.body.message).toContain("not retryable");
+    server.close();
+  });
+
+  it("POST /api/retry: 失败文件 retryable=1 → 202 + status=pending → done", async () => {
+    // mock pusher 第一次失败、第二次成功
+    let pushAttempts = 0;
+    const flakyPusher: CloudPusher = {
+      push: async () => {
+        pushAttempts++;
+        if (pushAttempts === 1) throw new Error("cloud 500");
+        return { source_id: "01KSRC_RETRY", document_id: "01KDOC_RETRY" };
+      },
+    };
+    orchestrator.setPusher(flakyPusher);
+
+    const http = await import("node:http");
+    const server = http.createServer((req, res) => {
+      void handler(req as any, res as any, () => { res.statusCode = 404; res.end(); });
+    });
+    await new Promise((r) => server.listen(0, r));
+    const port = (server.address() as any).port;
+
+    const uploadRes = await request(`http://localhost:${port}`)
+      .post("/api/upload")
+      .field("trust_level", "1")
+      .attach("file", Buffer.from("# x"), { filename: "x.md" });
+    const fileId = uploadRes.body.files[0].file_id;
+
+    // 等第一次失败
+    await new Promise((r) => setTimeout(r, 100));
+    const after1st = store.getByFileId(fileId);
+    expect(after1st?.status).toBe("failed");
+    expect(after1st?.retryable).toBe(1);
+
+    // 触发 retry
+    const retryRes = await request(`http://localhost:${port}`).post(`/api/retry?file_id=${fileId}`);
+    expect(retryRes.status).toBe(202);
+    expect(retryRes.body.status).toBe("pending");
+
+    // 等第二次成功
+    await new Promise((r) => setTimeout(r, 100));
+    const after2nd = store.getByFileId(fileId);
+    expect(after2nd?.status).toBe("done");
+    expect(after2nd?.cloud_source_id).toBe("01KSRC_RETRY");
+    expect(pushAttempts).toBe(2);
+
+    server.close();
+  });
+
+  it("GET /api/llm-status: 返 omlx probe + fallback 状态", async () => {
+    // mock fetchImpl 让 probe 返 offline
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response("nope", { status: 500 })) as typeof fetch;
+    try {
+      const http = await import("node:http");
+      const server = http.createServer((req, res) => {
+        void handler(req as any, res as any, () => { res.statusCode = 404; res.end(); });
+      });
+      await new Promise((r) => server.listen(0, r));
+      const port = (server.address() as any).port;
+
+      const res = await request(`http://localhost:${port}`).get("/api/llm-status");
+      expect(res.status).toBe(200);
+      expect(res.body.omlx).toBeDefined();
+      expect(res.body.omlx.available).toBe(false);  // mock 返 500
+      expect(res.body.omlx.url).toContain("11434");
+      expect(res.body.fallback).toBeDefined();
+      expect(res.body.fallback.embed).toBeDefined();
+      expect(res.body.fallback.llm).toBeDefined();
+      server.close();
+    } finally {
+      globalThis.fetch = origFetch;
+    }
   });
 
   it("非 /api 路径 → 调 next() (404)", async () => {

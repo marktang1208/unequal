@@ -14,21 +14,26 @@ import type { Connect } from "vite";
 import { IngestOrchestrator } from "./ingest-orchestrator.js";
 import { StatusStore } from "./status-store.js";
 import { ConcurrencyGate } from "./concurrency-gate.js";
+import { FallbackDetector } from "./fallback-detector.js";
+import { probeOmlx } from "./omlx-probe.js";
 import { randomUUID } from "node:crypto";
 
 let _store: StatusStore | null = null;
 let _orchestrator: IngestOrchestrator | null = null;
 let _gate: ConcurrencyGate | null = null;
+let _fallback: FallbackDetector | null = null;
 
 /** 测试用：注入自定义 deps（避免 module-level 单例） */
 export function __setDepsForTest(deps: {
   store: StatusStore;
   orchestrator: IngestOrchestrator;
   gate: ConcurrencyGate;
+  fallback?: FallbackDetector;
 }): void {
   _store = deps.store;
   _orchestrator = deps.orchestrator;
   _gate = deps.gate;
+  _fallback = deps.fallback ?? null;
 }
 
 /** 测试用：重置单例 */
@@ -36,13 +41,15 @@ export function __resetForTest(): void {
   _store = null;
   _orchestrator = null;
   _gate = null;
+  _fallback = null;
 }
 
 function deps() {
   if (!_store) _store = new StatusStore(".tmp/unequal.db");
   if (!_gate) _gate = new ConcurrencyGate();
   if (!_orchestrator) _orchestrator = new IngestOrchestrator(_store, _gate);
-  return { store: _store!, orchestrator: _orchestrator!, gate: _gate! };
+  if (!_fallback) _fallback = new FallbackDetector();
+  return { store: _store!, orchestrator: _orchestrator!, gate: _gate!, fallback: _fallback! };
 }
 
 /** 简单 multer 替代：用 raw body + boundary 解析（避免 multer 依赖膨胀）
@@ -237,12 +244,17 @@ async function handleRetry(req: Connect.IncomingMessage, res: import("node:http"
   res.end(JSON.stringify({ file_id: fileId, status: "pending" }));
 }
 
-function handleLlmStatus(_req: Connect.IncomingMessage, res: import("node:http").ServerResponse): void {
+async function handleLlmStatus(_req: Connect.IncomingMessage, res: import("node:http").ServerResponse): Promise<void> {
+  const { fallback } = deps();
+  const omlx = await probeOmlx();
   res.statusCode = 200;
   res.setHeader("Content-Type", "application/json");
   res.end(JSON.stringify({
-    omlx: { available: false, url: "http://localhost:11434/v1" },
-    note: "T12 will implement real OMLX probe",
+    omlx,
+    fallback: {
+      embed: fallback.getState("embed"),
+      llm: fallback.getState("llm"),
+    },
   }));
 }
 
