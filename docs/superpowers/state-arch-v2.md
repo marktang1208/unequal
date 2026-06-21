@@ -527,16 +527,234 @@ export async function pdfToMarkdown(filePath: string): Promise<string> {
 
 ---
 
-## 10. References 更新
+## 11. admin 本地上传文件页面
 
-- 构想.md §四.1 数据来源优先级（已被本决策升级）
+**日期**：2026-06-22
+**触发**：用户 3 次架构调整 — "本地上传文件的页面，方便上传解析，入库以及推到云端"
+**现状**：`apps/admin/src/pages/Upload.tsx` 已存在 92 行，但 **实际 broken**（vite proxy 到 localhost:8787 CF Workers 早就无人跑了，CP-6 迁 CloudBase 后这个 proxy 失效）
+
+### 11.1 用户需求
+
+> "本地上传文件的页面，方便上传解析，入库以及推到云端的操作"
+
+**分解**：
+1. **本地上传**：admin web UI 接受文件（macOS Finder 拖入 / 点击选）
+2. **本地的解析**（arch-v2.1）：PDF 用 marker-pdf / docx 用 mammoth / webpage 用 cheerio → markdown
+3. **本地的入库**（arch-v2.1 §9.5 决定）：本地 chunkText + MiniMax embed + **写本地临时 DB**（不写云端！）
+4. **推到云端**：把本地 chunks 通过 `/api-ingest` 推送到 CloudBase DB
+
+### 11.2 当前 vs 目标架构
+
+#### 11.2.1 当前（broken）
+```
+admin dev (5173) ──/api proxy──> localhost:8787 (CF Workers) ❌ 早停了
+                                    ↓
+                              cloud (api-router) ←─── 当前应该走的路径
+```
+
+**问题**：
+- vite.config.ts proxy 还指向 8787（已废）
+- admin 调用 `/upload` 通过 proxy → 8787 → 失败
+- admin 实际从未真接过上传（只在 curl 测过 /api-upload）
+
+#### 11.2.2 目标（arch-v2.1 + 本地解析）
+```
+┌─────────────────────────────────────────────────────────────┐
+│ admin dev server (Vite)                                       │
+│                                                               │
+│  前端 UI (5173)                                               │
+│  ├─ /upload 页 (Upload.tsx)                                   │
+│  │   - 文件选择（拖入 + 按钮）                                 │
+│  │   - trust_level 选择                                       │
+│  │   - 上传按钮 → FormData POST /api/upload                    │
+│  │                                                            │
+│  Vite middleware (/api/*)                                    │
+│  ├─ /api/upload (POST multipart)                              │
+│  │   - 接 FormData                                            │
+│  │   - 写文件到本地 .tmp/uploads/                              │
+│  │   - 调本地 parser (PDF/md/docx) → markdown                  │
+│  │   - 调 chunkText (packages/shared)                          │
+│  │   - 调 MiniMaxEmbedder (本地 key)                          │
+│  │   - 写本地 SQLite (.tmp/unequal.db) ← 暂存                 │
+│  │   - 推 chunks 到 CloudBase /api-ingest (proxy 鉴权)         │
+│  │   - 返 { source_id, document_id, markdown_chars }           │
+│  │                                                            │
+│  └─ /api/ingest-local (POST chunks) ← 暂存 + 推                │
+│      - admin 调本地"补推"用                                    │
+│                                                               │
+│  /api/ingest-status (GET)                                    │
+│      - 看本地 SQLite 暂存 + 推送状态                          │
+└─────────────────────────────────────────────────────────────┘
+                          ↓
+            CloudBase /api-ingest (markdown 字段)
+                          ↓
+                CloudBase DB (source/document/chunk)
+```
+
+### 11.3 vite middleware 实现要点
+
+#### 11.3.1 vite.config.ts
+```typescript
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import { localIngestMiddleware } from "./server/local-ingest.js";
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    port: 5173,
+    // 删掉旧的 /api → 8787 proxy（broken）
+    // 新增：本地 middleware 处理 /api/upload /api/ingest-status
+  },
+});
+```
+
+#### 11.3.2 apps/admin/server/local-ingest.ts（新建）
+```typescript
+import type { Connect } from "vite";
+import { PDFDocument } from "pdf-lib";
+import mammoth from "mammoth";
+import { execFile } from "node:child_process";
+import { chunkText } from "@unequal/shared/chunking";
+import { createMiniMaxEmbedder } from "@unequal/shared/embedding";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+export const localIngestMiddleware: Connect.Server = (req, res, next) => {
+  // POST /api/upload
+  if (req.method === "POST" && req.url === "/api/upload") {
+    return handleUpload(req, res);
+  }
+  // GET /api/ingest-status
+  if (req.method === "GET" && req.url?.startsWith("/api/ingest-status")) {
+    return handleStatus(req, res);
+  }
+  next();
+};
+
+async function handleUpload(req, res) {
+  // 1. 解析 multipart FormData
+  // 2. 写文件到 .tmp/uploads/
+  // 3. 按 ext 选 parser:
+  //    - pdf → marker-pdf (Python subprocess)
+  //    - docx → mammoth
+  //    - txt/md → 直接用
+  // 4. 调 chunkText (本地) + embed (本地 MiniMax)
+  // 5. 推 /api-ingest (cloud) with markdown + chunks
+  // 6. 返 { source_id, document_id, markdown_chars, parse_path }
+}
+```
+
+### 11.4 5 类文件处理（admin 端）
+
+| 文件类型 | 本地处理 | 推到云端的字段 |
+|---|---|---|
+| `.pdf` | marker-pdf → markdown | `markdown` |
+| `.docx` | mammoth → markdown | `markdown` |
+| `.txt` | 直接用 | `markdown` |
+| `.md` | 直接用 | `markdown` |
+| `.html` | cheerio 提取 → markdown | `markdown` |
+| 网页 URL | curl + cheerio → markdown | `markdown` |
+
+### 11.5 SQLite 暂存（v1 简化）
+
+**为什么暂存**：
+- 本地解析慢（marker-pdf 几秒~几十秒）
+- 推云端可能失败（网络 / 限流）
+- 暂存给"补推"用
+
+**schema**（`apps/admin/.tmp/unequal.db`）：
+```sql
+CREATE TABLE local_ingest (
+  id INTEGER PRIMARY KEY,
+  filename TEXT NOT NULL,
+  ext TEXT NOT NULL,
+  markdown TEXT NOT NULL,
+  markdown_chars INTEGER,
+  chunks_count INTEGER,
+  embeddings BLOB,           -- JSON 序列化
+  status TEXT NOT NULL,       -- 'pending' | 'pushed' | 'failed'
+  pushed_at INTEGER,
+  cloud_source_id TEXT,
+  cloud_document_id TEXT,
+  error_message TEXT,
+  created_at INTEGER NOT NULL
+);
+```
+
+**UI 补推**：
+- "Pending" 状态的文件可"重推"按钮
+- "Failed" 显示 error + 可重试
+
+### 11.6 minipgm 端 / admin 端 / CLI 端 三方一致
+
+| 客户端 | 上传入口 | 解析 | 推到云端 |
+|---|---|---|---|
+| **minipgm** | wx.chooseMessageFile | minipgm 端无能力 → 走 **R2 中转 + 本地 worker 异步** | /api-ingest-pending + 本地 worker 推 |
+| **admin web** ⭐ | `<input type="file">` 拖入 | Vite middleware 本地解析 | /api-ingest |
+| **CLI** | `cat file \| cmd` | 直接 Node 解析 | /api-ingest |
+| **crawler** | URL fetch | cheerio 解析 | /api-ingest |
+
+**共同点**：**所有路径最终都调同一个 `/api-ingest`，传 `markdown` 字段**
+
+### 11.7 实施计划
+
+#### Phase A: vite middleware 基础（1-2 天）
+- [ ] 修 vite.config.ts 删 8787 proxy
+- [ ] 新增 `apps/admin/server/local-ingest.ts`（接 multipart + 写文件 + 调 parser）
+- [ ] 5 类 parser 函数（marker-pdf / mammoth / cheerio / txt-md）
+- [ ] 推云端 chunks（复用 CloudBaseCallTest 的 jwt 流程）
+- [ ] 修 Upload.tsx 适配新 API（错误信息 + 进度）
+- [ ] 单测覆盖 5 类文件端到端
+
+#### Phase B: SQLite 暂存（1 天）
+- [ ] `apps/admin/.tmp/unequal.db` schema
+- [ ] status 字段 + 补推逻辑
+- [ ] UI 显示 pending/failed 列表
+
+#### Phase C: PDF 库升级（与 arch-v2.1 phase 2 同步）
+- [ ] 装 marker-pdf（pip install marker-pdf）
+- [ ] 验证中文 PDF → md 质量
+- [ ] 失败时回退 pymupdf4llm
+
+#### Phase D: minipgm 上传（v2 独立项）
+- [ ] R2 中转 / 本地 worker bridge 方案（arch-v2.1 §9.5 方案 B）
+
+### 11.8 当前 broken 修法（快速 fix）
+
+在实施 Phase A 之前，先**让 admin 上传能用**（即使不做本地解析）：
+
+```typescript
+// vite.config.ts
+server: {
+  port: 5173,
+  proxy: {
+    // 改 proxy 到 CloudBase Gateway（admin 调云端 /api-upload）
+    "/api": {
+      target: "https://unequal-d4ggf7rwg82e0900b-1444590671.ap-shanghai.app.tcloudbase.com",
+      changeOrigin: true,
+      rewrite: (path) => path.replace(/^\/api/, "/api-router/api"),
+      // 改云端解析（暂时回归 CP-6 模式）
+    },
+  },
+},
+```
+
+**注意**：这只是快速 fix 让功能 work。arch-v2.1 实施后改用本地 middleware 走 markdown 路径。
+
+---
+
+## 12. References 更新
+
+- 构想.md §四.1 数据来源优先级
 - state-cp6.md §2-3 CloudBase 架构
 - state-cp7-zhenjie.md §3 Round 9 RAG 链路
 - state-cp7-zhenjie.md §8 CP-7-C 真接全 PASS
 - spec/2026-06-21-cp7-c-ingest-audit-design.md (CP-7-C #2)
 - marker-pdf: https://github.com/datalab-to/marker
 - pymupdf4llm: https://github.com/pymupdf/pymupdf4llm
+- vite middleware 文档: https://vitejs.dev/guide/api-plugin.html#configureserver
 
 ---
 
-**最后更新**：2026-06-22 决策记录（v2.1 补充统一 markdown 中间格式）
+**最后更新**：2026-06-22 决策记录（v2.2 补充 admin 本地上传文件页）
