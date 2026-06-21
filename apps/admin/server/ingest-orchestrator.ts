@@ -21,6 +21,7 @@
 
 import { StatusStore, type FileStatus, type IngestRecord } from "./status-store.js";
 import type { ConcurrencyGate } from "./concurrency-gate.js";
+import { ParseFailedError } from "./local-parser.js";
 
 // Dependency interfaces (T5/T6/T8 实现这些)
 export interface LocalParser {
@@ -168,21 +169,33 @@ export class PushError extends Error {
 }
 
 function classifyError(err: unknown): { code: string; message: string; retryable: boolean } {
-  if (err instanceof ParseFailedError) {
+  // 用 err.name (字符串) 而非 instanceof 跨 module 不可靠
+  // (vitest + tsx 可能让同一文件加载两次 → 不同 class 实例)
+  const name = err instanceof Error ? err.name : "";
+  if (name === "ParseFailedError") {
     return { code: "ParseFailed", message: err.message, retryable: false };
   }
-  if (err instanceof EmbedError) {
+  if (name === "EmbedError") {
     return { code: "EmbedFailed", message: err.message, retryable: true };
   }
-  if (err instanceof PushError) {
-    return { code: err.retryable ? "PushFailed" : "PushAuthError", message: err.message, retryable: err.retryable };
+  if (name === "PushError") {
+    // PushError 自带 retryable 字段，但 instanceof 失败时取不到；用消息推断
+    const msg = err instanceof Error ? err.message : String(err);
+    const retryable = msg.includes("after") || msg.includes("Rate") || msg.includes("Server") || msg.includes("Network");
+    return { code: retryable ? "PushFailed" : "PushAuthError", message: msg, retryable };
   }
   if (err instanceof Error) {
     const msg = err.message;
-    if (msg.includes("not initialized")) {
+    if (
+      msg.includes("not initialized") ||
+      msg.includes("Parser not initialized")
+    ) {
       return { code: "InternalError", message: msg, retryable: false };
     }
-    if (msg.includes("ParseFailed")) {
+    if (
+      msg.includes("chunker produced 0 chunks") ||
+      msg.includes("empty content")
+    ) {
       return { code: "ParseFailed", message: msg, retryable: false };
     }
     return { code: "UnknownError", message: msg, retryable: true };
