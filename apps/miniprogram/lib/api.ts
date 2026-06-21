@@ -67,6 +67,9 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
     body: {
       q: req.q,
       ...(req.session_id ? { session_id: req.session_id } : {}),
+      // M7-B: 透传 source 过滤（camelCase → snake_case）
+      ...(req.source_types && req.source_types.length > 0 ? { source_types: req.source_types } : {}),
+      ...(req.exclude_source_ids && req.exclude_source_ids.length > 0 ? { exclude_source_ids: req.exclude_source_ids } : {}),
     },
     jwt: getJwtToken() ?? undefined,
   });

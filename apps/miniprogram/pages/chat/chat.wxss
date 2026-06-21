@@ -111,3 +111,45 @@
   border: 3px solid #3d2914;
   box-shadow: 4rpx 4rpx 0 0 #a89887;
 }
+
+/* M7-B: source type picker（多选 chip，水平滚动） */
+.source-picker {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 16rpx;
+  padding: 12rpx 24rpx;
+  background: #fff9e6;
+  border-top: 2px dashed #3d2914;
+  white-space: nowrap;
+  position: relative;
+  z-index: 1;
+}
+
+.source-picker .chip {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 8rpx 24rpx;
+  background: #ffffff;
+  color: #3d2914;
+  font-size: 24rpx;
+  font-weight: 600;
+  border: 2px solid #3d2914;
+  border-radius: 100rpx;
+  letter-spacing: 1rpx;
+  /* offset shadow 让选中态可见 */
+  box-shadow: 2rpx 2rpx 0 0 #a89887;
+}
+
+.source-picker .chip--active {
+  background: #ff8a65;
+  color: #ffffff;
+  border-color: #3d2914;
+  box-shadow: 3rpx 3rpx 0 0 #3d2914;
+}
+
+.source-picker .chip:active {
+  transform: translate(2rpx, 2rpx);
+  box-shadow: 0rpx 0rpx 0 0 #3d2914;
+}

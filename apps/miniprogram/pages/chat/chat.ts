@@ -75,6 +75,16 @@ Page({
     error: "",
     sessionId: "" as string, // 空 → 新 session；非空 → 复用
     sessionTitle: "" as string,
+    /** M7-B: 选中的 sourceType；空数组 = 不过滤（默认全部） */
+    selectedSourceTypes: [] as string[],
+    /** M7-B: sourceType 候选（硬编码全集；未来可改成从 user source 动态拉） */
+    availableSourceTypes: [
+      { value: "webpage", label: "网页" },
+      { value: "file", label: "文件" },
+      { value: "pdf", label: "PDF" },
+      { value: "xiaohongshu", label: "小红书" },
+      { value: "wechat-mp", label: "公众号" },
+    ],
   },
 
   onLoad(): void {
@@ -164,6 +174,16 @@ Page({
     this.setData({ q: e.detail.value });
   },
 
+  /** M7-B: chip toggle — 多选/取消 sourceType；空数组 = 不过滤 */
+  onToggleSourceType(e: WechatMiniprogram.Tap): void {
+    const value = e.currentTarget.dataset.value as string;
+    const current = this.data.selectedSourceTypes;
+    const next = current.indexOf(value) >= 0
+      ? current.filter((v) => v !== value)
+      : [...current, value];
+    this.setData({ selectedSourceTypes: next });
+  },
+
   onSubmit(): void {
     if (this.data.submitting) return;
     const q = this.data.q.trim();
@@ -193,8 +213,14 @@ Page({
     const app = getApp<AppWithGlobals>();
     const baseUrl = app?.globalData?.apiBaseUrl ?? "http://localhost:8787";
     try {
+      // M7-B: 透传 source 过滤；空数组 = 不过滤（caller 端不传字段）
+      const selectedSourceTypes = this.data.selectedSourceTypes;
       const resp: ChatResponse = await chat(
-        { q, ...(this.data.sessionId ? { session_id: this.data.sessionId } : {}) },
+        {
+          q,
+          ...(this.data.sessionId ? { session_id: this.data.sessionId } : {}),
+          ...(selectedSourceTypes.length > 0 ? { source_types: selectedSourceTypes } : {}),
+        },
         { baseUrl },
       );
       // 服务端返的 session_id 持久化（新建时才有意义）

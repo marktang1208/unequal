@@ -28,6 +28,17 @@
     <text>{{error}}</text>
   </view>
 
+  <!-- M7-B: source type picker（多选 chip；选空 = 不过滤） -->
+  <scroll-view class="source-picker" scroll-x enhanced show-scrollbar="{{false}}">
+    <view
+      wx:for="{{availableSourceTypes}}"
+      wx:key="value"
+      class="chip {{selectedSourceTypes.indexOf(item.value) >= 0 ? 'chip--active' : ''}}"
+      data-value="{{item.value}}"
+      bindtap="onToggleSourceType"
+    >{{item.label}}</view>
+  </scroll-view>
+
   <view class="input-bar">
     <textarea
       class="input"

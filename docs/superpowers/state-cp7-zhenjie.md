@@ -299,6 +299,20 @@ CP-7-C + CP-7-D 上线后跑 admin 6 步 smoke（state-cp6 §4），全 PASS：
 - 全 monorepo: **273 tests** all PASS（api 113 + shared 58 + minipgm 49 + crawler 29 + admin 24）
 - deploy: api-router 13 env vars 完整保留
 
+### 10.5 M7-B UI 集成（minipgm chat 页 source picker）
+
+- **改动**：
+  - `apps/miniprogram/lib/types.ts`: `ChatRequest` 加 `source_types?: string[]` + `exclude_source_ids?: string[]`
+  - `apps/miniprogram/lib/api.ts`: `chat()` caller 透传（camelCase → snake_case）
+  - `apps/miniprogram/pages/chat/chat.wxml`: input bar 上方加 `<scroll-view class="source-picker">` + chip 行（多选；选空 = 不过滤）
+  - `apps/miniprogram/pages/chat/chat.wxss`: 06 童心日历风格（粗描边 + 暖橙强调 + 偏移阴影）
+  - `apps/miniprogram/pages/chat/chat.ts`: data 加 `selectedSourceTypes: string[]` + `availableSourceTypes` 候选全集（webpage / file / pdf / xiaohongshu / wechat-mp）+ `onToggleSourceType` 方法 + `callChat` 透传
+- **设计选择**：
+  - 候选 type 硬编码全集（spec 计划 + 现有）— 未来可改成从 user source 动态拉
+  - 选空 = 不过滤（默认全选/全不选都行；零门槛 UX）
+  - 排除 sourceId 暂不开放 UI（仅 API 透传，需要另设计 picker）
+- **验证**：minipgm typecheck PASS + 49 tests PASS + 全 monorepo 273 tests PASS
+
 ---
 
 ## 11. References

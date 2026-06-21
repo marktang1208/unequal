@@ -39,6 +39,10 @@ export interface HistoryEntry {
 export interface ChatRequest {
   q: string;
   session_id?: string;
+  /** M7-B: 限定 sourceType 列表（如 ["pdf", "webpage"]）；undefined = 不过滤 */
+  source_types?: string[];
+  /** M7-B: 排除 sourceId 列表；undefined = 不排除 */
+  exclude_source_ids?: string[];
 }
 
 export interface ChatCitation {
