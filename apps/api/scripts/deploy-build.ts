@@ -1,14 +1,28 @@
 /**
- * CP-6: Bundle src/index.ts → functions/api-router/（esbuild）
+ * CP-7-C #5: Bundle src/index.ts → miniprogram cloudfunctions (esbuild)
+ *
+ * 单一路径：bundle 直接写到 apps/miniprogram/cloudfunctions/api-router/
+ * 这样 `tcb fn deploy api-router`（从 PWD 推断）能直接读到最新 bundle，
+ * 不需要 `cp` 同步。
+ *
+ * 前置：appRoot 有 apps/miniprogram/cloudfunctions/（monorepo 布局固定）
  */
 import { build } from "esbuild";
-import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { writeFileSync, mkdirSync, readFileSync, existsSync, rmSync } from "node:fs";
+import { join, dirname } from "node:path";
 
-const FUNC_DIR = join(process.cwd(), "functions/api-router");
+const APP_ROOT = join(process.cwd(), "../..");
+const FUNC_DIR = join(APP_ROOT, "apps/miniprogram/cloudfunctions/api-router");
 mkdirSync(FUNC_DIR, { recursive: true });
 
-console.log("[deploy:build] bundling src/index.ts → functions/api-router/...");
+// 兼容老路径：apps/api/functions/api-router/ — 删掉避免误用
+const OLD_FUNC_DIR = join(process.cwd(), "functions/api-router");
+if (existsSync(OLD_FUNC_DIR)) {
+  rmSync(OLD_FUNC_DIR, { recursive: true, force: true });
+  console.log(`[deploy:build] 🧹 清理老 bundle 路径 ${OLD_FUNC_DIR}`);
+}
+
+console.log(`[deploy:build] bundling src/index.ts → ${FUNC_DIR}/index.js`);
 
 await build({
   entryPoints: ["src/index.ts"],

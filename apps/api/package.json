@@ -13,9 +13,9 @@
     "deploy:build": "tsx scripts/deploy-build.ts",
     "deploy:collections": "tsx scripts/deploy-collections.ts",
     "deploy:indexes": "tsx scripts/deploy-indexes.ts",
-    "deploy:functions": "bash scripts/deploy-functions.sh",
     "deploy:secrets": "tsx scripts/deploy-secrets.ts",
-    "deploy:clean": "tsx scripts/deploy-clean.ts"
+    "deploy:clean": "tsx scripts/deploy-clean.ts",
+    "migrate:schema-ids": "tsx scripts/migrate-schema-ids.ts"
   },
   "dependencies": {
     "@cloudbase/node-sdk": "^3.18.1",

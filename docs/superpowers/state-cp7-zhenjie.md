@@ -215,8 +215,19 @@ CP-7-C 候选（独立项目）—— **2026-06-21 真接全 PASS**：
 - **IP allowlist 扩展**：crawler Mac 出口 = `113.118.175.164`（IPv4）和 `240e:3b4:38e4:8720:11f4:7016:4335:e655`（IPv6 ifconfig 看到的），都已加进 `ADMIN_IP_ALLOWLIST`（共 4 条）
 - **未消耗的新 secret**：`openssl rand -hex 32` 生成了 `285272dd...` 但生产已有 `5852adc6...`，**新 secret 未使用、未 commit**（仅在我本地 shell 打印过；按 zsh subshell 模式已重置）
 
-5. 修 `tcb fn deploy` 流程内化 env vars push（state-cp7-b §6.3 教训 #7）
-6. 把 documents 的 schema id 字段补回（数据迁移；#4 上线后新数据自动正确，仅历史数据需 cleanup）
+5. ✅ 修 `tcb fn deploy` 流程内化 env vars push（CP-7-C #5）— 2026-06-21 真接 PASS：
+   - **新 deploy 流程**（CLI 3.5.7 行为对齐）：
+     - `deploy:build` 直接输出 bundle 到 `apps/miniprogram/cloudfunctions/api-router/`（删 `apps/api/functions/` 老路径）
+     - `deploy:secrets` 分两步：`tcb fn deploy api-router --dir ../miniprogram/cloudfunctions/api-router --force`（代码） + `tcb --config-file cloudbaserc.smoke.json config update fn api-router`（env vars，expect 模拟 tty 选 Override）
+     - `deploy:clean` 分两步：deploy 代码 + `tcb --config-file cloudbaserc.json config update fn api-router`（reset 到 7 stable vars）
+     - 删 `deploy-functions.sh`（被新流程替代）
+     - `deploy:secrets` smoke config 加 `INGEST_PROXY_SECRET`（Override 模式会清所有 vars，必须显式注入保持幂等）
+   - **真接验证**：deploy:secrets 后云端 13 env vars 完整保留（含 INGEST_PROXY_SECRET）
+6. ✅ 把 documents 的 schema id 字段补回（CP-7-C #6 数据迁移）— 2026-06-21 真接 PASS：
+   - **迁移范围**：document 5 + chunk 12 + source 10 + user 1 = **28 records**（chat_session 0/17 已正确）
+   - **新脚本**：`apps/api/scripts/migrate-schema-ids.ts`（`pnpm -F api migrate:schema-ids [--apply]`）
+   - **特性**：dry-run 默认 true + 自动 dump 备份到 `/tmp/migration-backup-{ts}.json`（含 collection/_id/oldId/newId）支持回滚；filter 用 `$or` 覆盖 `id==""`、`id==null`、id 字段缺失 3 种情况
+   - **真接验证**：apply 28/28 成功；迁移后 4 个 collection count `id==""` 全部为 0
 
 ---
 
