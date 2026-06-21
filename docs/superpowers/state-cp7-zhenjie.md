@@ -251,6 +251,21 @@ LLM model 跨 handler 一致性 + 引用格式统一 — 真接 PASS：
 - shared 单测：48 → 49 tests（含 D-2 prompt 验证）
 - deploy: 13 env vars 完整保留（deploy:secrets 两步法）
 
+### 9.4 完整 6 步 smoke 真接（2026-06-21 12:30）
+
+CP-7-C + CP-7-D 上线后跑 admin 6 步 smoke（state-cp6 §4），全 PASS：
+
+| # | Step | 结果 | 关键数据 |
+|---|---|---|---|
+| 1 | `/api-health` | ✅ 200 | `{ok:true, environment:production}` |
+| 2 | `/api-auth-admin-login` | ✅ 200 | JWT 长度 205（admin scope）|
+| 3 | `/api-upload` | ✅ 200 | 1 source + 1 doc + 1 chunk 插入（`smoke-cp7cd.md`）|
+| 4 | `/api-search?q=发烧` | ✅ 200 | 5 results（top score 0.758）|
+| 5 | `/api-ask` | ✅ 200 | answer 含 `[1][2][3][4]` 内联引用，citations 4 个（**D-2-a 真接 PASS**）|
+| 6 | `/api-stats` | ✅ 200 | `{total:25, totalSuccess:19, totalFailed:6, last24h:1, last24hFailed:0}` |
+
+**结论**：CP-7-C（deploy 流程 + 28 records 迁移）+ CP-7-D（model 抽 env + 引用统一 [N]）端到端稳定。spec §4 step 5 期望已更新（删 JSON 块描述）。
+
 ---
 
 ## 10. References

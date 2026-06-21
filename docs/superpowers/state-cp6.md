@@ -143,7 +143,8 @@ curl -sf -X POST $API/api-ask \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"q":"5个月宝宝发烧怎么办"}' | jq '.answer // ., .citations // "no citations"'
-# 期望: 完整 RAG 链路；answer 含 [1][2] 引用 + 末尾 {"citations":[1,2]} JSON
+# 期望: 完整 RAG 链路；answer 含 [1][2] 内联引用 + citations 数组含 title/snippet/chunkId
+# CP-7-D #2-a 2026-06-21 改：删 {"citations":[...]} JSON 块，引用统一 [N]（对齐 api-chat）
 
 # Step 6: stats
 curl -sf $API/api-stats \
