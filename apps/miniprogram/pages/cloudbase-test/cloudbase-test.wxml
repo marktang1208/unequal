@@ -1,0 +1,38 @@
+<view class="page">
+  <view class="header">
+    <text class="title">CloudBase callFunction 测试</text>
+    <text class="env">env: {{envId}}</text>
+  </view>
+
+  <view class="actions">
+    <button
+      class="btn-primary"
+      bindtap="onRunAll"
+      disabled="{{running}}"
+    >{{running ? '测试中…' : '跑全部 3 个测试'}}</button>
+    <button class="btn-secondary" bindtap="onClear">清空</button>
+  </view>
+
+  <view class="results">
+    <view
+      class="result {{item.ok ? 'ok' : 'fail'}}"
+      wx:for="{{results}}"
+      wx:key="latencyMs"
+    >
+      <view class="result-header">
+        <text class="status">{{item.ok ? '✓' : '✗'}}</text>
+        <text class="code">HTTP {{item.httpStatus}}</text>
+        <text class="latency">{{item.latencyMs}}ms</text>
+      </view>
+      <view class="body">{{item.body}}</view>
+      <view class="error" wx:if="{{item.error}}">{{item.error}}</view>
+    </view>
+  </view>
+
+  <view class="hint" wx:if="{{results.length === 0 && !running}}">
+    <text>点上面按钮测 3 个端点：</text>
+    <text>  · GET /api-health</text>
+    <text>  · GET /</text>
+    <text>  · POST /api-search</text>
+  </view>
+</view>
