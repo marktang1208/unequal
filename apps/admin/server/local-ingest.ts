@@ -16,12 +16,17 @@ import { StatusStore } from "./status-store.js";
 import { ConcurrencyGate } from "./concurrency-gate.js";
 import { FallbackDetector } from "./fallback-detector.js";
 import { probeOmlx } from "./omlx-probe.js";
+import { LocalParser } from "./local-parser.js";
+import { LocalEmbedder } from "./local-embedder.js";
+import { CloudPusher } from "./cloud-pusher.js";
+import { chunkText } from "./chunker.js";
 import { randomUUID } from "node:crypto";
 
 let _store: StatusStore | null = null;
 let _orchestrator: IngestOrchestrator | null = null;
 let _gate: ConcurrencyGate | null = null;
 let _fallback: FallbackDetector | null = null;
+let _initialized = false;
 
 /** 测试用：注入自定义 deps（避免 module-level 单例） */
 export function __setDepsForTest(deps: {
@@ -42,6 +47,21 @@ export function __resetForTest(): void {
   _orchestrator = null;
   _gate = null;
   _fallback = null;
+  _initialized = false;
+}
+
+/**
+ * 生产初始化：注入真实 LocalParser + LocalEmbedder + CloudPusher + chunker。
+ * dev server 启动时调一次（idempotent）。
+ */
+export function initProductionDeps(): void {
+  if (_initialized) return;
+  const { orchestrator } = deps();
+  orchestrator.setParser(new LocalParser());
+  orchestrator.setEmbedder(new LocalEmbedder());
+  orchestrator.setPusher(new CloudPusher());
+  orchestrator.setChunker({ chunkText });
+  _initialized = true;
 }
 
 function deps() {

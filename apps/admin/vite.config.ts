@@ -11,7 +11,7 @@
  */
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import { localIngestMiddleware } from "./server/local-ingest.js";
+import { localIngestMiddleware, initProductionDeps } from "./server/local-ingest.js";
 
 export default defineConfig({
   plugins: [
@@ -19,6 +19,8 @@ export default defineConfig({
     {
       name: "local-ingest-middleware",
       configureServer(server) {
+        // 启动时注入真实 Parser/Embedder/Pusher/Chunker
+        initProductionDeps();
         server.middlewares.use(localIngestMiddleware);
       },
     },
