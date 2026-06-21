@@ -1,6 +1,6 @@
 /**
- * api-search handler（CP-6 Phase 4 完整实现）
- * GET /api-search?q=...
+ * api-search handler（CP-6 Phase 4 完整实现 + M7-B source 过滤）
+ * GET /api-search?q=...&topK=10&sourceType=pdf,webpage&excludeSourceIds=id1,id2
  *
  * admin auth + MiniMax embedding + brute-force cosine via shared/retrieval
  */
@@ -35,11 +35,21 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
 
   const topK = parseInt(getQuery(event, "topK") ?? "10", 10);
 
+  // M7-B: source 过滤参数（逗号分隔）
+  const sourceTypesRaw = getQuery(event, "sourceType");
+  const sourceTypes = sourceTypesRaw
+    ? sourceTypesRaw.split(",").map((s) => s.trim()).filter(Boolean)
+    : undefined;
+  const excludeSourceIdsRaw = getQuery(event, "excludeSourceIds");
+  const excludeSourceIds = excludeSourceIdsRaw
+    ? excludeSourceIdsRaw.split(",").map((s) => s.trim()).filter(Boolean)
+    : undefined;
+
   // embed query
   const embed = createMiniMaxEmbedder({
     apiKey: env.MINIMAX_API_KEY,
     baseUrl: env.MINIMAX_BASE_URL,
-    model: "embo-01",
+    model: env.EMBED_MODEL,
   });
   const queryVec = (await embed.embed([q]))[0] ?? [];
 
@@ -67,10 +77,16 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
     userId: env.DEFAULT_USER_ID,
     queryVector: queryVec,
     topK,
+    ...(sourceTypes ? { sourceTypes } : {}),
+    ...(excludeSourceIds ? { excludeSourceIds } : {}),
   });
 
   return jsonResponse({
     query: q,
+    filters: {
+      ...(sourceTypes ? { sourceTypes } : {}),
+      ...(excludeSourceIds ? { excludeSourceIds } : {}),
+    },
     results: results.map((r) => ({
       chunkId: r.chunkId,
       score: r.finalScore,

@@ -22,6 +22,8 @@ export interface ChunkWithEmbedding {
   _id?: string;
   documentId: string;
   sourceId: string;
+  /** M7-B: source 类型（webpage/pdf/xiaohongshu/wechat-mp 等），用于过滤 */
+  sourceType?: string;
   userId: string;
   idx: number;
   content: string;
@@ -40,6 +42,20 @@ export interface SearchOptions {
   trustWeightMap?: Record<TrustLevel, number>;
   /** 多召回数量（默认 topK * 4 给 trust 加权留余量） */
   recallMultiplier?: number;
+  /** M7-B: 限定 sourceType（如 ["pdf","webpage"]）；undefined = 不过滤 */
+  sourceTypes?: string[];
+  /** M7-B: 排除这些 sourceId；undefined = 不排除 */
+  excludeSourceIds?: string[];
+  /** M7-A: 时间衰减半衰期（天）；新文章 boost。0 或 undefined = 不衰减 */
+  recencyHalfLifeDays?: number;
+}
+
+/** M7-A: 时间衰减权重（指数衰减） */
+function recencyWeight(createdAt: number, halfLifeDays: number, nowMs: number): number {
+  if (halfLifeDays <= 0) return 1.0;
+  const ageDays = (nowMs - createdAt) / (1000 * 60 * 60 * 24);
+  if (ageDays <= 0) return 1.0;
+  return Math.pow(0.5, ageDays / halfLifeDays);
 }
 
 export interface SearchResult {
@@ -69,13 +85,26 @@ export function cosineSimilarity(a: number[], b: number[]): number {
 
 export async function searchChunks(opts: SearchOptions): Promise<SearchResult[]> {
   const weights = opts.trustWeightMap ?? DEFAULT_TRUST_WEIGHTS;
+  const now = Date.now();
+  const halfLife = opts.recencyHalfLifeDays ?? 0; // 默认不衰减（CP-7 行为不变）
 
   // 拉所有 user chunks（生产实现带分页；test mock 简单）
   const chunks = await opts.fetchChunksByUser(opts.userId);
 
-  // 计算每 chunk cosine + trust 加权
+  // M7-B: source 过滤（先过滤再算 cosine，省 CPU）
+  const filtered = chunks.filter((c) => {
+    if (opts.sourceTypes && opts.sourceTypes.length > 0) {
+      if (!c.sourceType || !opts.sourceTypes.includes(c.sourceType)) return false;
+    }
+    if (opts.excludeSourceIds && opts.excludeSourceIds.length > 0) {
+      if (opts.excludeSourceIds.includes(c.sourceId)) return false;
+    }
+    return true;
+  });
+
+  // 计算每 chunk cosine + trust + recency 加权
   const scored: SearchResult[] = [];
-  for (const c of chunks) {
+  for (const c of filtered) {
     let score: number;
     try {
       score = cosineSimilarity(opts.queryVector, c.embedding);
@@ -83,21 +112,23 @@ export async function searchChunks(opts: SearchOptions): Promise<SearchResult[]>
       // 维度不一致 → 跳过该 chunk（防御）
       continue;
     }
-    const weight = weights[c.trustLevel] ?? 1.0;
+    const trustW = weights[c.trustLevel] ?? 1.0;
+    const recencyW = recencyWeight(c.createdAt, halfLife, now);
     scored.push({
       chunkId: c._id ?? c.id,
       vectorizeScore: score,
-      finalScore: score * weight,
+      // M7-A: 加权组合 = cosine × trust × recency
+      finalScore: score * trustW * recencyW,
       trustLevel: c.trustLevel,
     });
   }
 
   // score threshold 过滤
-  const filtered = opts.scoreThreshold !== undefined
+  const final = opts.scoreThreshold !== undefined
     ? scored.filter((s) => s.finalScore >= opts.scoreThreshold!)
     : scored;
 
   // 排序 + 截断
-  filtered.sort((a, b) => b.finalScore - a.finalScore);
-  return filtered.slice(0, opts.topK);
+  final.sort((a, b) => b.finalScore - a.finalScore);
+  return final.slice(0, opts.topK);
 }

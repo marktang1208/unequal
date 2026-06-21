@@ -266,9 +266,42 @@ CP-7-C + CP-7-D 上线后跑 admin 6 步 smoke（state-cp6 §4），全 PASS：
 
 **结论**：CP-7-C（deploy 流程 + 28 records 迁移）+ CP-7-D（model 抽 env + 引用统一 [N]）端到端稳定。spec §4 step 5 期望已更新（删 JSON 块描述）。
 
+## 10. M7 真实用户场景（2026-06-21）
+
+3 个子能力全部 PASS：
+
+### 10.1 M7-B: 按 source 过滤
+
+- **改动**：`packages/shared/src/retrieval.ts` `searchChunks` 加 `sourceTypes?: string[]` + `excludeSourceIds?: string[]` 过滤；`api-search` 加 query param `?sourceType=pdf&excludeSourceIds=...`；`api-ask` + `api-chat` body field 透传
+- **测试**：`shared` 6 个新 filter 用例（限定 type / 多选 / 排除 source / 组合 / 空数组兼容 / untyped 防御）
+- **真接验证**：
+  - 不带 filter → 5 results
+  - `?sourceType=pdf` → 0 results（所有 chunks 都没 sourceType 字段，被防御性过滤）
+
+### 10.2 M7-C: 多用户隔离加固
+
+- **改动**：
+  - `apps/api/src/lib/audit.ts` 加 `result: "denied"` 状态 + `actor.userId` 字段
+  - `apps/api/src/lib/owner-check.ts` 新增 `assertOwner` helper（JWT userId != resource ownerId → 401 UNAUTHORIZED + audit recordAudit(result=denied)）
+  - 5 个单测覆盖：happy / denied 401 / denied 写 audit / audit 失败防御 / clientIp 透传
+- **现状**：handler 现成的 owner check（chat 用 userId 过滤 / sessions-rename/delete 显式 check / nickname 用 JWT.userId 直接查）已经防越权；owner-check helper 准备好给 future user/document/chunk/source 扩用
+
+### 10.3 M7-A: 多源混排
+
+- **改动**：`searchChunks` 加 `recencyHalfLifeDays`（默认 0 = 不衰减，保持 CP-7 行为）。加权组合 = cosine × trust × recency
+- **diversity 暂未实现**：SearchResult 不带 sourceId，v1 不做（未来 SearchResult 加 sourceId 字段后可 apply）
+- **测试**：3 个新 recency 用例（半衰期 0 = 不衰减 / 30 天半衰期 / trust + recency 叠加）
+
+### 10.4 M7 测试 + 部署
+
+- `shared` 49 → 58 tests（+6 M7-B + +3 M7-A）
+- `api` 108 → 113 tests（+5 owner-check）
+- 全 monorepo: **273 tests** all PASS（api 113 + shared 58 + minipgm 49 + crawler 29 + admin 24）
+- deploy: api-router 13 env vars 完整保留
+
 ---
 
-## 10. References
+## 11. References
 
 - **CP-7-A state**：`docs/superpowers/state-cp7-a.md`
 - **CP-7-B state**：`docs/superpowers/state-cp7-b.md`

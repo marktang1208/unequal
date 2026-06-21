@@ -14,24 +14,30 @@ import { COLLECTIONS } from "./collections.js";
 export interface AuditEntry {
   id: string;
   timestamp: number;
-  action: "ingest";
+  action: "ingest" | "session_rename" | "session_delete" | "nickname_update";
   actor: {
-    via: "admin_token" | "admin_jwt" | "ingest_proxy";
+    via: "admin_token" | "admin_jwt" | "ingest_proxy" | "jwt_user";
     clientIp: string;
     tokenFingerprint?: string;
+    /** M7-C: 越权 / 非 admin 路径需记当前 userId */
+    userId?: string;
   };
   target: {
     userId: string;
     sourceId?: string;
     documentId?: string;
     chunksInserted?: number;
+    /** M7-C: 越权审计用 */
+    resourceId?: string;
+    resourceType?: "chat_session" | "user" | "document" | "chunk" | "source";
   };
   request: {
     contentLen: number;
     trustLevel: number;
     title?: string;
   };
-  result: "success" | "failure" | "in_progress";
+  /** M7-C: 加 "denied" 表示越权 attempt（owner check 失败） */
+  result: "success" | "failure" | "in_progress" | "denied";
   error?: string;
   requestId: string;
 }

@@ -24,6 +24,10 @@ import type { ChatSession, ChatMessage, Chunk, Document } from "@unequal/shared/
 interface ChatRequest {
   q: string;
   session_id?: string;
+  /** M7-B: 限定 sourceType 列表 */
+  sourceTypes?: string[];
+  /** M7-B: 排除 sourceId 列表 */
+  excludeSourceIds?: string[];
 }
 
 interface ChatResponse {
@@ -93,6 +97,9 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
   if (!q) {
     return errorResponse("INVALID_REQUEST", "Empty 'q'", 400);
   }
+  // M7-B: source 过滤（可选）
+  const sourceTypes = body.sourceTypes && body.sourceTypes.length > 0 ? body.sourceTypes : undefined;
+  const excludeSourceIds = body.excludeSourceIds && body.excludeSourceIds.length > 0 ? body.excludeSourceIds : undefined;
   const sessionId = body.session_id ?? getQuery(event, "session_id");
 
   // 1. 查找/创建 session
@@ -144,6 +151,8 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
     queryVector: queryVec,
     topK: 5,
     scoreThreshold: 0.3,
+    ...(sourceTypes ? { sourceTypes } : {}),
+    ...(excludeSourceIds ? { excludeSourceIds } : {}),
   });
 
   // 3. 取 doc titles
