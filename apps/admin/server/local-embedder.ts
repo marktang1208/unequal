@@ -1,11 +1,19 @@
 /**
- * CP-7-C: LocalEmbedder — OMLX (bge-m3) embedding
+ * CP-7-C: LocalEmbedder — OMLX (Qwen3-Embedding-4B) embedding
  *
- * OMLX 提供 OpenAI 兼容 API：http://localhost:11434/v1
- * 默认 model: bge-m3 (matryoshka 1536 维)
+ * OMLX 提供 OpenAI 兼容 API：http://localhost:8000/v1
+ * 默认 model: Qwen3-Embedding-4B-4bit-DWQ (matryoshka 1536 维)
  *
- * 设计：注入式构造（测试可 mock OpenAI client）
- * 错误分类：OMLX_Unavailable / OOM / DimensionMismatch
+ * 设计：
+ * - Qwen3-Embedding 支持 matryoshka 截断：通过 `dimensions` 参数指定输出维度
+ * - 1536 维跟 CloudBase MiniMax 默认对齐（api-router cosineSimilarity 通过）
+ * - 注入式构造（测试可 mock OpenAI client）
+ *
+ * 错误分类：OMLX_Unavailable / OOM / DimensionMismatch / Unknown
+ *
+ * v2 变更（2026-06-22）：
+ * - 从 bge-m3 (1024 维锁死) 改为 Qwen3-Embedding-4B-4bit-DWQ (matryoshka → 1536)
+ * - 原因：cosineSimilarity 要 a.length===b.length，admin 存 1024 跟 MiniMax 1536 冲突
  */
 
 import OpenAI from "openai";
@@ -19,12 +27,12 @@ export class EmbedError extends Error {
 }
 
 export const EXPECTED_DIM = 1536;
-export const DEFAULT_MODEL = "bge-m3";
-export const OMLX_BASE_URL = "http://localhost:11434/v1";
+export const DEFAULT_MODEL = "Qwen3-Embedding-4B-4bit-DWQ";
+export const OMLX_BASE_URL = "http://localhost:8000/v1";
 
 export interface LocalEmbedderOptions {
   baseUrl?: string;
-  apiKey?: string;          // OMLX 不需要但 OpenAI SDK 必填（"ollama" 即可）
+  apiKey?: string;          // OMLX 不需要但 OpenAI SDK 必填（"mark" 即可）
   model?: string;
   fetchImpl?: typeof fetch;  // 测试用
 }
@@ -38,7 +46,7 @@ export class LocalEmbedder {
     this.baseUrl = opts.baseUrl ?? OMLX_BASE_URL;
     this.model = opts.model ?? DEFAULT_MODEL;
     this.client = new OpenAI({
-      apiKey: opts.apiKey ?? "ollama",  // OMLX 不校验
+      apiKey: opts.apiKey ?? "mark",  // OMLX 默认 key "mark"，见 ~/.omlx/settings.json
       baseURL: this.baseUrl,
       // OMLX 部署在 Mac 本地，测试环境也是 Node，但 OpenAI SDK 4.x+ 默认拒绝 browser-like env
       dangerouslyAllowBrowser: true,
@@ -55,6 +63,8 @@ export class LocalEmbedder {
         model: this.model,
         input: texts,
         encoding_format: "float",
+        // matryoshka 截断到 EXPECTED_DIM；OMLX bge-m3 不支持但 Qwen3-Embedding 支持
+        dimensions: EXPECTED_DIM,
       };
       const resp = await this.client.embeddings.create(params);
       const vectors = resp.data.map((d) => d.embedding);
