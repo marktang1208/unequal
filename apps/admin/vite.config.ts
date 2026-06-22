@@ -19,8 +19,9 @@ export default defineConfig({
     {
       name: "local-ingest-middleware",
       configureServer(server) {
-        // 启动时注入真实 Parser/Embedder/Pusher/Chunker
-        initProductionDeps();
+        // 启动时异步注入真实 Parser/Embedder/Pusher/Chunker
+        // 不能 await：configureServer 是 sync；middleware 在第一次请求时已经初始化
+        void initProductionDeps();
         server.middlewares.use(localIngestMiddleware);
       },
     },

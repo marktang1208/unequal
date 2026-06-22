@@ -17,9 +17,10 @@ import { ConcurrencyGate } from "./concurrency-gate.js";
 import { FallbackDetector } from "./fallback-detector.js";
 import { probeOmlx } from "./omlx-probe.js";
 import { LocalParser } from "./local-parser.js";
-import { LocalEmbedder } from "./local-embedder.js";
 import { CloudPusher } from "./cloud-pusher.js";
 import { chunkText } from "./chunker.js";
+import { initConfig, type AppConfig } from "./config.js";
+import { createEmbedder } from "./embedder-factory.js";
 import { randomUUID } from "node:crypto";
 
 let _store: StatusStore | null = null;
@@ -51,17 +52,19 @@ export function __resetForTest(): void {
 }
 
 /**
- * 生产初始化：注入真实 LocalParser + LocalEmbedder + CloudPusher + chunker。
+ * 生产初始化：按 config 创建 Embedder（local OMLX 或 cloud MiniMax），注入 Parser/Pusher/Chunker。
  * dev server 启动时调一次（idempotent）。
  */
-export function initProductionDeps(): void {
+export async function initProductionDeps(): Promise<void> {
   if (_initialized) return;
   const { orchestrator } = deps();
+  const config = await initConfig();
   orchestrator.setParser(new LocalParser());
-  orchestrator.setEmbedder(new LocalEmbedder());
+  orchestrator.setEmbedder(createEmbedder(config.embed));
   orchestrator.setPusher(new CloudPusher());
   orchestrator.setChunker({ chunkText });
   _initialized = true;
+  console.log(`[local-ingest] Embedder: ${config.embed.provider} (model=${config.embed.omlxModel ?? config.embed.cloudModel})`);
 }
 
 function deps() {
