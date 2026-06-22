@@ -1298,10 +1298,9 @@ mock-first 实现：
 - `pnpm -r typecheck` — 5 包全绿
 - 累计：**154 用例全绿**（master 143 + 净 +11）
 
-### CP-7-A 限制（mock-first 已知）
+### CP-7-A 限制
 
-- 真实 wx.cloud.callFunction 协议未在 CI 跑（mock-first；CP-7 真接时验证）
-- renameSession / updateNickname 后端 404（CP-7-B 独立项目；cloudCall 抛 ApiError(404) caller 降级）
+- 真实 wx.cloud.callFunction 协议未在 CI 自动化（CP-7 真接 2026-06-20 已 PASS，见下文「CP-7 真接」段）
 - 不做 callFunction retry/backoff（仅 1 次 refresh；YAGNI）
 
 详见 `docs/superpowers/state-cp7-a.md`（含 commit 汇总 + 真接路径 + 教训）。
@@ -1344,13 +1343,74 @@ mock-first 实现：
 - `pnpm -F admin build` — 成功（202.97 kB JS / 15.67 kB CSS）
 - 累计：**204 用例全绿**（CP-7-A 后 154 + CP-7-B 净 +50）
 
-### CP-7-B 限制（mock-first 已知）
+### CP-7-B 限制
 
-- 真实 wx.cloud.callFunction 协议未在 CI 跑（mock-first；CP-7 真接时验证）
-- `[N]` 富文本仅 toast 显示，不 scrollToCard（CP-7-C/D 推）
-- 不做 `chat` 与 `ask` 引用格式统一（chat 用 inline `[N]`，ask 用 JSON 块；CP-7-D 推）
+- 真实 wx.cloud.callFunction 协议未在 CI 自动化（CP-7 真接 2026-06-20 已 PASS，见下文「CP-7 真接」段）
+- `[N]` 富文本点击仅 toast 提示，不 scrollToCard（M8 候选）
+- `chat` 与 `ask` 引用格式在 CP-7-D 已统一为 inline `[N]`（详见 state-cp7-zhenjie.md §9.2）
 
 详见 `docs/superpowers/state-cp7-b.md`（含 commit 汇总 + 真接路径 + 教训 + 下一步）。
+
+---
+
+## CP-7 真接状态（已 PASS）
+
+**完成日期**：2026-06-20（真接初次 PASS），后续配套延伸至 2026-06-22
+**Tag**：`cp7-zhenjie-archived`（指向初次真接 PASS 提交 `8cfb5d8`，后续 CP-7-C/D/M7/P2/P3-7 配套在 master 持续累加）
+**State**：`docs/superpowers/state-cp7-zhenjie.md`
+
+跑通：miniprogram + CloudBase + admin 端到端真接验证 — 9 轮真接迭代修复 4 处串联 bug，最终全链路 PASS（wx-login → JWT → callFunction → RAG 检索 → `[N]` 富文本可点击 → 06 童心日历设计风格）。
+
+### 真接成果
+
+| 段 | 状态 | 关键数据 |
+|---|---|---|
+| wx-login → JWT | ✅ | JWT.sub = CloudBase `_id`（修 CP-6 隐藏 bug） |
+| 7 caller 全部 cloudCall | ✅ | 删 wxRequestAsFetch / fetchWithRefresh / inflightEnsureJwt |
+| rename / nickname 2 新 handler | ✅ | PATCH endpoint 走通 |
+| `[N]` 富文本可点击 | ✅ | showToast 显示真引用标题 |
+| 06 童心日历设计语言 | ✅ | 米黄背景 + 粗描边 + 暖橙 chip |
+| RAG 检索 + citation title 映射 | ✅ | cosine 相似度正确命中（修 chunkId/_id 字段对齐 bug）|
+| source picker 过滤（minipgm UI）| ✅ | M7-B chip 多选 |
+
+### 真接后配套
+
+| 段 | State 段 | 累计 commit |
+|---|---|---|
+| CP-7-C 6 子项（deploy 内化 + ingest 鉴权 + 28 records 迁移）| state §8 | `fcc3693` / `be61e1c` / `f5ae83e` / `62734ab` 等 |
+| CP-7-D（model 抽 env + 引用格式统一 `[N]`）| state §9 | `010b41b` 等 |
+| M7（按 source 过滤 + 多用户隔离 + 多源混排）| state §10 |  |
+| P2 清理（LLM Provider 抽象 + 弃用 /api-upload v3）| state §12 | `0ed2bd5` |
+| P3-7（本地 crawler + 手动推送闭环）| state §13 | `378d256` / `603635c` / `7da32bf` / `b101c5c` / `53dbc6f` / `2868af9` |
+| P3-7 v1 简化补完（种子 URL 库）| state §14 | `1f30a54` / `a9b2047` |
+
+### 累计测试
+
+| 包 | 测试数 |
+|---|---|
+| apps/api | 129 |
+| apps/admin | 162 |
+| apps/miniprogram | 49 |
+| apps/crawler | 49 |
+| packages/shared | 58 |
+| packages/local-llm | 51 |
+| **累计** | **498** all PASS |
+
+### 资源
+
+| 资源 | 值 |
+|---|---|
+| CloudBase env | `unequal-d4ggf7rwg82e0900b` |
+| CloudBase appid | `1444590671` |
+| Gateway URL | `https://unequal-d4ggf7rwg82e0900b-1444590671.ap-shanghai.app.tcloudbase.com` |
+| Mini-program AppID | `wxf5b8ce05a977f0c6` |
+
+### 真接 9 轮关键 bug 修复
+
+1. **JWT.sub 是空字符串**（commit `b7bee4a`）：CP-6 时代 wx-login 用 `user.id = ""` 签 JWT，所有 user-scope 调用 userId="" 写库
+2. **chunkId/_id 字段不对齐**（commit `010b41b`）：`searchChunks` 返 `_id ?? id` 但 chat find 用 `c.id` → 永远查不到
+3. **esbuild TDZ 陷阱**（commit `9bf72ee`）：dynamic import 重复声明已静态 import 的变量
+4. **小程序 wxss 兼容性**（commit `7b68b1b` + `9310e29`）：rpx < 2 被吃 + scroll-view 裁 shadow
 
 ---
 
