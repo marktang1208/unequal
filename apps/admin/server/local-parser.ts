@@ -4,18 +4,19 @@
  * 入口：parseAuto(tmpData, ext, filename) → Promise<markdown>
  *
  * 5 类：
- *   - pdf:  spawn mineru CLI（用户已装；输出 stdout 即 markdown）
+ *   - pdf:  spawn mineru CLI（首选；失败 fallback 到 pdf-parse）
  *   - docx: mammoth.extractRawText（输出文本 + 简单 markdown 包装）
  *   - html: cheerio 提取 main + readability-style 模板
  *   - txt:  utf-8 直接读
  *   - md:   utf-8 原样
  *
  * 错误分类（spec §5.1）：
- *   - ParseFailedError: PDF 损坏 / docx 加密 / mineru 失败
+ *   - ParseFailedError: PDF 损坏 / docx 加密 / mineru + pdf-parse 都失败
  *   - UnsupportedExtError: 未知扩展名
  *
- * mineru 集成策略：spawn 调本地 mineru CLI，output_format=markdown；
- *   失败时抛 ParseFailedError（v1 暂不支持 fallback pdf-parse）。
+ * mineru 集成策略：spawn 调本地 mineru CLI（hybrid-auto-engine / pipeline backend），
+ *   失败时 fallback 到 pdf-parse@1.1.1（v1 老路径；老 pdfjs 解析率低但能跑）。
+ *   pdf-parse 也失败才抛 ParseFailedError（retryable=false）。
  */
 
 import mammoth from "mammoth";
@@ -25,6 +26,9 @@ import { randomUUID } from "node:crypto";
 import { writeFileSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+// @ts-expect-error - pdf-parse 无 types
+import pdfParse from "pdf-parse/lib/pdf-parse.js";
 
 export type SupportedExt = "pdf" | "docx" | "html" | "txt" | "md";
 
@@ -69,31 +73,65 @@ export class LocalParser {
     }
   }
 
-  /** PDF → markdown：spawn mineru CLI
-   * mineru 调用：`mineru -p <input> -o <output_dir> -f md` (v1 标准)
-   * 输出文件：<output_dir>/<input_stem>/auto/<input_stem>.md
+  /** PDF → markdown：try mineru first, fallback pdf-parse on failure
+   * mineru 3.2.3 CLI：
+   *   mineru -p <input> -o <output_dir> [-m auto] [-b hybrid-auto-engine]
+   *   默认输出 markdown（-f 是 --formula boolean）
+   * 输出结构：<output_dir>/<input_stem>/auto/<input_stem>.md
+   *
+   * Fallback：mineru 失败（缺模型 / GFW / spawn fail）→ pdf-parse@1.1.1
+   *   pdf-parse 老 pdfjs 解析率低但能跑（牺牲质量换可用性）
    */
   private async parsePdf(buf: Buffer, filename: string): Promise<string> {
-    // 写 buffer 到 tmp 文件
+    try {
+      return await this.parsePdfMineru(buf, filename);
+    } catch (mineruErr) {
+      console.warn(`[LocalParser] mineru failed for ${filename}, falling back to pdf-parse: ${(mineruErr as Error).message}`);
+      try {
+        return await this.parsePdfFallback(buf, filename);
+      } catch (fallbackErr) {
+        // 两个都失败 → 抛 ParseFailedError
+        throw new ParseFailedError(
+          `Both mineru and pdf-parse failed: mineru=${(mineruErr as Error).message}; pdf-parse=${(fallbackErr as Error).message}`,
+          { cause: fallbackErr },
+        );
+      }
+    }
+  }
+
+  /** mineru 路径（首选） */
+  private async parsePdfMineru(buf: Buffer, filename: string): Promise<string> {
     const tmpDir = mkdtempSync(join(tmpdir(), "local-parser-pdf-"));
     const inputPath = join(tmpDir, filename);
     writeFileSync(inputPath, buf);
 
+    // 默认 30 分钟；测试环境用 LOCAL_PARSER_MINERU_TIMEOUT_MS=10000 快速 fail 让 fallback 跑
+    const timeoutMs = Number(process.env.LOCAL_PARSER_MINERU_TIMEOUT_MS) || 30 * 60 * 1000;
+    // 模型源：默认 huggingface（中国网络 GFW）；国内用 modelscope 走魔搭镜像
+    //   MINERU_MODEL_SOURCE=modelscope 已在 mineru CLI 3.2.3 支持
+    const mineruEnv: NodeJS.ProcessEnv = { ...process.env };
+    if (process.env.MINERU_MODEL_SOURCE) {
+      mineruEnv.MINERU_MODEL_SOURCE = process.env.MINERU_MODEL_SOURCE;
+    }
+
     try {
-      // 调 mineru CLI（block 等待；30 分钟超时足够）
       await new Promise<void>((resolve, reject) => {
         const child = spawn("mineru", [
           "-p", inputPath,
           "-o", tmpDir,
-          "-f", "md",
-        ], { stdio: ["ignore", "pipe", "pipe"] });
+          "-m", "auto",
+          "-b", "hybrid-auto-engine",
+          "-l", "ch",
+          "-f", "true",
+          "-t", "true",
+        ], { stdio: ["ignore", "pipe", "pipe"], env: mineruEnv });
 
         let stderr = "";
         child.stderr.on("data", (d) => { stderr += d.toString(); });
         const timeout = setTimeout(() => {
           child.kill("SIGTERM");
-          reject(new ParseFailedError("mineru parse timeout (>30min)", { stderr }));
-        }, 30 * 60 * 1000);
+          reject(new ParseFailedError(`mineru parse timeout (>${timeoutMs}ms)`, { stderr }));
+        }, timeoutMs);
 
         child.on("close", (code) => {
           clearTimeout(timeout);
@@ -106,7 +144,6 @@ export class LocalParser {
         });
       });
 
-      // 读 mineru 输出（目录结构：<tmpDir>/<stem>/auto/<stem>.md）
       const stem = filename.replace(/\.pdf$/i, "");
       const outputPath = join(tmpDir, stem, "auto", `${stem}.md`);
       let md: string;
@@ -122,6 +159,16 @@ export class LocalParser {
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }
+  }
+
+  /** pdf-parse fallback（v1 老路径；老 pdfjs 解析） */
+  private async parsePdfFallback(buf: Buffer, filename: string): Promise<string> {
+    const result = await pdfParse(buf);
+    const text = result.text ?? "";
+    if (!text.trim()) {
+      throw new ParseFailedError(`pdf-parse returned empty text for ${filename}`);
+    }
+    return text;
   }
 
   /** docx → markdown：mammoth 提取文本 + 简单标题包装 */
