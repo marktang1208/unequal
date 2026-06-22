@@ -362,10 +362,61 @@ CP-7-C T15 真跑后，admin 端架构从「admin 自己 embed」改为「admin 
 
 ---
 
+## 13. P3-7: 本地 Crawler + 手动推送闭环（2026-06-22）
+
+admin MacBook 本地跑爬虫 + 本地 SQLite 暂存 + admin 手动批量推送到 CloudBase `/api-ingest`。
+3 种触发（每日定时 launchd / CLI / UI 启动）+ LLM Provider 抽象 + 共享 `@unequal/local-llm` 包。
+
+### 13.1 Spec + Plan
+
+- **Spec**：`docs/superpowers/specs/2026-06-22-cp7-p3-7-crawler-manual-push-design.md`（commit `c9211b4`，678 行 10 节）
+  - **范围校准**：用户决策 = admin 本地爬 + 暂存 + 手动推（**minipgm 端不增任何上传入口**）
+  - **核心决策**：复用 `local_ingest` + source 列 / X-Ingest-Proxy-Secret / 过滤+批量选+批量推 / 3 种触发 / 抽 packages/local-llm / 补推列表加列 / 失败单条手动重试 / 凌晨 3 点全量
+- **Plan**：`.claude/plans/cp7-p3-7-crawler-manual-push.plan.md`（4 phase / 4-6 天 / Large）
+
+### 13.2 6 commit 实施链
+
+| Commit | 内容 |
+|---|---|
+| `378d256` | Phase A：抽 `@unequal/local-llm` 共享包（admin + crawler 同源） |
+| `603635c` | Phase B：crawler 改写本地暂存 `ingest-sqlite.ts` + `trigger.ts` + StatusStore 抽到 packages |
+| `7da32bf` | Phase C backend：StatusStore source/metadata/trust_level 列 + middleware 加 `manual-push` / `crawler-start` / `crawler-status` |
+| `b101c5c` | Phase C frontend：PendingPushList + CrawlerStartButton |
+| `53dbc6f` | Phase D：launchd 集成（4 个 scripts）+ tsx 跑 TS |
+| `2868af9` | 真接发现 4 处 bug 修 |
+
+### 13.3 真接发现 + 修的 4 处真实 bug
+
+1. **`trigger.ts` 没传 `source='crawler'` 给 `ingestCrawlerMarkdown`** → crawler 写入 SQLite 时 source 错为 'upload'（fix: 显式传 + 补 unit test）
+2. **`local_ingest` 表 schema 缺 `trust_level` 列**（admin-upload 历史漏洞） → `handleManualPush` 用 `record.trust_level` 必 undefined → fallback 0（fix: StatusStore ALTER TABLE 加列 + create 接受 trust_level + handleUpload 持久化）
+3. **`handleRetry` crawler 路径走 `orchestrator.processFile` 会失败**（crawler 已是 markdown）（fix: handleRetry 分支 source='crawler' 直接 CloudPusher 重推）
+4. **`packages/local-llm` exports map 缺 `default` 条件 + `crawler-spawner.ts` 用 `require('node:fs')`** → 子进程 spawn 失败（fix: exports 加 default fallback + crawler-spawner 改 named import + tsc build to dist）
+
+### 13.4 5 真接场景全 PASS
+
+| # | 场景 | 结果 |
+|---|---|---|
+| 1 | CLI 跑爬 + 写 SQLite 暂存 | ✅ 1 条 pending，source=crawler，markdown 完整 |
+| 2 | admin UI 批量推送 + CloudBase 验证 | ✅ 5 条 done + cloud_source_id/cloud_document_id 全部填好 |
+| 3 | 推送失败 + 单条重试 | ✅ 5.5MB markdown → 413 → failed retryable=1 → retry → done |
+| 4 | admin UI 启动爬虫按钮 | ✅ POST /api/crawler/start → spawn 子进程 → batch trigger 日志 + log_tail 完整 |
+| 5 | launchd 定时任务 | ✅ plist lint + 装 + 触发 + 凌晨 3 点跑通 + 卸 |
+
+### 13.5 累计测试 + 部署
+
+- 全 monorepo：**450 tests** all PASS（minipgm 49 + local-llm 25 + shared 58 + crawler 41 + api 129 + admin 148）
+- typecheck：6 workspaces 干净（新增 packages/local-llm）
+- launchd 装卸脚本工作：`bash scripts/install-crawler-launchd.sh` + `bash scripts/uninstall-crawler-launchd.sh`
+- 真接 5 条都推 CloudBase 成功（admin-upload fallback proxy secret 仍有效）
+
+---
+
 ## 11. References
 
 - **CP-7-A state**：`docs/superpowers/state-cp7-a.md`
 - **CP-7-B state**：`docs/superpowers/state-cp7-b.md`
 - **CP-7 真接 checklist**：`docs/superpowers/cp7-zhenjie-checklist.md`
 - **v2.3 架构修正**（admin 不 embed + API 自己 embed）：`docs/superpowers/state-arch-v2.3.md`
+- **P3-7 spec**：`docs/superpowers/specs/2026-06-22-cp7-p3-7-crawler-manual-push-design.md`
+- **P3-7 plan**：`.claude/plans/cp7-p3-7-crawler-manual-push.plan.md`
 - **测试文章**：https://mp.weixin.qq.com/s/50y5re6jivLGLzd5fTtaTA
