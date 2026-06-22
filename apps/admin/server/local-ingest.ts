@@ -199,6 +199,8 @@ async function handleUpload(req: Connect.IncomingMessage, res: import("node:http
       filename: fp.filename ?? "unknown",
       ext,
       tmp_data: fp.data,        // T2 存内存；T9 改写 .tmp 文件
+      source: "upload",         // P3-7 / Phase C: 显式 source（区分 crawler 路径）
+      trust_level: trustLevel as 0 | 1 | 2 | 3,  // P3-7: 持久化到表（handleManualPush 推送时读）
       status: "pending",
       progress: 0,
       retry_count: 0,
@@ -418,6 +420,12 @@ function handleCrawlerStatus(req: Connect.IncomingMessage, res: import("node:htt
   res.end(JSON.stringify(status));
 }
 
+/**
+ * POST /api/retry?file_id=X
+ *
+ * - source="upload" → 调 orchestrator.processFile（admin-upload 5 态机）
+ * - source="crawler" → 直接调 CloudPusher 重推（crawler 路径已 parse + chunk + embed，无需重跑）
+ */
 async function handleRetry(req: Connect.IncomingMessage, res: import("node:http").ServerResponse, url: URL): Promise<void> {
   const { store, orchestrator } = deps();
   const fileId = url.searchParams.get("file_id");
@@ -440,6 +448,35 @@ async function handleRetry(req: Connect.IncomingMessage, res: import("node:http"
     res.end(JSON.stringify({ error: "NOT_RETRYABLE", message: `file ${fileId} not retryable (status=${record.status})` }));
     return;
   }
+
+  // P3-7: crawler 路径直接 CloudPusher 重推（不调 orchestrator）
+  if (record.source === "crawler") {
+    const pusher = new CloudPusher();
+    store.resetForRetry(fileId);
+    store.update(fileId, { status: "pushing", retry_count: record.retry_count + 1 });
+    try {
+      const pushResult = await pusher.push({
+        content: record.markdown ?? "",
+        title: record.filename,
+        url: record.filename,
+        trust_level: (record.trust_level ?? 0) as 0 | 1 | 2 | 3,
+      });
+      store.markDone(fileId, pushResult.source_id, pushResult.document_id);
+      res.statusCode = 200;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ file_id: fileId, status: "done", source_id: pushResult.source_id }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const isRetryable = (record.retry_count + 1) < 3;
+      store.markFailed(fileId, "PUSH_FAILED", msg, isRetryable);
+      res.statusCode = 200;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ file_id: fileId, status: "failed", error: msg, retryable: isRetryable }));
+    }
+    return;
+  }
+
+  // source="upload" 路径：原有 orchestrator 5 态机流程
   store.resetForRetry(fileId);
   void orchestrator.processFile(fileId).catch((err) => {
     console.error(`[orchestrator retry] ${fileId} failed:`, err);

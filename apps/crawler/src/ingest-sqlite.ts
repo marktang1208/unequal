@@ -41,6 +41,8 @@ export interface CrawlerIngestInput {
   markdown: string;                            // crawler parse 出的纯文本
   chunks: CrawlerChunk[];                     // crawler 端 chunk + embed
   trustLevel: 0 | 1 | 2 | 3;
+  /** P3-7 / Phase C: source 列必填 "crawler"（区分 upload 路径） */
+  source?: "crawler";
   metadata?: {
     crawlDepth?: number;
     sourceDomain?: string;
@@ -121,6 +123,7 @@ export function ingestCrawlerMarkdown(
     chunks_json: chunksJson,
     markdown_chars: input.markdown.length,
     chunks_count: input.chunks.length,
+    source: input.source ?? "crawler",     // P3-7 / Phase C: 显式 "crawler"
     status: "pending",
     progress: 0,
     retry_count: 0,

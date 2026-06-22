@@ -58,6 +58,8 @@ export interface IngestRecord {
   source: IngestSource;
   /** P3-7 / Phase C: crawler metadata JSON 序列化（crawl_depth/source_domain/crawled_at/parent_url） */
   metadata: string | null;
+  /** P3-7 / Phase C: 信任级 0-3（admin-upload multipart 传，crawler 默认 1，handleManualPush 可 override） */
+  trust_level: 0 | 1 | 2 | 3;
 }
 
 const SCHEMA_V1 = `
@@ -90,6 +92,7 @@ CREATE INDEX IF NOT EXISTS idx_status ON local_ingest(status);
 const SCHEMA_MIGRATIONS = [
   `ALTER TABLE local_ingest ADD COLUMN source TEXT NOT NULL DEFAULT 'upload'`,
   `ALTER TABLE local_ingest ADD COLUMN metadata TEXT`,
+  `ALTER TABLE local_ingest ADD COLUMN trust_level INTEGER DEFAULT 0`,
   `CREATE INDEX IF NOT EXISTS idx_source_status ON local_ingest(source, status)`,
 ];
 
@@ -106,8 +109,13 @@ function applyMigrations(db: Database.Database): void {
   if (!columns.has("metadata")) {
     db.exec(SCHEMA_MIGRATIONS[1]!);
   }
+  // P3-7: trust_level 列原 admin-upload 没存表（admin-upload spec §3.3 multipart 收但没持久化）。
+  // 这次加上：handleManualPush 推送时需要读 record.trust_level。
+  if (!columns.has("trust_level")) {
+    db.exec(SCHEMA_MIGRATIONS[2]!);
+  }
   // idx_source_status 用 CREATE INDEX IF NOT EXISTS 幂等创建
-  db.exec(SCHEMA_MIGRATIONS[2]!);
+  db.exec(SCHEMA_MIGRATIONS[3]!);
 }
 
 export class StatusStore {
@@ -137,6 +145,8 @@ export class StatusStore {
     metadata?: string | null;
     /** P3-7 / Phase C: source 区分 upload/crawler；默认 'upload'（admin-upload 路径） */
     source?: IngestSource;
+    /** P3-7 / Phase C: 信任级 0-3；admin-upload 默认 0，crawler 默认 1（trigger.ts 显式传） */
+    trust_level?: 0 | 1 | 2 | 3;
     status?: FileStatus;
     progress?: number;
     retry_count?: number;
@@ -167,6 +177,7 @@ export class StatusStore {
       updated_at: input.updated_at ?? now,
       source: input.source ?? "upload",
       metadata: input.metadata ?? null,
+      trust_level: input.trust_level ?? 0,
     };
     this.db.prepare(`
       INSERT INTO local_ingest (
@@ -174,13 +185,13 @@ export class StatusStore {
         tmp_data, markdown, chunks_json, markdown_chars, chunks_count,
         error_code, error_message, cloud_source_id, cloud_document_id,
         retry_count, retryable, created_at, updated_at,
-        source, metadata
+        source, metadata, trust_level
       ) VALUES (
         @file_id, @batch_id, @filename, @ext, @status, @progress,
         @tmp_data, @markdown, @chunks_json, @markdown_chars, @chunks_count,
         @error_code, @error_message, @cloud_source_id, @cloud_document_id,
         @retry_count, @retryable, @created_at, @updated_at,
-        @source, @metadata
+        @source, @metadata, @trust_level
       )
     `).run(record);
     return record;

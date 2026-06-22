@@ -113,6 +113,8 @@ async function processOne(
       markdown,
       chunks: ingestChunks,
       trustLevel,
+      // P3-7 / Phase C: source 列必填 "crawler"（区分 upload 路径）
+      source: "crawler",
       metadata: {
         crawledAt: doc.fetchedAt,
       },

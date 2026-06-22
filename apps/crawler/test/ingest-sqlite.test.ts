@@ -118,6 +118,22 @@ describe("ingestCrawlerMarkdown (P3-7)", () => {
     expect(record?.markdown).toBe("小红书笔记内容");
   });
 
+  /** P3-7 / Phase C: source 列写 "crawler"（区分 upload 路径） */
+  it("P3-7 / Phase C: 写入时 source='crawler'（不被默认 'upload' 覆盖）", () => {
+    const r = ingestCrawlerMarkdown(store, {
+      url: "https://example.com/x",
+      sourceType: "webpage",
+      markdown: "x",
+      chunks: makeChunks(1),
+      trustLevel: 1,
+    });
+    const record = store.getByFileId(r.file_id);
+    expect(record?.source).toBe("crawler");
+    // 同时 listBySource("crawler") 也能查到
+    const crawlerRows = store.listBySource("crawler");
+    expect(crawlerRows.map((r) => r.file_id)).toContain(r.file_id);
+  });
+
   it("chunks_json 正确序列化（admin UI 推送时用）", () => {
     const chunks = makeChunks(2);
     const r = ingestCrawlerMarkdown(store, {

@@ -2,22 +2,51 @@
   "name": "@unequal/local-llm",
   "version": "0.0.1",
   "type": "module",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./types": "./src/types.ts",
-    "./config": "./src/config.ts",
-    "./provider": "./src/provider.ts",
-    "./local-embedder": "./src/local-embedder.ts",
-    "./cloud-embedder": "./src/cloud-embedder.ts",
-    "./local-chat": "./src/local-chat.ts",
-    "./cloud-chat": "./src/cloud-chat.ts",
-    "./status-store": "./src/status-store.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./types": {
+      "import": "./dist/types.js",
+      "default": "./dist/types.js"
+    },
+    "./config": {
+      "import": "./dist/config.js",
+      "default": "./dist/config.js"
+    },
+    "./provider": {
+      "import": "./dist/provider.js",
+      "default": "./dist/provider.js"
+    },
+    "./local-embedder": {
+      "import": "./dist/local-embedder.js",
+      "default": "./dist/local-embedder.js"
+    },
+    "./cloud-embedder": {
+      "import": "./dist/cloud-embedder.js",
+      "default": "./dist/cloud-embedder.js"
+    },
+    "./local-chat": {
+      "import": "./dist/local-chat.js",
+      "default": "./dist/local-chat.js"
+    },
+    "./cloud-chat": {
+      "import": "./dist/cloud-chat.js",
+      "default": "./dist/cloud-chat.js"
+    },
+    "./status-store": {
+      "import": "./dist/status-store.js",
+      "default": "./dist/status-store.js"
+    }
   },
   "scripts": {
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",

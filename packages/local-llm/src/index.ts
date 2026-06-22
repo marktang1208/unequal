@@ -1,5 +1,7 @@
 /**
  * P3-7 / Phase A: @unequal/local-llm barrel export
+ *
+ * 注意：内部 import 用无后缀（兼容 Vite/esbuild ESM 解析；TS Bundler 模式也可 resolve）。
  */
 
 export * from "./types.js";

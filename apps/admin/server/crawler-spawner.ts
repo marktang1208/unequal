@@ -14,9 +14,8 @@
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { mkdirSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync, openSync, createWriteStream } from "node:fs";
+import { join } from "node:path";
 
 const PID_DIR = ".tmp";
 
@@ -100,11 +99,10 @@ export function startCrawler(opts: SpawnOptions): SpawnResult {
     cwd: process.cwd(),
   });
 
-  // 写 stdio 到 log 文件
-  const fs = require("node:fs") as typeof import("node:fs");
-  const logFd = fs.openSync(logPath, "w");
-  if (child.stdout) child.stdout.pipe(fs.createWriteStream(logPath, { flags: "a" }));
-  if (child.stderr) child.stderr.pipe(fs.createWriteStream(logPath, { flags: "a" }));
+  // 写 stdio 到 log 文件（用 named import，不用 require）
+  const logFd = openSync(logPath, "w");
+  if (child.stdout) child.stdout.pipe(createWriteStream(logPath, { flags: "a" }));
+  if (child.stderr) child.stderr.pipe(createWriteStream(logPath, { flags: "a" }));
 
   // 写 PID 文件
   if (child.pid) {
