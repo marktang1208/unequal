@@ -1,20 +1,30 @@
 /**
- * CP-7-C: StatusStore — SQLite 暂存 + 6 状态机
+ * P3-7 / Phase B: StatusStore — SQLite 暂存 + 状态机
  *
- * SQLite schema: spec §4.2
- * - file_id (uuid) PRIMARY KEY
- * - batch_id (uuid, 一组上传)
- * - filename / ext / tmp_path (或 tmp_data blob for v1 in-memory)
- * - status: pending | parsing | chunking | embedding | pushing | done | failed
- * - progress 0-100
- * - markdown_chars / chunks_count
- * - markdown / chunks_json (缓存解析结果便于 retry)
- * - error_code / error_message
- * - cloud_source_id / cloud_document_id
- * - retry_count / retryable (0/1)
- * - created_at / updated_at
+ * 迁移自 `apps/admin/server/status-store.ts`（CP-7-C 引入）。P3-7 抽到
+ * `packages/local-llm/` 共享包（admin + crawler 共同写入同一份 SQLite，
+ * 让 admin UI 能看到 crawler 暂存条目）。
+ *
+ * SQLite schema (spec §4.2)：
+ *   - file_id (uuid) PRIMARY KEY
+ *   - batch_id (uuid, 一组上传)
+ *   - filename / ext / tmp_path (或 tmp_data blob for v1 in-memory)
+ *   - status: pending | parsing | chunking | embedding | pushing | done | failed
+ *   - progress 0-100
+ *   - markdown_chars / chunks_count
+ *   - markdown / chunks_json (缓存解析结果便于 retry)
+ *   - error_code / error_message
+ *   - cloud_source_id / cloud_document_id
+ *   - retry_count / retryable (0/1)
+ *   - created_at / updated_at
  *
  * 用 better-sqlite3（同步库 + WAL mode = 多读单写不冲突）
+ *
+ * P3-7 增量：
+ *   - create() 接受 markdown / chunks_json / metadata / markdown_chars / chunks_count 可选参数
+ *     （crawler 路径直接带 markdown 入库，避免重解析）
+ *   - T3 阶段会再加 `source` 列（区分 upload vs crawler）和 `metadata TEXT` 列
+ *     本文件暂保留 metadata 作为 create 参数但不持久化（schema 暂无列）
  */
 
 import Database from "better-sqlite3";
@@ -30,9 +40,9 @@ export interface IngestRecord {
   ext: string;
   status: FileStatus;
   progress: number;
-  tmp_data: Buffer | null;       // v1 in-memory；T9 改写文件
+  tmp_data: Buffer | null;
   markdown: string | null;
-  chunks_json: string | null;     // JSON 序列化
+  chunks_json: string | null;
   markdown_chars: number | null;
   chunks_count: number | null;
   error_code: string | null;
@@ -87,7 +97,14 @@ export class StatusStore {
     batch_id: string;
     filename: string;
     ext: string;
-    tmp_data?: Buffer;
+    tmp_data?: Buffer | null;
+    /** P3-7 / Phase B: crawler 路径直接带 markdown 入库（避免重解析） */
+    markdown?: string | null;
+    chunks_json?: string | null;
+    markdown_chars?: number | null;
+    chunks_count?: number | null;
+    /** P3-7 / Phase B: crawler metadata（crawl_depth/source_domain/crawled_at/parent_url） JSON 序列化 */
+    metadata?: string | null;
     status?: FileStatus;
     progress?: number;
     retry_count?: number;
@@ -104,10 +121,10 @@ export class StatusStore {
       status: input.status ?? "pending",
       progress: input.progress ?? 0,
       tmp_data: input.tmp_data ?? null,
-      markdown: null,
-      chunks_json: null,
-      markdown_chars: null,
-      chunks_count: null,
+      markdown: input.markdown ?? null,
+      chunks_json: input.chunks_json ?? null,
+      markdown_chars: input.markdown_chars ?? null,
+      chunks_count: input.chunks_count ?? null,
       error_code: null,
       error_message: null,
       cloud_source_id: null,
@@ -167,7 +184,7 @@ export class StatusStore {
       progress: 0,
       error_code: null,
       error_message: null,
-      retry_count: 0,        // 简化：retry 重置计数
+      retry_count: 0,
       updated_at: Date.now(),
     });
   }

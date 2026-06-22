@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { StatusStore } from "../../server/status-store.js";
+import { StatusStore } from "@unequal/local-llm";
 
 describe("StatusStore (CP-7-C T3)", () => {
   let tmpDir: string;

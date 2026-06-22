@@ -12,18 +12,26 @@
     "./local-embedder": "./src/local-embedder.ts",
     "./cloud-embedder": "./src/cloud-embedder.ts",
     "./local-chat": "./src/local-chat.ts",
-    "./cloud-chat": "./src/cloud-chat.ts"
+    "./cloud-chat": "./src/cloud-chat.ts",
+    "./status-store": "./src/status-store.ts"
   },
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "better-sqlite3": "^12.11.1",
     "openai": "^6.44.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20.0.0",
     "typescript": "^5.5.0",
     "vitest": "^2.0.0"
+  },
+  "pnpm": {
+    "allowedBuiltDependencies": [
+      "better-sqlite3"
+    ]
   }
 }

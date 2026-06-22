@@ -12,7 +12,7 @@
 
 import type { Connect } from "vite";
 import { IngestOrchestrator } from "./ingest-orchestrator.js";
-import { StatusStore } from "./status-store.js";
+import { StatusStore } from "@unequal/local-llm";
 import { ConcurrencyGate } from "./concurrency-gate.js";
 import { FallbackDetector } from "./fallback-detector.js";
 import { probeOmlx } from "./omlx-probe.js";

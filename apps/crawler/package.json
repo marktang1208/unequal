@@ -9,10 +9,18 @@
     "dev": "node --experimental-strip-types src/main.ts"
   },
   "dependencies": {
+    "@unequal/local-llm": "workspace:*",
+    "@unequal/shared": "workspace:*",
+    "better-sqlite3": "^12.11.1",
     "cheerio": "1.0.0"
   },
   "devDependencies": {
     "typescript": "5.5.4",
     "vitest": "2.0.5"
+  },
+  "pnpm": {
+    "allowedBuiltDependencies": [
+      "better-sqlite3"
+    ]
   }
 }

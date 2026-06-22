@@ -16,7 +16,7 @@
  *   （admin 本地 `loadConfig` 含 PdfConfig / AppConfig，比 packages 详细）
  */
 
-import { createEmbedder as _createEmbedder, createChat as _createChat, loadLocalLLMConfig, LocalEmbedder, CloudEmbedder, LocalChat, CloudChat, EmbedError, EXPECTED_EMBED_DIM } from "@unequal/local-llm";
+import { createEmbedder as _createEmbedder, createChat as _createChat, loadLocalLLMConfig, LocalEmbedder, CloudEmbedder, LocalChat, CloudChat, EmbedError, EXPECTED_EMBED_DIM, StatusStore, type FileStatus, type IngestRecord } from "@unequal/local-llm";
 import type { EmbedderConfig, ChatConfig } from "@unequal/local-llm";
 import type { Embedder, Chat } from "@unequal/local-llm";
 
@@ -31,5 +31,5 @@ export function createChat(cfg: ChatConfig): Chat {
 // 兼容旧名字：admin 端 init path 已用 `initConfig`（admin/server/config.ts 内实现，
 // 含 PdfConfig / AppConfig 完整版），不需要 `loadLocalLLMConfig` 替代。
 // 这里 re-export 让 crawler 端 / 未来 admin 端直调也能用。
-export { loadLocalLLMConfig, LocalEmbedder, CloudEmbedder, LocalChat, CloudChat, EmbedError, EXPECTED_EMBED_DIM };
+export { loadLocalLLMConfig, LocalEmbedder, CloudEmbedder, LocalChat, CloudChat, EmbedError, EXPECTED_EMBED_DIM, StatusStore, type FileStatus, type IngestRecord };
 export type { EmbedderConfig, ChatConfig, Embedder, Chat };

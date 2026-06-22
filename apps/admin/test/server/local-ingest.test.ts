@@ -10,7 +10,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import request from "supertest";
-import { StatusStore } from "../../server/status-store.js";
+import { StatusStore } from "@unequal/local-llm";
 import { ConcurrencyGate } from "../../server/concurrency-gate.js";
 import {
   IngestOrchestrator,

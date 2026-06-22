@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildIngestBody, submitToIngest } from "../src/ingest.js";
+import { buildIngestBody, submitToIngest } from "../src/ingest-sqlite.js";
 import type { CrawledDocument } from "../src/types.js";
 
 const sample: CrawledDocument = {

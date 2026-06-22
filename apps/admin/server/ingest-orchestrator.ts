@@ -24,7 +24,7 @@
  *   admin 端不再 embed。LocalEmbedder + EmbedderFactory 仍保留（未来离线缓存/兜底）。
  */
 
-import { StatusStore, type FileStatus, type IngestRecord } from "./status-store.js";
+import { StatusStore, type FileStatus, type IngestRecord } from "@unequal/local-llm";
 import type { ConcurrencyGate } from "./concurrency-gate.js";
 import { ParseFailedError } from "./local-parser.js";
 
