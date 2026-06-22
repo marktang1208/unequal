@@ -358,6 +358,119 @@ Cloudflare 资源清单（一次性开通）：
 
 ---
 
+## §14. P3-7 之后的 spec drift 修订说明（2026-06-22）
+
+> 本节是 spec drift 的**事后记录**，不修改原文（保留历史决策轨迹）。新工作请先看本节再读原文。
+
+### 14.1 知识库来源（§1 第一条"用户上传"）— **决策性关闭**
+
+**原文 §1**：
+> 知识库来源于：(a) 用户上传 PDF/Word/TXT/Markdown；(b) 用户指定的网页 URL；(c) 抓取小红书指定账号；(d) 抓取微信公众号指定账号。
+
+**实际现状**（P3-7，2026-06-22）：
+- ❌ **(a) 用户上传** — 终端用户在 minipgm 端**无任何上传入口**。P3-7 决策"minipgm 不增任何上传入口"（见 `2026-06-22-cp7-p3-7-crawler-manual-push-design.md` §1 摘要）
+- ✅ **(b) 用户指定的网页 URL** — admin 端 `CrawlPage.tsx` / `WechatMpCrawlPage.tsx` / `XiaohongshuCrawlPage.tsx`（M3-M5）
+- ✅ **(c) 抓取小红书指定账号** — crawler 端 `apps/crawler/src/sources/xiaohongshu.ts`（M5）
+- ✅ **(d) 抓取微信公众号指定账号** — crawler 端 `apps/crawler/src/sources/wechat-mp.ts`（M5）
+
+**admin 端新增**（P3-7 之前未在 spec 里的能力）：
+- ✅ **admin 本地文件上传**（PDF/DOCX/HTML/TXT/MD）— `apps/admin/src/pages/Upload.tsx`（CP-7-C T15 真接 PASS + arch-v2.3 修正）
+- ✅ **admin MacBook 本地爬虫**（3 触发：每日定时 launchd / CLI / UI 启动）— `apps/crawler/` + `scripts/`（P3-7）
+
+**当前实际"知识库来源"**：
+1. **admin 手动上传本地文件**（admin-upload UI + 自动解析 + 推云）
+2. **admin MacBook 本地爬虫**（crawler 自动跑 + 写本地 SQLite + admin 手动批量推云）
+3. **admin 抓取页指定 URL**（crawler 直接调 /api-ingest）
+
+**未来重新启用 minipgm 用户上传**（如确需）：走 P3-7 spec §1 已关闭项 → 起新 brainstorming 重新设计（spec + 架构 + 鉴权 + 限流 + 内容审核 都要做）。
+
+### 14.2 部署形态（§3.4 "Cloudflare Workers + DO + Vectorize + R2"）— **实质性迁移**
+
+**原文 §3.4**：CF Workers + Durable Objects + Vectorize + R2
+**实际现状**（CP-6，2026-06-17）：全部迁移到**腾讯云 CloudBase**：
+- CloudBase 函数（ap-shanghai）替代 CF Workers
+- CloudBase 9 个 collection（user / source / document / chunk / audit / chat_session / message / stats_*）替代 D1
+- CloudBase brute-force cosine 检索（in code）替代 CF Vectorize（见 `packages/shared/src/retrieval.ts` 第 2 行注释）
+- CloudBase 存储替代 R2
+
+**原因**：CP-5 真接发现 GFW 阻 CF（`workers.dev` 不可达），国内用户完全不可用。CP-6 迁 CloudBase 国内可达。
+
+**网络约束**（持续生效）：
+- CloudBase 函数 endpoint 国内可达
+- admin 走 macOS 本地 dev server 5173（VPN 可选）
+- minipgm 走 `wx.cloud.callFunction` 私有协议（绕过 request 域名白名单）
+- 启动 launchd 每日任务在 admin MacBook 本地
+
+### 14.3 反幻觉原则（§3.1 "双层验证 + 医疗免责声明"）— **已实现 + 待强化**
+
+**已实现**：
+- ✅ LLM prompt 强制输出 `{"citations": [N, M, ...]}` 块
+- ✅ 应用层取两层交集（chat.ts `citedNums` + message-bubble 解析）
+- ✅ 医疗免责声明在 `api-chat.ts` / `api-ask.ts` 追加（不计入 citations 校验）
+- ✅ chunk 来源 trust_level 0-3 评级（`packages/shared/src/types.ts`）
+
+**待实现**（顶层设计 §13 已列 v2+）：
+- ⏸️ NLI 蕴含验证（再压一档幻觉）
+- ⏸️ HyDE 检索增强
+- ⏸️ BGE-reranker / LLM-as-reranker
+- ⏸️ 答案质量反馈（点赞/点踩 → D1）
+
+### 14.4 用户体系（§3.3 "MVP 不鉴权"）— **已升级真鉴权 + 多用户**
+
+**原文 §3.3**：MVP 不鉴权，schema 预留多用户
+**实际现状**（M6 + CP-7-A）：
+- ✅ wx-login → openid → JWT 鉴权（`apps/api/src/handlers/api-auth-wx-login.ts` + `apps/api/src/lib/jwt.ts`）
+- ✅ admin token + IP allowlist 鉴权（`apps/api/src/lib/auth-admin.ts`）
+- ✅ JWT 加密 + KEK 轮换（M6.7 + M6.8）
+- ✅ JWT refresh + token mutex（M6.9）
+- ✅ session-key envelope（M6.7）
+- ✅ owner-check helper（`apps/api/src/lib/owner-check.ts`，M7-C 加）
+- ⏸️ M7-D UI 收尾：多用户隔离在 settings 页可见（**待做**）
+
+### 14.5 API 接口（§6）— **路径 + 鉴权均升级**
+
+| 原文路径 | 实际路径 | 差异 |
+|---|---|---|
+| `POST /upload` | `POST /api-ingest` | admin-upload 实际路径（CP-7-C）|
+| `POST /ingest` (crawler) | `POST /api-ingest` | crawler 也走 /api-ingest |
+| `GET /search` | `GET /api-search` | 加 /api- 前缀（CP-6） |
+| `POST /ask` | `POST /api-ask` | 加 /api- 前缀 |
+| `POST /chat` | `POST /api-chat` | 加 /api- 前缀（CP-7-A） |
+| 旧 `POST /upload/sign` (R2 签名) | **已删除** | CP-6 迁 CloudBase 后无 R2 |
+| 新加 | `POST /api-auth-wx-login` / `POST /api-auth-admin-login` | M6.2 鉴权 |
+| 新加 | `GET /api-sessions-list` / `GET /api-sessions-get` / `PATCH /api-sessions-rename` / `DELETE /api-sessions-delete` | M6.1 + CP-7-B 多轮 |
+| 新加 | `PATCH /api-user-nickname` | M6.3c 昵称 |
+| 新加 | `GET /api-stats` | M6.5 定时统计 |
+| 新加 | `GET /api-health` | CP-6 健康检查 |
+| 新加 | `GET /api-cron-cleanup` | 旧 session 清理 |
+| 已弃用 | `POST /api-upload` | 410 GONE（P2-6）指向 `/api-ingest` |
+
+### 14.6 子系统清单（§2 七个子系统）— **重新映射**
+
+| # | 原 spec 子系统 | 实际实现 | 状态 |
+|---|---|---|---|
+| 1 | 微信小程序 | `apps/miniprogram/`（chat / history / source-detail / cloudbase-test 4 页）| ✅（**未含用户上传**） |
+| 2 | API 网关 | CloudBase 函数（`apps/miniprogram/cloudfunctions/api-router/`）| ✅（**已迁 CF→CloudBase**）|
+| 3 | 会话状态 | CloudBase `chat_session` + `message` 2 collection | ✅（**已迁 D1→collection**）|
+| 4 | RAG 检索 + 生成 | `packages/shared/src/retrieval.ts` brute-force cosine | ✅（**已迁 Vectorize→in-code**）|
+| 5 | 摄入管道 | API 端 `api-ingest.ts` 自己 chunk + embed + 写库 | ✅（**架构 v2.3 修正**）|
+| 6 | 爬虫 | `apps/crawler/` 本地 Mac 进程 | ✅ |
+| 7 | 管理后台 | `apps/admin/`（**已远超原 spec**：Upload / ChatSim / Stats / Sources / Documents / SearchTest / Login / AskTest / CloudBaseCallTest / CrawlPage / WechatMpCrawlPage / XiaohongshuCrawlPage + LlmStatus 组件 + PendingPushList 组件）| ✅（**已扩展 12 页 + 2 组件**）|
+
+### 14.7 相关新 spec（不修改本文，列为参考）
+
+P3-7 实施过程中新增 8 个 spec / 计划 / state 文档：
+- `2026-06-22-admin-upload-page-design.md` — admin 本地上传 spec
+- `2026-06-22-admin-upload-page-plan.md` — admin 上传 plan
+- `2026-06-22-cp7-p3-7-crawler-manual-push-design.md` — P3-7 spec
+- `.claude/plans/cp7-p3-7-crawler-manual-push.plan.md` — P3-7 plan
+- `state-arch-v2.3.md` — admin 不 embed / API 自己 embed 架构修正
+- `state-cp7-zhenjie.md` — CP-7 真接 9 轮 + 后续收尾
+- `state-cp7-a.md` / `state-cp7-b.md` — CP-7-A/B state
+- `state-m6-1.md` ~ `state-m6-10.md` — M6 10 个子 milestone state
+
+---
+
 ## 附录 A：关键设计决策记录
 
 | 决策点 | 选择 | 触发对话轮次 |
