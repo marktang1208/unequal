@@ -40,6 +40,12 @@ describe("Upload (CP-7-C T10)", () => {
     expect(screen.getByTestId("file-input")).toBeDefined();
   });
 
+  it("P3-7: 初始渲染含启动爬虫按钮 + 待推送列表 section", () => {
+    render(<Upload />);
+    expect(screen.getByTestId("crawler-start-toggle")).toBeDefined();
+    expect(screen.getByText("待推送列表")).toBeDefined();
+  });
+
   it("选 1 个文件: 显示文件列表 + 上传按钮", () => {
     render(<Upload />);
     const input = screen.getByTestId("file-input") as HTMLInputElement;

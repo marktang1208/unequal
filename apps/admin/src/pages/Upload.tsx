@@ -3,6 +3,7 @@ import type { ChangeEvent, DragEvent } from "react";
 import type { TrustLevel } from "@unequal/shared/types";
 import { translateErrorMessage } from "../lib/error-i18n.js";
 import { LlmStatus } from "../components/LlmStatus.js";
+import { PendingPushList, CrawlerStartButton } from "../components/PendingPushList.js";
 
 interface UploadFileResult {
   batch_id: string;
@@ -177,7 +178,10 @@ export default function Upload() {
     <section className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold">本地上传文件</h2>
-        <LlmStatus />
+        <div className="flex items-center gap-3">
+          <CrawlerStartButton />
+          <LlmStatus />
+        </div>
       </div>
 
       {/* 拖拽区 + 文件选择 */}
@@ -348,6 +352,9 @@ export default function Upload() {
           </table>
         </div>
       )}
+
+      {/* P3-7 / Phase C: 待推送列表（crawler 暂存 + admin-upload 失败的补推） */}
+      <PendingPushList />
     </section>
   );
 }
