@@ -37,7 +37,13 @@ import type { Source, Document, Chunk } from "@unequal/shared/types";
 
 interface IngestRequest {
   source_id?: string;
-  content: string;
+  content?: string;           // v1/v2.3: 原始 markdown
+  chunks?: Array<{            // v2.4: 预嵌入 chunks（已含 embedding）
+    idx: number;
+    content: string;
+    embedding: number[];     // 1536 维
+    tokenCount: number;
+  }>;
   title?: string;
   url?: string;
   trust_level?: 0 | 1 | 2 | 3;
@@ -97,10 +103,23 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
     }
   }
 
-  // 2. 解析 body
+  // 2. 解析 body：接受 content（v1/v2.3）或 chunks（v2.4 预嵌入）
   const body = parseJsonBody<IngestRequest>(event);
-  if (!body?.content || typeof body.content !== "string") {
-    return errorResponse("INVALID_REQUEST", "Missing 'content' field", 400);
+  const hasContent = !!body?.content && typeof body.content === "string";
+  const hasChunks = !!body?.chunks && Array.isArray(body.chunks) && body.chunks.length > 0;
+  if (!hasContent && !hasChunks) {
+    return errorResponse("INVALID_REQUEST", "Missing 'content' or 'chunks' field", 400);
+  }
+  if (hasChunks) {
+    for (let i = 0; i < body.chunks!.length; i++) {
+      const c = body.chunks![i]!;
+      if (!c.content || !Array.isArray(c.embedding) || typeof c.idx !== "number" || typeof c.tokenCount !== "number") {
+        return errorResponse("INVALID_REQUEST", `chunk ${i} missing required fields (content, embedding, idx, tokenCount)`, 400);
+      }
+      if (c.embedding.length !== 1536) {
+        return errorResponse("INVALID_REQUEST", `chunk ${i} embedding dim ${c.embedding.length} != 1536`, 400);
+      }
+    }
   }
 
   // 3. user_id 行为分支
@@ -130,7 +149,7 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
       userId: targetUserId,
     },
     request: {
-      contentLen: body.content.length,
+      contentLen: hasChunks ? body.chunks!.length : body.content!.length,
       trustLevel,
       ...(body.title ? { title: body.title } : {}),
     },
@@ -175,24 +194,50 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
       userId: targetUserId,
       title: body.title ?? body.url,
       rawPath: "",
-      previewSnippet: body.content.slice(0, 200),
+      // v2.4: chunks 路径 previewSnippet 从 chunks[0] 拿
+      previewSnippet: hasChunks ? body.chunks![0]!.content.slice(0, 200) : body.content!.slice(0, 200),
       createdAt: Date.now(),
     } as Document)) ?? "";
 
-    const chunks = chunkText(body.content, { maxTokens: 500, overlapTokens: 80 });
+    // v2.4: chunks 分支 — 直接写预嵌入 chunks，零 LLM 调用
+    if (hasChunks) {
+      for (let i = 0; i < body.chunks!.length; i++) {
+        const c = body.chunks![i]!;
+        try {
+          const chunk: Chunk = {
+            id: "",
+            documentId: docId,
+            sourceId,
+            userId: targetUserId,
+            idx: c.idx,
+            content: c.content,
+            embedding: c.embedding,
+            tokenCount: c.tokenCount,
+            trustLevel,
+            createdAt: Date.now(),
+          };
+          await add<Chunk>(COLLECTIONS.chunk as CollectionName, chunk);
+          inserted++;
+        } catch (err) {
+          errors.push(`chunk ${i}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    } else {
+      // v1/v2.3: 自己 chunk + embed（保留向后兼容）
+      const chunks = chunkText(body.content!, { maxTokens: 500, overlapTokens: 80 });
 
-    // CP-7-D #2: 走 factory
-    const embed = getEmbedder();
+      // CP-7-D #2: 走 factory
+      const embed = getEmbedder();
 
-    const texts = chunks.map((c) => c.content);
-    let embeddings: number[][] = [];
-    try {
-      embeddings = await embed.embed(texts);
-    } catch (err) {
-      throw new Error(`EMBEDDING_FAILED: ${err instanceof Error ? err.message : String(err)}`);
-    }
+      const texts = chunks.map((c) => c.content);
+      let embeddings: number[][] = [];
+      try {
+        embeddings = await embed.embed(texts);
+      } catch (err) {
+        throw new Error(`EMBEDDING_FAILED: ${err instanceof Error ? err.message : String(err)}`);
+      }
 
-    for (let i = 0; i < chunks.length; i++) {
+      for (let i = 0; i < chunks.length; i++) {
       try {
         const chunk: Chunk = {
           id: "",
@@ -210,6 +255,7 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
         inserted++;
       } catch (err) {
         errors.push(`chunk ${i}: ${err instanceof Error ? err.message : String(err)}`);
+      }
       }
     }
   } catch (err) {

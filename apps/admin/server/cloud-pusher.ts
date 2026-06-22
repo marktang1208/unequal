@@ -33,6 +33,15 @@ export interface CloudPusherResult {
   chunks_failed: number;
 }
 
+/** v2.4: 推预嵌入 chunks */
+export interface ChunksPushInput {
+  chunks: Array<{ idx: number; content: string; embedding: number[]; tokenCount: number }>;
+  title?: string;
+  url: string;
+  trust_level: 0 | 1 | 2 | 3;
+  user_id?: string;
+}
+
 export class PushError extends Error {
   constructor(message: string, public readonly code: "AuthError" | "RateLimit" | "ServerError" | "NetworkError", public readonly retryable: boolean, public readonly status?: number) {
     super(message);
@@ -69,15 +78,19 @@ export class CloudPusher {
     this.backoff429 = opts.backoffBase429Ms ?? 5000;
   }
 
+  /** v2.4: 推预嵌入 chunks（云端直接写库，不调 LLM） */
+  async pushChunks(input: ChunksPushInput): Promise<CloudPusherResult> {
+    return this._doPost(input);
+  }
+
   async push(input: CloudPusherInput): Promise<CloudPusherResult> {
+    return this._doPost(input);
+  }
+
+  private async _doPost(input: CloudPusherInput | ChunksPushInput): Promise<CloudPusherResult> {
     const url = `${this.baseUrl}/api-ingest`;
-    const body = JSON.stringify({
-      content: input.content,
-      title: input.title,
-      url: input.url,
-      trust_level: input.trust_level,
-      ...(input.user_id ? { user_id: input.user_id } : {}),
-    });
+    // 统一序列化：push 走 content 字段，pushChunks 走 chunks 字段，云端 api-ingest handler 分叉处理
+    const body = JSON.stringify(input);
 
     let attempt429 = 0;
     let attempt5xx = 0;

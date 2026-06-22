@@ -1,27 +1,19 @@
 /**
- * CP-7-C: IngestOrchestrator — 单文件 5 状态机调度
+ * CP-7-C: IngestOrchestrator — 单文件 6 状态机调度
  *
- * 状态机：pending → parsing → chunking → pushing → done
+ * 状态机：pending → parsing → chunking → embedding → pushing → done
  *                          ↘ failed (任意阶段)
  *
  * 流程：
  *   1. StatusStore.getByFileId → 拿 record
  *   2. 解析 (ConcurrencyGate.parserSem, max=1) → LocalParser → markdown
- *   3. chunkText (本地) → 切分（仅供 status 展示）
- *   4. CloudPusher (ConcurrencyGate.pushSem, max=5) → POST /api-ingest (markdown only)
- *      （API 端自己 chunk + embed，无需 admin 端 embed）
- *   5. StatusStore.markDone
+ *   3. chunkText (本地) → 切分
+ *   4. Embedder (v2.4 新增) → OMLX Qwen3-4B matryoshka 1536
+ *   5. CloudPusher.pushChunks (ConcurrencyGate.pushSem, max=5) → POST /api-ingest (预嵌入 chunks)
+ *   6. StatusStore.markDone
  *
  * 错误：每个阶段 try/catch → markFailed(retryable)
  * Fallback：push 失败时 FallbackDetector 计数
- *
- * v1 状态：实现 orchestrator 调度骨架 + 状态转换。parser/push 两个 dependency
- *   在 T5/T8 注入；T2 已经能 import 这个 class。
- *
- * 架构说明：CP-7-C 早期设计 admin 端 embed + 推 chunks，2026-06-22 真跑发现 API 端
- *   已经自己 embed（`createMiniMaxEmbedder` + `chunkText`），admin 端 embed 完全浪费。
- *   改 CloudPusher payload = `{content, title, url, trust_level, user_id?}`，
- *   admin 端不再 embed。LocalEmbedder + EmbedderFactory 仍保留（未来离线缓存/兜底）。
  */
 
 import { StatusStore, type FileStatus, type IngestRecord } from "@unequal/local-llm";
@@ -34,9 +26,24 @@ export interface LocalParser {
 }
 export interface CloudPusher {
   push(input: PushInput): Promise<PushResult>;
+  /** v2.4: 推预嵌入 chunks */
+  pushChunks(input: ChunksPushInput): Promise<PushResult>;
 }
 export interface ChunkText {
   chunkText(text: string): Promise<Array<{ idx: number; content: string; tokenCount: number }>>;
+}
+/** v2.4: Embedder 接口（OMLX 本地 embed） */
+export interface Embedder {
+  embed(texts: string[]): Promise<number[][]>;
+}
+
+/** v2.4: 推预嵌入 chunks 的 input */
+export interface ChunksPushInput {
+  chunks: Array<{ idx: number; content: string; embedding: number[]; tokenCount: number }>;
+  title?: string;
+  url: string;
+  trust_level: 0 | 1 | 2 | 3;
+  user_id?: string;
 }
 
 export interface PushInput {
@@ -61,6 +68,8 @@ export class IngestOrchestrator {
   private parser: LocalParser | null = null;
   private pusher: CloudPusher | null = null;
   private chunker: ChunkText | null = null;
+  /** v2.4: OMLX 本地 embedder */
+  private embedder: Embedder | null = null;
 
   // 简单 user_id（v1 用 admin 默认；T11 改从 auth 拿）
   private defaultUserId = "01H0000000000000000000000";
@@ -73,6 +82,8 @@ export class IngestOrchestrator {
   setParser(parser: LocalParser): void { this.parser = parser; }
   setPusher(pusher: CloudPusher): void { this.pusher = pusher; }
   setChunker(chunker: ChunkText): void { this.chunker = chunker; }
+  /** v2.4: 注入 embedder */
+  setEmbedder(embedder: Embedder): void { this.embedder = embedder; }
 
   /** 主入口：处理单个文件（fire-and-forget 调） */
   async processFile(fileId: string): Promise<void> {
@@ -94,7 +105,7 @@ export class IngestOrchestrator {
         markdown_chars: markdown.length,
       });
 
-      // 2. chunkText（仅供 status 展示 + 进度；实际 chunk 在 API 端做）
+      // 2. chunkText（拆 chunks 供展示 + 后续 embed）
       this.store.setStatus(fileId, "chunking", 30);
       if (!this.chunker) throw new Error("Chunker not initialized");
       const chunks = await this.chunker.chunkText(markdown);
@@ -103,15 +114,26 @@ export class IngestOrchestrator {
       }
       this.store.update(fileId, { chunks_count: chunks.length, chunks_json: JSON.stringify(chunks) });
 
-      // 3. push（API 端自己 embed；admin 端不 embed）
-      this.store.setStatus(fileId, "pushing", 80);
+      // 3. embedding（v2.4: admin 本地 embed）
+      this.store.setStatus(fileId, "embedding", 50);
+      if (!this.embedder) throw new Error("Embedder not initialized");
+      const texts = chunks.map((c) => c.content);
+      const embeddings = await this.embedder.embed(texts);
+      const chunksWithEmb = chunks.map((c, i) => ({
+        ...c,
+        embedding: embeddings[i]!,
+      }));
+      this.store.update(fileId, { progress: 80 });
+
+      // 4. push（v2.4: 推预嵌入 chunks，云端直接写库）
+      this.store.setStatus(fileId, "pushing", 90);
       if (!this.pusher) throw new Error("Pusher not initialized");
       const pushResult = await this.gate.push(() =>
-        this.pusher!.push({
-          content: markdown,
+        this.pusher!.pushChunks({
+          chunks: chunksWithEmb,
           title: record.filename,
           url: `local://${record.filename}`,
-          trust_level: 1,  // T11: 改为从 request 拿
+          trust_level: 1,
           user_id: this.defaultUserId,
         }),
       );

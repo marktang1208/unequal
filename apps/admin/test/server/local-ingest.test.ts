@@ -17,23 +17,30 @@ import {
   type LocalParser,
   type CloudPusher,
   type ChunkText,
+  type Embedder,
 } from "../../server/ingest-orchestrator.js";
 import { localIngestMiddleware, __setDepsForTest, __resetForTest } from "../../server/local-ingest.js";
 
-// T2 测试用 mock：注入 stub parser/pusher/chunker 避免 T5/T8 真实依赖（admin 端不 embed）
+// T2 测试用 mock：注入 stub parser/pusher/chunker/embedder 避免真实依赖（v2.4 admin 本地 embed）
 function setupMockDeps(orchestrator: IngestOrchestrator): void {
   const mockParser: LocalParser = {
     parseAuto: async () => "# Mock Markdown\n\nParsed content",
   };
   const mockPusher: CloudPusher = {
     push: async () => ({ source_id: "01KSRC_MOCK", document_id: "01KDOC_MOCK", chunks_inserted: 1, chunks_failed: 0 }),
+    pushChunks: async (input) => ({ source_id: "01KSRC_MOCK", document_id: "01KDOC_MOCK", chunks_inserted: input.chunks.length, chunks_failed: 0 }),
   };
   const mockChunker: ChunkText = {
     chunkText: async (text) => [{ idx: 0, content: text, tokenCount: text.length }],
   };
+  // v2.4: mock embedder — 返每 text 1536 维全 0 向量
+  const mockEmbedder: Embedder = {
+    embed: async (texts) => texts.map(() => new Array(1536).fill(0)),
+  };
   orchestrator.setParser(mockParser);
   orchestrator.setPusher(mockPusher);
   orchestrator.setChunker(mockChunker);
+  orchestrator.setEmbedder(mockEmbedder);
 }
 
 describe("LocalIngestMiddleware (CP-7-C T2)", () => {
@@ -252,13 +259,18 @@ describe("LocalIngestMiddleware (CP-7-C T2)", () => {
   });
 
   it("POST /api/retry: 失败文件 retryable=1 → 202 + status=pending → done", async () => {
-    // mock pusher 第一次失败、第二次成功
+    // mock pusher 第一次失败、第二次成功（v2.4: 同时 mock push + pushChunks）
     let pushAttempts = 0;
     const flakyPusher: CloudPusher = {
       push: async () => {
         pushAttempts++;
         if (pushAttempts === 1) throw new Error("cloud 500");
-        return { source_id: "01KSRC_RETRY", document_id: "01KDOC_RETRY" };
+        return { source_id: "01KSRC_RETRY", document_id: "01KDOC_RETRY", chunks_inserted: 1, chunks_failed: 0 };
+      },
+      pushChunks: async (input) => {
+        pushAttempts++;
+        if (pushAttempts === 1) throw new Error("cloud 500");
+        return { source_id: "01KSRC_RETRY", document_id: "01KDOC_RETRY", chunks_inserted: input.chunks.length, chunks_failed: 0 };
       },
     };
     orchestrator.setPusher(flakyPusher);

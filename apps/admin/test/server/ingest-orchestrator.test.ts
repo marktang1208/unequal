@@ -1,10 +1,10 @@
 /**
  * CP-7-C: 集成测试 — 5 文件并发端到端
  *
- * 真实链路：multipart → 5 file → 并发 orchestrator (parser → chunker → pusher) → 全部 done
- * （v1 简化：admin 端不 embed，API 端自己 embed；orchestrator 只 parse + chunk + push）
+ * 真实链路：multipart → 5 file → 并发 orchestrator (parser → chunker → embedder → pusher) → 全部 done
+ * v2.4：admin 端 embed（mock）+ 推预嵌入 chunks；orchestrator 6 状态机
  *
- * mock parser/pusher（避免 mineru/OMLX/MiniMax 真实依赖）
+ * mock parser/embedder/pusher（避免 mineru/OMLX/MiniMax 真实依赖）
  * 真 SQLite + 真 ConcurrencyGate + 真 IngestOrchestrator
  */
 
@@ -19,6 +19,7 @@ import {
   type LocalParser,
   type CloudPusher,
   type ChunkText,
+  type Embedder,
 } from "../../server/ingest-orchestrator.js";
 import { ParseFailedError } from "../../server/local-parser.js";
 
@@ -48,6 +49,11 @@ describe("IngestOrchestrator 集成 (CP-7-C T9)", () => {
         { idx: 1, content: text.slice(50, 100), tokenCount: 50 },
       ],
     };
+    // v2.4: mock embedder — 返每 text 1536 维全 0 向量
+    const mockEmbedder: Embedder = {
+      embed: async (texts) =>
+        texts.map(() => new Array(1536).fill(0)),
+    };
     pushCalls = 0;
     const mockPusher: CloudPusher = {
       push: async (input) => {
@@ -60,9 +66,21 @@ describe("IngestOrchestrator 集成 (CP-7-C T9)", () => {
           chunks_failed: 0,
         };
       },
+      // v2.4: 新增 pushChunks
+      pushChunks: async (input) => {
+        pushCalls++;
+        await new Promise((r) => setTimeout(r, 10));
+        return {
+          source_id: `01KSRC_${pushCalls}`,
+          document_id: `01KDOC_${pushCalls}`,
+          chunks_inserted: input.chunks.length,
+          chunks_failed: 0,
+        };
+      },
     };
     orchestrator.setParser(mockParser);
     orchestrator.setChunker(mockChunker);
+    orchestrator.setEmbedder(mockEmbedder);
     orchestrator.setPusher(mockPusher);
   });
 
