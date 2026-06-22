@@ -1,9 +1,17 @@
 # Arch-V2: 本地处理 + 上传 chunks 架构调整
 
 **日期**：2026-06-22
-**状态**：🟡 设计阶段（待实施）
+**状态**：🟡 设计阶段（v2.3 修订：未实装，降级到 v1 schema）
 **作者**：用户决策
 **影响范围**：全部知识库来源（PDF / Word / 网页 / 小红书 / 公众号）
+
+> **Revision history**:
+> - v2 (2026-06-22 早)：设计 admin 端 chunk + embed + 传 chunks 到云
+> - v2.1 (2026-06-22)：统一 markdown 中间格式 + 单一 ingest 接口
+> - v2.2 (2026-06-22)：admin 本地上传文件页决策
+> - **v2.3 (2026-06-22 11:30)**：T15 真跑发现 API 端 **未实现 chunks 字段**，v2 schema 暂未实装。
+>   降级为 v1 schema（admin 端只传 content/markdown，API 端自己 chunk + embed）。
+>   详细原因和未来路径见 [`state-arch-v2.3.md`](./state-arch-v2.3.md)。
 
 ---
 
