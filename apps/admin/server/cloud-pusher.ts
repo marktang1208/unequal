@@ -60,6 +60,10 @@ export interface CloudPusherOptions {
 }
 
 export class CloudPusher {
+  /** v2.4: 切批阈值 — 单批 ≤ 2 chunks (实测 3 chunks payload=99.9KB 临界 CloudBase maxRequestBodySize≈100KB 仍 413)
+   * 2 chunks payload ≈ 66KB，留 34KB 安全边距；超过 100KB 触 413 EXCEED_MAX_PAYLOAD_SIZE
+   */
+  static readonly MAX_CHUNKS_PER_PUSH = 2;
   private baseUrl: string;
   private secret: string;
   private fetch: typeof fetch;
@@ -78,9 +82,38 @@ export class CloudPusher {
     this.backoff429 = opts.backoffBase429Ms ?? 5000;
   }
 
-  /** v2.4: 推预嵌入 chunks（云端直接写库，不调 LLM） */
+  /** v2.4: 推预嵌入 chunks（云端直接写库，不调 LLM）
+   *  - 单 batch 内自动按 MAX_CHUNKS_PER_PUSH 切批（避免 CloudBase 1MB maxRequestBodySize 限制）
+   *  - 每批独立 POST，合并 source_id / document_id（首批带 ID）
+   *  - 全部失败抛首条 PushError
+   */
   async pushChunks(input: ChunksPushInput): Promise<CloudPusherResult> {
-    return this._doPost(input);
+    if (input.chunks.length <= CloudPusher.MAX_CHUNKS_PER_PUSH) {
+      return this._doPost(input);
+    }
+    // 切批：保留首条 source/document ID 关联
+    const allBatches: ChunksPushInput[] = [];
+    for (let i = 0; i < input.chunks.length; i += CloudPusher.MAX_CHUNKS_PER_PUSH) {
+      allBatches.push({
+        ...input,
+        chunks: input.chunks.slice(i, i + CloudPusher.MAX_CHUNKS_PER_PUSH),
+      });
+    }
+    let firstResult: CloudPusherResult | null = null;
+    let totalInserted = 0;
+    let totalFailed = 0;
+    for (const batch of allBatches) {
+      const r = await this._doPost(batch);
+      if (!firstResult) firstResult = r;
+      totalInserted += r.chunks_inserted;
+      totalFailed += r.chunks_failed;
+    }
+    return {
+      source_id: firstResult!.source_id,
+      document_id: firstResult!.document_id,
+      chunks_inserted: totalInserted,
+      chunks_failed: totalFailed,
+    };
   }
 
   async push(input: CloudPusherInput): Promise<CloudPusherResult> {
@@ -89,7 +122,6 @@ export class CloudPusher {
 
   private async _doPost(input: CloudPusherInput | ChunksPushInput): Promise<CloudPusherResult> {
     const url = `${this.baseUrl}/api-ingest`;
-    // 统一序列化：push 走 content 字段，pushChunks 走 chunks 字段，云端 api-ingest handler 分叉处理
     const body = JSON.stringify(input);
 
     let attempt429 = 0;

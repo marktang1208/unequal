@@ -237,9 +237,30 @@ function handleStatus(req: Connect.IncomingMessage, res: import("node:http").Ser
 
   if (batchId) {
     const files = store.listByBatch(batchId);
+    // 真接发现: 5 文件 batch 完成后 status 响应 6.5MB（dump tmp_data + markdown + chunks_json）
+    // strip 重字段，admin UI 只看 status/progress/cloud_id/error 等
+    const slim = files.map((f) => ({
+      file_id: f.file_id,
+      batch_id: f.batch_id,
+      filename: f.filename,
+      ext: f.ext,
+      status: f.status,
+      progress: f.progress,
+      chunks_count: f.chunks_count,
+      cloud_source_id: f.cloud_source_id,
+      cloud_document_id: f.cloud_document_id,
+      error_code: f.error_code,
+      error_message: f.error_message,
+      retry_count: f.retry_count,
+      retryable: f.retryable,
+      created_at: f.created_at,
+      updated_at: f.updated_at,
+      source: f.source,
+      trust_level: f.trust_level,
+    }));
     res.statusCode = 200;
     res.setHeader("Content-Type", "application/json");
-    res.end(JSON.stringify({ batch_id: batchId, files }));
+    res.end(JSON.stringify({ batch_id: batchId, files: slim }));
     return;
   }
 
