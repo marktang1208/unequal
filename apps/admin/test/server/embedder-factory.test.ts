@@ -1,13 +1,14 @@
 /**
  * embedder-factory 单元测试
+ *
+ * P3-7: admin/server/embedder-factory.ts 已迁到 @unequal/local-llm；
+ * admin 走 server/llm-provider.ts 桥 re-export。
  */
 
 import { describe, it, expect } from "vitest";
-import { createEmbedder } from "../../server/embedder-factory.js";
-import { LocalEmbedder } from "../../server/local-embedder.js";
-import { CloudEmbedder } from "../../server/cloud-embedder.js";
+import { createEmbedder, LocalEmbedder, CloudEmbedder } from "../../server/llm-provider.js";
 
-describe("createEmbedder (CP-7-C T72)", () => {
+describe("createEmbedder (P3-7 走 llm-provider 桥)", () => {
   it("provider=local → LocalEmbedder 实例", () => {
     const e = createEmbedder({
       provider: "local",

@@ -18,7 +18,7 @@ vi.mock("openai", () => {
   };
 });
 
-import { LocalEmbedder, EmbedError, EXPECTED_DIM } from "../../server/local-embedder.js";
+import { LocalEmbedder, EmbedError, EXPECTED_EMBED_DIM } from "@unequal/local-llm";
 
 describe("LocalEmbedder (CP-7-C T6)", () => {
   beforeEach(() => {
@@ -28,15 +28,15 @@ describe("LocalEmbedder (CP-7-C T6)", () => {
   it("happy: 3 texts → 3×1536 矩阵", async () => {
     mockCreate.mockResolvedValue({
       data: [
-        { embedding: new Array(EXPECTED_DIM).fill(0.1), index: 0 },
-        { embedding: new Array(EXPECTED_DIM).fill(0.2), index: 1 },
-        { embedding: new Array(EXPECTED_DIM).fill(0.3), index: 2 },
+        { embedding: new Array(EXPECTED_EMBED_DIM).fill(0.1), index: 0 },
+        { embedding: new Array(EXPECTED_EMBED_DIM).fill(0.2), index: 1 },
+        { embedding: new Array(EXPECTED_EMBED_DIM).fill(0.3), index: 2 },
       ],
     });
     const emb = new LocalEmbedder();
     const r = await emb.embedBatch(["a", "b", "c"]);
     expect(r).toHaveLength(3);
-    expect(r[0]).toHaveLength(EXPECTED_DIM);
+    expect(r[0]).toHaveLength(EXPECTED_EMBED_DIM);
     expect(r[0]?.[0]).toBe(0.1);
   });
 

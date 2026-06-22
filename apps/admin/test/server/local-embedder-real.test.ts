@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { LocalEmbedder, EXPECTED_DIM } from "../../server/local-embedder.js";
+import { LocalEmbedder, EXPECTED_EMBED_DIM } from "@unequal/local-llm";
 
 describe("LocalEmbedder 真接 (CP-7-C T14)", () => {
   it("OMLX 4B + matryoshka 1536 → 真实中文 embedding", async () => {
@@ -17,7 +17,7 @@ describe("LocalEmbedder 真接 (CP-7-C T14)", () => {
     try {
       const vectors = await emb.embedBatch(["测试中文 embedding", "Hello world"]);
       expect(vectors).toHaveLength(2);
-      expect(vectors[0]).toHaveLength(EXPECTED_DIM);
+      expect(vectors[0]).toHaveLength(EXPECTED_EMBED_DIM);
       expect(vectors[1]).toHaveLength(EXPECTED_DIM);
       // sanity: 不同输入不应完全相同
       const same = vectors[0]!.every((v, i) => v === vectors[1]![i]);

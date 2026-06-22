@@ -20,7 +20,7 @@ import { LocalParser } from "./local-parser.js";
 import { CloudPusher } from "./cloud-pusher.js";
 import { chunkText } from "./chunker.js";
 import { initConfig } from "./config.js";
-import { createEmbedder } from "./embedder-factory.js";
+import { createEmbedder } from "./llm-provider.js";
 import { randomUUID } from "node:crypto";
 
 let _store: StatusStore | null = null;

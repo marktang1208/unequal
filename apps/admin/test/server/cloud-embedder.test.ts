@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
-import { CloudEmbedder, type CloudEmbedderOptions } from "../../server/cloud-embedder.js";
+import { CloudEmbedder, type CloudEmbedderOptions } from "@unequal/local-llm";
 
 function makeMockFetch(responses: Array<{ status: number; body?: unknown }>): typeof fetch {
   let i = 0;
