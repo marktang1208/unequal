@@ -36,7 +36,18 @@ function parseArgs(argv: string[]): Record<string, string | boolean> {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
     if (arg.startsWith("--")) {
-      const key = arg.slice(2);
+      const stripped = arg.slice(2);
+      // 支持两种形式：--key value 或 --key=value
+      const eqIdx = stripped.indexOf("=");
+      let key: string;
+      let value: string | undefined;
+      if (eqIdx >= 0) {
+        key = stripped.slice(0, eqIdx);
+        value = stripped.slice(eqIdx + 1);
+        out[key] = value;
+        continue;
+      }
+      key = stripped;
       const next = argv[i + 1];
       if (!next || next.startsWith("--")) {
         out[key] = true;

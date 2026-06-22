@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  P3-7 / Phase D: launchd plist 每日凌晨 3 点跑 crawler
+  装卸见 scripts/install-crawler-launchd.sh + scripts/uninstall-crawler-launchd.sh
+
+  注意：
+  - WorkingDirectory 必须设，否则 pnpm 跑时找不到 monorepo root
+  - PATH 必须含 pnpm（cron 环境 PATH 不全）
+  - StandardOutPath / StandardErrorPath 写到 /tmp（cron 环境不挂用户 Library）
+  - StartCalendarInterval.Hour=3 Minute=0 是凌晨 3 点全量跑
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.unequal.crawler.daily</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/Mark/cc_project/unequal/scripts/run-daily-crawler.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/Mark/cc_project/unequal</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/Mark/.nvm/versions/node/v24.15.0/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/Mark</string>
+    </dict>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>3</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/unequal-crawler.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/unequal-crawler.err.log</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>
