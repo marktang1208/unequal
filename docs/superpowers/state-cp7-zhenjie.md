@@ -317,7 +317,8 @@ CP-7-C + CP-7-D 上线后跑 admin 6 步 smoke（state-cp6 §4），全 PASS：
 
 ## 12. P2 清理（2026-06-22）
 
-CP-7-C T15 真跑后，admin 端架构从「admin 自己 embed」改为「admin 推 content + API 端自己 embed」，
+CP-7-C T15 真跑后，admin 端架构先从「admin 自己 embed」改为「admin 推 content + API 端自己 embed」（v2.3），
+后因 MiniMax 配额限制，改为「admin 本地 embed + 推预嵌入 chunks」（v2.4）。详见 [state-arch-v2.4.md](./state-arch-v2.4.md)。
 两个 P2 清理任务同步推进。
 
 ### 12.1 P2-5: API 端 LLM Provider 解耦

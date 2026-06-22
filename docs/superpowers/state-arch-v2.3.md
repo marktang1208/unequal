@@ -1,4 +1,9 @@
-# Arch-V2.3: T15 真跑发现 — admin 端不 embed，API 端自己 embed
+# Arch-V2.3: T15 真跑发现 — admin 端不 embed，API 端自己 embed（已废弃）
+
+> **废弃**：2026-06-22 23:50。用户决定不用 MiniMax 做 embed（每日配额 5 小时超额），
+> 改用本地 OMLX Qwen3-Embedding-4B + matryoshka 1536。详见
+> [state-arch-v2.4.md](./state-arch-v2.4.md)（当前架构）。
+> 保留此文件作为历史记录。
 
 **日期**：2026-06-22 11:30
 **状态**：✅ 真跑验证通过（commit 5e63e41）

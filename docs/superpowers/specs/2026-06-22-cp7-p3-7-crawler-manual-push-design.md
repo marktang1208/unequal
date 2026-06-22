@@ -1,12 +1,19 @@
 # P3-7: 本地 Crawler + 手动推送闭环（admin MacBook → CloudBase /api-ingest）
 
+**注意**：本 spec 撰写于 v2.3 架构时期（admin 不 embed，API embed）。
+2026-06-22 23:50 后迁移至 **v2.4**（admin 本地 embed + 推预嵌入 chunks），
+详见 [state-arch-v2.4.md](../state-arch-v2.4.md)。
+本 spec 的链路描述仍有效（parse/chunk/push），只是 push payload 改成 `{chunks: [...]}` 而非 content。
+
+---
+
 **日期**：2026-06-22
 **作者**：Mark + Claude (brainstorming 协作)
 **状态**：✅ Design approved（5 节全部 user confirmed）
 **Tag**：`cp7-p3-7-crawler-manual-push`
 **前置**：
-- admin-upload v2.3 spec (commit 5e63e41)
-- state-arch-v2.3.md (admin 端不 embed，API 端自己 embed，5 状态机)
+- admin-upload v2.4 spec (commit state-arch-v2.4.md)
+- state-arch-v2.4.md (admin 本地全链路，推预嵌入 chunks，6 状态机)
 - CP-7-C #2 ingest_proxy 鉴权（requireIngestProxy 已在 apps/api/src/lib/auth-admin.ts）
 - CP-7-D LLM Provider 抽象（commit ff77dd3，admin 端已部分实装）
 - cp7-c4 db.add() 自动填 schema id（commit）
@@ -31,7 +38,7 @@ admin MacBook **本地电脑**实现爬虫 + PDF 解析 + 产 markdown + chunks 
 
 **不在范围**：
 - minipgm 内增加任何上传入口（终端用户上传另议）
-- `/api-ingest` v2 schema 实施（架构 v2.3 §5 描述，**当前 P3-7 不实装**）
+- `/api-ingest` v2 schema 实施（架构 v2.4 §4 描述，**当前 P3-7 不实装**）
 - `/api-upload` v3 复活（仍 410 GONE）
 
 ---
@@ -146,7 +153,7 @@ admin MacBook **本地电脑**实现爬虫 + PDF 解析 + 产 markdown + chunks 
 
 `local_ingest.status` 有 7 个 enum 值：`pending | parsing | chunking | pushing | done | failed`。
 
-- **admin-upload 路径**（source='upload'）：走 `pending → parsing → chunking → pushing → done` 5 态机（admin-upload spec §3.3，arch-v2.3 修正后无 embedding 阶段）
+- **admin-upload 路径**（source='upload'）：走 `pending → parsing → chunking → embedding → pushing → done` 6 态机（v2.4 架构，见 state-arch-v2.4.md §3）
 - **crawler 路径**（source='crawler'）：**只走 `pending → pushing → done/failed`** 3 态机
   - `parsing` / `chunking` 状态在 crawler 进程内跑完，crawler 写 SQLite 时已经处于 `pending` 等待手动推
   - admin 手动推时 → `pushing` → 成功 `done` / 失败 `failed`
@@ -646,7 +653,7 @@ sqlite3 apps/admin/.tmp/unequal.db "SELECT file_id, status, source FROM local_in
 ## 9. References
 
 - admin-upload v2.3 spec: `docs/superpowers/specs/2026-06-22-admin-upload-page-design.md`
-- arch-v2.3: `docs/superpowers/state-arch-v2.3.md`（admin 不 embed / API 自己 embed / 5 状态机）
+- v2.4: `docs/superpowers/state-arch-v2.4.md`（本地 embed + 推预嵌入 chunks / 6 状态机）
 - CP-7-C #2 ingest_proxy 鉴权: `apps/api/src/lib/auth-admin.ts:36-73`
 - CP-7-C #4 db.add() autoid: `docs/superpowers/specs/2026-06-21-cp7-c4-db-add-autoid-design.md`
 - CP-7-D LLM Provider 抽象: `apps/admin/server/llm-provider.ts` (commit ff77dd3)
