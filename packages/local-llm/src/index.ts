@@ -9,4 +9,4 @@ export { LocalEmbedder, OMLX_BASE_URL as DEFAULT_LOCAL_EMBED_BASE_URL, DEFAULT_L
 export { CloudEmbedder } from "./cloud-embedder.js";
 export { LocalChat, DEFAULT_LOCAL_CHAT_MODEL } from "./local-chat.js";
 export { CloudChat, DEFAULT_CLOUD_CHAT_MODEL } from "./cloud-chat.js";
-export { StatusStore, type IngestRecord, type FileStatus } from "./status-store.js";
+export { StatusStore, type IngestRecord, type FileStatus, type IngestSource } from "./status-store.js";

@@ -12,7 +12,7 @@
 
 import type { Connect } from "vite";
 import { IngestOrchestrator } from "./ingest-orchestrator.js";
-import { StatusStore } from "@unequal/local-llm";
+import { StatusStore, type FileStatus, type IngestSource } from "@unequal/local-llm";
 import { ConcurrencyGate } from "./concurrency-gate.js";
 import { FallbackDetector } from "./fallback-detector.js";
 import { probeOmlx } from "./omlx-probe.js";
@@ -21,6 +21,7 @@ import { CloudPusher } from "./cloud-pusher.js";
 import { chunkText } from "./chunker.js";
 import { initConfig } from "./config.js";
 import { createEmbedder } from "./llm-provider.js";
+import { startCrawler, getCrawlerStatus, type SpawnOptions } from "./crawler-spawner.js";
 import { randomUUID } from "node:crypto";
 
 let _store: StatusStore | null = null;
@@ -226,17 +227,195 @@ async function handleUpload(req: Connect.IncomingMessage, res: import("node:http
 
 function handleStatus(req: Connect.IncomingMessage, res: import("node:http").ServerResponse, url: URL): void {
   const { store } = deps();
+
+  // P3-7 / Phase C: 支持多维查询（batch_id / source+status / 全 pending）
   const batchId = url.searchParams.get("batch_id");
-  if (!batchId) {
-    res.statusCode = 400;
+  const sourceParam = url.searchParams.get("source");
+  const statusParam = url.searchParams.get("status");
+
+  if (batchId) {
+    const files = store.listByBatch(batchId);
+    res.statusCode = 200;
     res.setHeader("Content-Type", "application/json");
-    res.end(JSON.stringify({ error: "INVALID_REQUEST", message: "Missing batch_id" }));
+    res.end(JSON.stringify({ batch_id: batchId, files }));
     return;
   }
-  const files = store.listByBatch(batchId);
+
+  // source 过滤（crawler / upload / all）
+  if (sourceParam && sourceParam !== "all") {
+    if (sourceParam !== "upload" && sourceParam !== "crawler") {
+      res.statusCode = 400;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ error: "INVALID_REQUEST", message: `source must be upload|crawler|all, got ${sourceParam}` }));
+      return;
+    }
+    const files = store.listBySource(sourceParam as IngestSource, (statusParam as FileStatus) || undefined);
+    res.statusCode = 200;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ source: sourceParam, status: statusParam ?? "all", files }));
+    return;
+  }
+
+  // 兜底：无 batch_id / source → 400（admin-upload 上传后立即返 batch_id，前端轮询那个）
+  res.statusCode = 400;
+  res.setHeader("Content-Type", "application/json");
+  res.end(JSON.stringify({ error: "INVALID_REQUEST", message: "Missing batch_id or source" }));
+}
+
+/* ──── P3-7 / Phase C: 手动推送（crawler / upload 都走这条） ──── */
+
+/**
+ * POST /api/manual-push
+ * body = { file_ids: string[], trust_level_overrides?: { [file_id]: 0|1|2|3 } }
+ *
+ * 行为：
+ * - 遍历 file_ids，每条：
+ *   - record.status != "pending" → 跳过（计入 skipped）
+ *   - record.cloud_source_id 已存在 → skip（推送去重）
+ *   - status → "pushing"，retry_count++
+ *   - 调 CloudPusher.push（同步 await；5xx/429 不自动重试）
+ *   - 成功 → markDone
+ *   - 失败 → markFailed（retryable=true；retry_count 达 3 → retryable=false）
+ *
+ * 串行（避免 CloudBase HTTP 瞬时 429）；并发 v1 简化不做。
+ */
+async function handleManualPush(req: Connect.IncomingMessage, res: import("node:http").ServerResponse): Promise<void> {
+  const { store } = deps();
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) chunks.push(chunk as Buffer);
+  const raw = Buffer.concat(chunks).toString("utf-8");
+  let body: { file_ids?: string[]; trust_level_overrides?: Record<string, 0 | 1 | 2 | 3> } = {};
+  try {
+    body = raw ? JSON.parse(raw) : {};
+  } catch {
+    res.statusCode = 400;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ error: "INVALID_JSON", message: "Body must be JSON" }));
+    return;
+  }
+  const fileIds = body.file_ids ?? [];
+  if (!Array.isArray(fileIds) || fileIds.length === 0) {
+    res.statusCode = 400;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ error: "INVALID_REQUEST", message: "file_ids must be non-empty array" }));
+    return;
+  }
+
+  const pusher = new CloudPusher();
+  const result: { pushed: number; failed: number; skipped: number; errors: Array<{ file_id: string; error: string }> } = {
+    pushed: 0, failed: 0, skipped: 0, errors: [],
+  };
+
+  for (const fileId of fileIds) {
+    const record = store.getByFileId(fileId);
+    if (!record) {
+      result.skipped++;
+      continue;
+    }
+    if (record.status !== "pending") {
+      result.skipped++;
+      continue;
+    }
+    if (record.cloud_source_id) {
+      // 已推送过，去重
+      result.skipped++;
+      continue;
+    }
+    // 更新 retry_count + status
+    store.update(fileId, {
+      status: "pushing",
+      retry_count: record.retry_count + 1,
+    });
+
+    const trustLevel = body.trust_level_overrides?.[fileId] ?? record.trust_level ?? 0;
+
+    try {
+      const pushResult = await pusher.push({
+        content: record.markdown ?? "",
+        title: record.filename,
+        url: record.filename,        // crawler 端 filename 是 URL 末段；admin-upload 是文件名
+        trust_level: trustLevel as 0 | 1 | 2 | 3,
+      });
+      store.markDone(fileId, pushResult.source_id, pushResult.document_id);
+      result.pushed++;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const isRetryable = (record.retry_count + 1) < 3; // 限制 retry 上限 3
+      store.markFailed(fileId, "PUSH_FAILED", msg, isRetryable);
+      result.failed++;
+      result.errors.push({ file_id: fileId, error: msg });
+    }
+  }
+
   res.statusCode = 200;
   res.setHeader("Content-Type", "application/json");
-  res.end(JSON.stringify({ batch_id: batchId, files }));
+  res.end(JSON.stringify(result));
+}
+
+/* ──── P3-7 / Phase C: 启动爬虫 ──── */
+
+/**
+ * POST /api/crawler/start
+ * body = { source: "xhs"|"wechat-mp"|"webpage"|"all", limit?: number, fullScan?: boolean, since?: number, until?: number, trustLevel?: 0|1|2|3 }
+ *
+ * 行为：spawn detached 子进程跑 pnpm -F crawler start，返 { process_id }。
+ */
+function handleCrawlerStart(req: Connect.IncomingMessage, res: import("node:http").ServerResponse): void {
+  const chunks: Buffer[] = [];
+  void (async () => {
+    for await (const chunk of req) chunks.push(chunk as Buffer);
+    const raw = Buffer.concat(chunks).toString("utf-8");
+    let body: SpawnOptions & { trustLevel?: 0 | 1 | 2 | 3 } = { source: "webpage" };
+    try {
+      body = raw ? JSON.parse(raw) : { source: "webpage" };
+    } catch {
+      res.statusCode = 400;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ error: "INVALID_JSON", message: "Body must be JSON" }));
+      return;
+    }
+    if (!["xhs", "wechat-mp", "webpage", "all"].includes(body.source)) {
+      res.statusCode = 400;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ error: "INVALID_REQUEST", message: `source must be xhs|wechat-mp|webpage|all` }));
+      return;
+    }
+    try {
+      const r = startCrawler(body);
+      res.statusCode = 202;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({
+        process_id: r.process_id,
+        pid: r.pid,
+        log_path: r.log_path,
+        started_at: r.started_at,
+        status: "started",
+      }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.statusCode = 500;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ error: "SPAWN_FAILED", message: msg }));
+    }
+  })();
+}
+
+/**
+ * GET /api/crawler/status?process_id=X
+ */
+function handleCrawlerStatus(req: Connect.IncomingMessage, res: import("node:http").ServerResponse, url: URL): void {
+  const processId = url.searchParams.get("process_id");
+  if (!processId) {
+    res.statusCode = 400;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ error: "INVALID_REQUEST", message: "Missing process_id" }));
+    return;
+  }
+  const { store } = deps();
+  const status = getCrawlerStatus(processId, (batchId) => store.countByBatchId(batchId));
+  res.statusCode = 200;
+  res.setHeader("Content-Type", "application/json");
+  res.end(JSON.stringify(status));
 }
 
 async function handleRetry(req: Connect.IncomingMessage, res: import("node:http").ServerResponse, url: URL): Promise<void> {
@@ -301,6 +480,19 @@ export const localIngestMiddleware: Connect.Server = async (req, res, next) => {
     }
     if (req.method === "GET" && url.pathname === "/api/llm-status") {
       handleLlmStatus(req, res);
+      return;
+    }
+    // P3-7 / Phase C: 手动推送 + 启动爬虫 + 爬虫状态
+    if (req.method === "POST" && url.pathname === "/api/manual-push") {
+      await handleManualPush(req, res);
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/api/crawler/start") {
+      handleCrawlerStart(req, res);
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/api/crawler/status") {
+      handleCrawlerStatus(req, res, url);
       return;
     }
     next();

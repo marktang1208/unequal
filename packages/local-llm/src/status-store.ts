@@ -32,6 +32,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
 export type FileStatus = "pending" | "parsing" | "chunking" | "embedding" | "pushing" | "done" | "failed";
+export type IngestSource = "upload" | "crawler";
 
 export interface IngestRecord {
   file_id: string;
@@ -53,9 +54,13 @@ export interface IngestRecord {
   retryable: 0 | 1;
   created_at: number;
   updated_at: number;
+  /** P3-7 / Phase C: 区分 upload vs crawler（admin-upload 默认 'upload'，crawler 写 'crawler'） */
+  source: IngestSource;
+  /** P3-7 / Phase C: crawler metadata JSON 序列化（crawl_depth/source_domain/crawled_at/parent_url） */
+  metadata: string | null;
 }
 
-const SCHEMA = `
+const SCHEMA_V1 = `
 CREATE TABLE IF NOT EXISTS local_ingest (
   file_id TEXT PRIMARY KEY,
   batch_id TEXT NOT NULL,
@@ -81,6 +86,30 @@ CREATE INDEX IF NOT EXISTS idx_batch ON local_ingest(batch_id);
 CREATE INDEX IF NOT EXISTS idx_status ON local_ingest(status);
 `;
 
+/** P3-7 / Phase C: 增量 ALTER（existing rows 自动填 source='upload'） */
+const SCHEMA_MIGRATIONS = [
+  `ALTER TABLE local_ingest ADD COLUMN source TEXT NOT NULL DEFAULT 'upload'`,
+  `ALTER TABLE local_ingest ADD COLUMN metadata TEXT`,
+  `CREATE INDEX IF NOT EXISTS idx_source_status ON local_ingest(source, status)`,
+];
+
+function getTableColumns(db: Database.Database, table: string): Set<string> {
+  const rows = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  return new Set(rows.map((r) => r.name));
+}
+
+function applyMigrations(db: Database.Database): void {
+  const columns = getTableColumns(db, "local_ingest");
+  if (!columns.has("source")) {
+    db.exec(SCHEMA_MIGRATIONS[0]!);
+  }
+  if (!columns.has("metadata")) {
+    db.exec(SCHEMA_MIGRATIONS[1]!);
+  }
+  // idx_source_status 用 CREATE INDEX IF NOT EXISTS 幂等创建
+  db.exec(SCHEMA_MIGRATIONS[2]!);
+}
+
 export class StatusStore {
   private db: Database.Database;
 
@@ -89,7 +118,8 @@ export class StatusStore {
     this.db = new Database(dbPath);
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("synchronous = NORMAL");
-    this.db.exec(SCHEMA);
+    this.db.exec(SCHEMA_V1);
+    applyMigrations(this.db);
   }
 
   create(input: {
@@ -103,8 +133,10 @@ export class StatusStore {
     chunks_json?: string | null;
     markdown_chars?: number | null;
     chunks_count?: number | null;
-    /** P3-7 / Phase B: crawler metadata（crawl_depth/source_domain/crawled_at/parent_url） JSON 序列化 */
+    /** P3-7 / Phase B/C: crawler metadata（crawl_depth/source_domain/crawled_at/parent_url） JSON 序列化 */
     metadata?: string | null;
+    /** P3-7 / Phase C: source 区分 upload/crawler；默认 'upload'（admin-upload 路径） */
+    source?: IngestSource;
     status?: FileStatus;
     progress?: number;
     retry_count?: number;
@@ -133,18 +165,22 @@ export class StatusStore {
       retryable: input.retryable ?? 0,
       created_at: now,
       updated_at: input.updated_at ?? now,
+      source: input.source ?? "upload",
+      metadata: input.metadata ?? null,
     };
     this.db.prepare(`
       INSERT INTO local_ingest (
         file_id, batch_id, filename, ext, status, progress,
         tmp_data, markdown, chunks_json, markdown_chars, chunks_count,
         error_code, error_message, cloud_source_id, cloud_document_id,
-        retry_count, retryable, created_at, updated_at
+        retry_count, retryable, created_at, updated_at,
+        source, metadata
       ) VALUES (
         @file_id, @batch_id, @filename, @ext, @status, @progress,
         @tmp_data, @markdown, @chunks_json, @markdown_chars, @chunks_count,
         @error_code, @error_message, @cloud_source_id, @cloud_document_id,
-        @retry_count, @retryable, @created_at, @updated_at
+        @retry_count, @retryable, @created_at, @updated_at,
+        @source, @metadata
       )
     `).run(record);
     return record;
@@ -172,6 +208,36 @@ export class StatusStore {
 
   listByBatch(batchId: string): IngestRecord[] {
     return this.db.prepare("SELECT * FROM local_ingest WHERE batch_id = ? ORDER BY created_at ASC").all(batchId) as IngestRecord[];
+  }
+
+  /** P3-7 / Phase C: 按 source + 可选 status 过滤 */
+  listBySource(source: IngestSource, status?: FileStatus, limit?: number): IngestRecord[] {
+    if (status) {
+      return this.db.prepare(
+        "SELECT * FROM local_ingest WHERE source = ? AND status = ? ORDER BY created_at ASC" + (limit ? " LIMIT ?" : ""),
+      ).all(...(limit ? [source, status, limit] : [source, status])) as IngestRecord[];
+    }
+    return this.db.prepare(
+      "SELECT * FROM local_ingest WHERE source = ? ORDER BY created_at ASC" + (limit ? " LIMIT ?" : ""),
+    ).all(...(limit ? [source, limit] : [source])) as IngestRecord[];
+  }
+
+  /** P3-7 / Phase C: 列所有 pending record（不限 source） */
+  listPending(limit?: number): IngestRecord[] {
+    return this.db.prepare(
+      "SELECT * FROM local_ingest WHERE status = 'pending' ORDER BY created_at ASC" + (limit ? " LIMIT ?" : ""),
+    ).all(...(limit ? [limit] : [])) as IngestRecord[];
+  }
+
+  /** P3-7 / Phase C: 按 batch_id 查（admin UI 启动爬虫后用） */
+  getByBatchId(batchId: string): IngestRecord[] {
+    return this.listByBatch(batchId);
+  }
+
+  /** P3-7 / Phase C: 按 batch_id 计数（crawler 子进程用） */
+  countByBatchId(batchId: string): number {
+    const row = this.db.prepare("SELECT COUNT(*) AS n FROM local_ingest WHERE batch_id = ?").get(batchId) as { n: number } | undefined;
+    return row?.n ?? 0;
   }
 
   listRetryable(): IngestRecord[] {
