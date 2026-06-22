@@ -146,7 +146,7 @@ export async function loadConfig(): Promise<AppConfig> {
   };
 
   const pdfConfig: PdfConfig = {
-    mineruModelSource: process.env.MINERU_MODEL_SOURCE ?? "huggingface",
+    mineruModelSource: process.env.MINERU_MODEL_SOURCE ?? "modelscope",
     mineruTimeoutMs: Number(process.env.LOCAL_PARSER_MINERU_TIMEOUT_MS) || 30 * 60 * 1000,
   };
 

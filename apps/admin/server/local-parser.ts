@@ -111,7 +111,10 @@ export class LocalParser {
     // 模型源：默认 huggingface（中国网络 GFW）；国内用 modelscope 走魔搭镜像
     //   MINERU_MODEL_SOURCE=modelscope 已在 mineru CLI 3.2.3 支持
     const mineruEnv: NodeJS.ProcessEnv = { ...process.env };
-    if (process.env.MINERU_MODEL_SOURCE) {
+    // 默认 modelscope（国内网络 GFW 不能从 huggingface 下模型）
+    if (!process.env.MINERU_MODEL_SOURCE) {
+      mineruEnv.MINERU_MODEL_SOURCE = "modelscope";
+    } else {
       mineruEnv.MINERU_MODEL_SOURCE = process.env.MINERU_MODEL_SOURCE;
     }
 

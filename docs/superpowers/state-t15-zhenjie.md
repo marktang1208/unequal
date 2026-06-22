@@ -104,46 +104,74 @@ $ curl ... /api/ingest-status?batch_id=...
 
 **通路 PASS，但 PDF 解析质量降级** — chunks 内容是 pdf-parse 抽到的纯文本流（无 OCR/排版），104 个 chunks 大量是噪音（"page 1", "page 2" 之类）。
 
-## 4. mineru pipeline exit 1 调查（明早 task）
+## 4. mineru pipeline exit 1 根因分析 + 修复
 
-### 4.1 现象
+### 4.1 诊断结论
 
-- mineru 进程启动 OK（pid 26914, `-b pipeline -l ch -m auto`，MINERU_MODEL_SOURCE=modelscope）
-- 跑了 ~5 分钟（不是 timeout — 否则会走 "mineru parse timeout (>1800000ms)" 分支）
-- 进程消失，exit 1，无 stderr 写入 mineru.log
+**mineru 3.2.3 本身无问题** — CLI 直接跑 61 秒解析 14 页完所有阶段并 exit 0。
 
-### 4.2 跟 sleep-summary §4 预期不一致
+真正的根因是 **vite dev server 不自动加载 `.env.local` 到 `process.env`**。
 
-当时 T15 setup 验证 `pipeline + modelscope` 跑通：
+**详细时序**：
 
-> pipeline + modelscope：✅ 成功！14 页 1MB PDF 解析 ~15s（OCR-det + 14 pages processing）
+1. `apps/admin/.env.local` 含 `MINERU_MODEL_SOURCE=modelscope`（正确配置，已验证 CLI 跑通）
+2. `apps/admin/vite.config.ts` 调用 `pnpm dev` 启动 vite → vite 通过 `loadEnv()` 把 `.env.local` 变量暴露到 `import.meta.env`（仅 client 端）
+3. **vite 不把 `.env.local` 注入到 `process.env`**（server middleware 是 Node.js 进程，读 `process.env` 而非 `import.meta.env`）
+4. `local-parser.ts:113` 做 `{ ...process.env }`（**spread 不包含 .env.local 的变量**）
+5. `config.ts:149` 默认值是 `"huggingface"`（国内项目不应有的默认值）
+6. 结果：mineru 子进程收到 `MINERU_MODEL_SOURCE=undefined` → `huggingface_hub` 走 huggingface.co → GFW 140 秒 timeout → exit 1
 
-现在跑同样的 PDF + 同样的 backend + 同样的 env，**5 分钟后 exit 1**。
+**验证链**：
+1. `env -u MINERU_MODEL_SOURCE mineru ...` → exit 1 + `huggingface.co timed out` ✅
+2. `MINERU_MODEL_SOURCE=modelscope node -e spawn(mineru)` → exit 0 + 14/14 pages ✅
+3. `source .env.local; pnpm dev; curl upload PDF` → chunks_count=80 (mineru 真解析了) ✅
 
-### 4.3 可能原因（待诊断）
+### 4.2 修复（2 处）
 
-1. **OMLX 资源抢占**：Qwen3-Embedding-4B-4bit-DWQ (~2.5GB) + Qwen3.6-35B-A3B (~11.5GB) 同时跑，mineru spawn 时可能 OOM
-2. **mineru 子进程 model cache 路径冲突**：之前可能 mineru 把 cache 写到 GFW 阻断的 huggingface 路径
-3. **macOS 进程清理**：sleep/wake 后资源锁没释放
-4. **PDF-specific**：这个 PDF 内部有什么触发 mineru crash
+**修复 A** — `vite.config.ts`：改用 `defineConfig(({mode}) => {...})` 回调形式，在回调顶部调 `loadEnv(mode, envDir, "")` 并注入 `process.env`（无前缀过滤，全量注入）。
 
-### 4.4 明早任务
+```typescript
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), "");
+  for (const [key, val] of Object.entries(env)) {
+    if (process.env[key] === undefined || process.env[key] === "") {
+      process.env[key] = val;
+    }
+  }
+  return { plugins: [react(), ...], server: { port: 5173 } };
+});
+```
 
-- [ ] 单独跑 `mineru -p /tmp/test.pdf -o /tmp/test-out -m auto -b pipeline -l ch` 复现 exit 1
-- [ ] 抓 mineru stderr 到文件（当前 `stdio: ["ignore", "pipe", "pipe"]` pipe 已接但 log 没保存）
-- [ ] 如 OOM → 加 OMLX 内存防护 / 跑 mineru 前先停 OMLX 大模型
-- [ ] 如 GFW → 强制 MINERU_MODEL_SOURCE=modelscope 已设但仍试 hf 路径，看 mineru CLI 3.2.3 是否真读这个 env
-- [ ] 如成功 → 修 local-parser.ts 抓 stderr 写 .log 文件便于诊断
+**修复 B** — `local-parser.ts` + `config.ts`：硬编码默认值改为 `"modelscope"`（国内项目不应默认 huggingface）：
 
-### 4.5 Plan B 已生效
+```typescript
+// local-parser.ts:113-116
+const mineruEnv: NodeJS.ProcessEnv = { ...process.env };
+if (!process.env.MINERU_MODEL_SOURCE) {
+  mineruEnv.MINERU_MODEL_SOURCE = "modelscope";
+}
 
-**pdf-parse fallback 已救场**（spec §"T15 setup" 设计的双保险）— 即使 mineru 挂，admin 仍能上传 PDF（虽然质量降级）。
+// config.ts:149
+mineruModelSource: process.env.MINERU_MODEL_SOURCE ?? "modelscope",
+```
 
-这跟 sleep-summary §R1 决策一致：
+**修复 B 是真正的保险**：即使 `.env.local` 缺失（首次克隆没 cp .env.local.example），mineru 也不会去 huggingface 撞 GFW。
 
-> R1: mineru 解析 01-valid.pdf 是否成功 ✅ 解决
-> 原因已明：MINERU_MODEL_SOURCE=modelscope + -b pipeline 即可。
-> **Plan B（pdf-parse fallback）已实现**，双保险。
+### 4.3 修复验证
+
+修后起 `pnpm dev` 上传同样的 1MB PDF（/tmp/test.pdf）：
+
+- ✅ vite 286ms ready（loadEnv 注入 0 overhead）
+- ✅ upload HTTP 202 正常
+- ✅ **chunks_count=80**（mineru 真解析了 — 之前是 pdf-parse fallback 的 104 chunks 噪音）
+- ❌ CloudPusher push 400 FUNCTION_INVOCATION_FAILED（CloudBase api-router 端问题，需 redeploy bundle — 非本次修复范围）
+
+### 4.4 教训
+
+- **vite dev server 不自动 load .env.local 到 process.env** — 这坑了 3 个变量（OMLX 那套只是碰巧默认值对了没暴露）
+- 所有 `process.env.XXX` + `?? "default"` 组合，如果默认值跟 .env.local 不一样，dev 和 prod 行为就不一致
+- 修复 B（硬编码默认值改对）比修复 A（loadEnv 注入）更基础 — 它不依赖 env 文件存在
+- 未来所有 `.env.local` 变量都应在 `local-parser.ts` / `config.ts` 有正确的默认值
 
 ## 5. T15 真接成果总结
 
@@ -159,8 +187,9 @@ $ curl ... /api/ingest-status?batch_id=...
 
 ### 5.2 已知问题（待修）
 
-- ⚠️ mineru pipeline 跑 ~5 分钟后 exit 1（明早第一件事）
-- ⚠️ `LocalParser` stderr 没写 log 文件（下次挂时无法诊断 — local-parser.ts:90 stderr.slice(-500) 仅 console.warn，不写文件）
+- ❌ **CloudBase api-router 400 FUNCTION_INVOCATION_FAILED**（修复 B 后的新问题 — mineru 解析成功后推送 CloudBase 失败，需要 redeploy api-router bundle）
+- ⚠️ 修复前 104 chunks（pdf-parse fallback 噪声）→ 修复后 **80 chunks（mineru 真解析）** — 质量提升
+- ⚠️ `LocalParser` stderr 没写 log 文件（下次挂时无法诊断 — local-parser.ts:131 stderr.on("data") 仅拼接 string 不写文件）
 - ⚠️ admin-upload 中 `tmp_data` 字段存原始 binary 到 SQLite（看 status API 时返 Buffer array，无用但占空间 — 后续 T9 改写文件）
 
 ### 5.3 累计测试（未动）
