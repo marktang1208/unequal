@@ -1,13 +1,15 @@
 /**
- * CP-7-C: CloudPusher — POST /api-ingest (markdown + chunks)
+ * CP-7-C: CloudPusher — POST /api-ingest (markdown only)
  *
- * 调用 CloudBase Gateway（ap-shanghai.app.tcloudbase.com）/api-router/api-ingest
+ * 调用 CloudBase Gateway（ap-shanghai.app.tcloudbase.com）/api-ingest
  * Header: X-Ingest-Proxy-Secret: $INGEST_PROXY_SECRET
  *
- * 重试（spec §5.1）：
- *   - 5xx: 重试 2 次（退避 1s/3s）
- *   - 429: 重试 3 次（退避 5s/10s/20s）
- *   - 4xx auth: 不重试
+ * Payload schema（与 apps/api/src/handlers/api-ingest.ts IngestRequest 对齐）：
+ *   { content, title, url, trust_level, user_id? }
+ *
+ * API 端自己 chunk + embed（MiniMax embo-01 → 1536 维），admin 端只传 markdown。
+ *   这避免了 admin 端 embed 浪费 OMLX 算力 + 避免 5MB payload 限制
+ *   （1536 维 × 30 chunks ≈ 1MB+ 嵌入数组）。
  *
  * 错误分类（spec §4.1）：
  *   - AuthError (401/403): no retry
@@ -17,25 +19,18 @@
  */
 
 export interface CloudPusherInput {
-  markdown: string;
-  source_meta: {
-    url: string;
-    type: string;
-    title?: string;
-    trust_level: number;
-    user_id?: string;
-  };
-  document_meta: {
-    title: string;
-    rawPath?: string;
-    previewSnippet?: string;
-  };
-  chunks: Array<{ content: string; embedding: number[]; idx: number; token_count: number }>;
+  content: string;
+  title?: string;
+  url: string;
+  trust_level: 0 | 1 | 2 | 3;
+  user_id?: string;
 }
 
 export interface CloudPusherResult {
   source_id: string;
   document_id: string;
+  chunks_inserted: number;
+  chunks_failed: number;
 }
 
 export class PushError extends Error {
@@ -65,7 +60,7 @@ export class CloudPusher {
   private backoff429: number;
 
   constructor(opts: CloudPusherOptions = {}) {
-    this.baseUrl = opts.baseUrl ?? "https://unequal-d4ggf7rwg82e0900b-1444590671.ap-shanghai.app.tcloudbase.com/api-router";
+    this.baseUrl = opts.baseUrl ?? "https://unequal-d4ggf7rwg82e0900b-1444590671.ap-shanghai.app.tcloudbase.com";
     this.secret = opts.proxySecret ?? process.env.INGEST_PROXY_SECRET ?? "5852adc613c74d479907d68c22c478d2d11edb7340c9a4b8b0e1061b21be58a1";
     this.fetch = opts.fetchImpl ?? fetch;
     this.maxRetries5xx = opts.maxRetries5xx ?? 2;
@@ -77,14 +72,11 @@ export class CloudPusher {
   async push(input: CloudPusherInput): Promise<CloudPusherResult> {
     const url = `${this.baseUrl}/api-ingest`;
     const body = JSON.stringify({
-      url: input.source_meta.url,
-      type: input.source_meta.type,
-      title: input.source_meta.title,
-      trust_level: input.source_meta.trust_level,
-      user_id: input.source_meta.user_id,
-      document: input.document_meta,
-      markdown: input.markdown,
-      chunks: input.chunks,
+      content: input.content,
+      title: input.title,
+      url: input.url,
+      trust_level: input.trust_level,
+      ...(input.user_id ? { user_id: input.user_id } : {}),
     });
 
     let attempt429 = 0;
@@ -115,11 +107,16 @@ export class CloudPusher {
 
       if (resp.ok) {
         // 200: 解析响应
-        const data = (await resp.json()) as { source_id: string; document_id: string };
+        const data = (await resp.json()) as { source_id: string; document_id: string; chunks_inserted?: number; chunks_failed?: number };
         if (!data.source_id || !data.document_id) {
           throw new PushError(`Invalid response: missing source_id/document_id`, "ServerError", true, 200);
         }
-        return { source_id: data.source_id, document_id: data.document_id };
+        return {
+          source_id: data.source_id,
+          document_id: data.document_id,
+          chunks_inserted: data.chunks_inserted ?? 0,
+          chunks_failed: data.chunks_failed ?? 0,
+        };
       }
 
       const status = resp.status;

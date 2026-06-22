@@ -86,7 +86,8 @@ export class LocalParser {
     try {
       return await this.parsePdfMineru(buf, filename);
     } catch (mineruErr) {
-      console.warn(`[LocalParser] mineru failed for ${filename}, falling back to pdf-parse: ${(mineruErr as Error).message}`);
+      const mineruStderr = (mineruErr as Error & { stderr?: string }).stderr;
+      console.warn(`[LocalParser] mineru failed for ${filename}, falling back to pdf-parse: ${(mineruErr as Error).message}${mineruStderr ? `\nmineru stderr (last 500): ${mineruStderr.slice(-500)}` : ""}`);
       try {
         return await this.parsePdfFallback(buf, filename);
       } catch (fallbackErr) {
@@ -120,7 +121,7 @@ export class LocalParser {
           "-p", inputPath,
           "-o", tmpDir,
           "-m", "auto",
-          "-b", "hybrid-auto-engine",
+          "-b", "pipeline",       // 走 pipeline backend（不需要 VLM）；hybrid-auto-engine 缺 VLM 模型
           "-l", "ch",
           "-f", "true",
           "-t", "true",

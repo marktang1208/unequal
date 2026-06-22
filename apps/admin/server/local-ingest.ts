@@ -19,7 +19,7 @@ import { probeOmlx } from "./omlx-probe.js";
 import { LocalParser } from "./local-parser.js";
 import { CloudPusher } from "./cloud-pusher.js";
 import { chunkText } from "./chunker.js";
-import { initConfig, type AppConfig } from "./config.js";
+import { initConfig } from "./config.js";
 import { createEmbedder } from "./embedder-factory.js";
 import { randomUUID } from "node:crypto";
 
@@ -52,7 +52,9 @@ export function __resetForTest(): void {
 }
 
 /**
- * 生产初始化：按 config 创建 Embedder（local OMLX 或 cloud MiniMax），注入 Parser/Pusher/Chunker。
+ * 生产初始化：按 config 创建 Embedder（local OMLX 或 cloud MiniMax）作为基础设施
+ *   （v1 不入 pipeline，API 端自己 embed；保留是为了未来离线缓存/兜底），
+ *   注入 Parser/Pusher/Chunker。
  * dev server 启动时调一次（idempotent）。
  */
 export async function initProductionDeps(): Promise<void> {
@@ -60,11 +62,12 @@ export async function initProductionDeps(): Promise<void> {
   const { orchestrator } = deps();
   const config = await initConfig();
   orchestrator.setParser(new LocalParser());
-  orchestrator.setEmbedder(createEmbedder(config.embed));
   orchestrator.setPusher(new CloudPusher());
   orchestrator.setChunker({ chunkText });
+  // 创建 embedder 但不注入 orchestrator（API 端 embed）；保留引用供未来 LlmStatus / fallback
+  createEmbedder(config.embed);
   _initialized = true;
-  console.log(`[local-ingest] Embedder: ${config.embed.provider} (model=${config.embed.omlxModel ?? config.embed.cloudModel})`);
+  console.log(`[local-ingest] Pusher=CloudBase (api-ingest); Embedder infra=${config.embed.provider} (model=${config.embed.omlxModel ?? config.embed.cloudModel}) [API 端 embed]`);
 }
 
 function deps() {

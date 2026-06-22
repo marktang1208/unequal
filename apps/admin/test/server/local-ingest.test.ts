@@ -15,28 +15,23 @@ import { ConcurrencyGate } from "../../server/concurrency-gate.js";
 import {
   IngestOrchestrator,
   type LocalParser,
-  type LocalEmbedder,
   type CloudPusher,
   type ChunkText,
 } from "../../server/ingest-orchestrator.js";
 import { localIngestMiddleware, __setDepsForTest, __resetForTest } from "../../server/local-ingest.js";
 
-// T2 测试用 mock：注入 stub parser/embedder/pusher/chunker 避免 T5/T6/T8 真实依赖
+// T2 测试用 mock：注入 stub parser/pusher/chunker 避免 T5/T8 真实依赖（admin 端不 embed）
 function setupMockDeps(orchestrator: IngestOrchestrator): void {
   const mockParser: LocalParser = {
     parseAuto: async () => "# Mock Markdown\n\nParsed content",
   };
-  const mockEmbedder: LocalEmbedder = {
-    embedBatch: async (texts) => texts.map(() => new Array(1536).fill(0.01)),
-  };
   const mockPusher: CloudPusher = {
-    push: async () => ({ source_id: "01KSRC_MOCK", document_id: "01KDOC_MOCK" }),
+    push: async () => ({ source_id: "01KSRC_MOCK", document_id: "01KDOC_MOCK", chunks_inserted: 1, chunks_failed: 0 }),
   };
   const mockChunker: ChunkText = {
     chunkText: async (text) => [{ idx: 0, content: text, tokenCount: text.length }],
   };
   orchestrator.setParser(mockParser);
-  orchestrator.setEmbedder(mockEmbedder);
   orchestrator.setPusher(mockPusher);
   orchestrator.setChunker(mockChunker);
 }

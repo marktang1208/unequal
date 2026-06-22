@@ -1,9 +1,10 @@
 /**
  * CP-7-C: 集成测试 — 5 文件并发端到端
  *
- * 真实链路：multipart → 5 file → 并发 orchestrator (parser → chunker → embedder → pusher) → 全部 done
+ * 真实链路：multipart → 5 file → 并发 orchestrator (parser → chunker → pusher) → 全部 done
+ * （v1 简化：admin 端不 embed，API 端自己 embed；orchestrator 只 parse + chunk + push）
  *
- * mock parser/embedder/pusher（避免 mineru/OMLX 真实依赖）
+ * mock parser/pusher（避免 mineru/OMLX/MiniMax 真实依赖）
  * 真 SQLite + 真 ConcurrencyGate + 真 IngestOrchestrator
  */
 
@@ -16,7 +17,6 @@ import { ConcurrencyGate } from "../../server/concurrency-gate.js";
 import {
   IngestOrchestrator,
   type LocalParser,
-  type LocalEmbedder,
   type CloudPusher,
   type ChunkText,
 } from "../../server/ingest-orchestrator.js";
@@ -56,15 +56,13 @@ describe("IngestOrchestrator 集成 (CP-7-C T9)", () => {
         return {
           source_id: `01KSRC_${pushCalls}`,
           document_id: `01KDOC_${pushCalls}`,
+          chunks_inserted: 2,
+          chunks_failed: 0,
         };
       },
     };
-    const mockEmbedder: LocalEmbedder = {
-      embedBatch: async (texts) => texts.map(() => new Array(1536).fill(0.01)),
-    };
     orchestrator.setParser(mockParser);
     orchestrator.setChunker(mockChunker);
-    orchestrator.setEmbedder(mockEmbedder);
     orchestrator.setPusher(mockPusher);
   });
 
