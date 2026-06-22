@@ -20,13 +20,15 @@ export interface OmlxProbeResult {
   error?: string;
 }
 
-const DEFAULT_URL = "http://localhost:11434/v1";
+const DEFAULT_URL = (typeof process !== "undefined" && process.env?.OMLX_BASE_URL) || "http://localhost:11434/v1";
+const DEFAULT_API_KEY = (typeof process !== "undefined" && process.env?.OMLX_API_KEY) || "";
 const PROBE_TIMEOUT_MS = 2000;
 
 export async function probeOmlx(
   baseUrl: string = DEFAULT_URL,
   fetchImpl: typeof fetch = fetch,
   timeoutMs: number = PROBE_TIMEOUT_MS,
+  apiKey: string = DEFAULT_API_KEY,
 ): Promise<OmlxProbeResult> {
   const url = `${baseUrl}/models`;
   try {
@@ -34,7 +36,9 @@ export async function probeOmlx(
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     let res: Response;
     try {
-      res = await fetchImpl(url, { signal: controller.signal });
+      const headers: Record<string, string> = {};
+      if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+      res = await fetchImpl(url, { signal: controller.signal, headers });
     } finally {
       clearTimeout(timer);
     }

@@ -39,27 +39,36 @@ export class LocalEmbedder implements Embedder {
     });
   }
 
+  /** 批量分块大小：避免 OMLX 80+ 长文本卡 loadText/OOM（实测单批 18s OK，>30 文本+长内容 hang） */
+  private static readonly BATCH_SIZE = 10;
+
   async embed(texts: string[]): Promise<number[][]> {
     if (texts.length === 0) return [];
     try {
-      const params: EmbeddingCreateParams = {
-        model: this.model,
-        input: texts,
-        encoding_format: "float",
-        dimensions: this.expectedDim,
-      };
-      const resp = await this.client.embeddings.create(params);
-      const vectors = resp.data.map((d) => d.embedding);
-      if (vectors.length > 0) {
-        const dim = vectors[0]?.length ?? 0;
-        if (dim !== this.expectedDim) {
-          throw new EmbedError(
-            `Embedding dim mismatch: expected ${this.expectedDim}, got ${dim} (model=${this.model})`,
-            "DimensionMismatch",
-          );
+      // 分批 embed：每批 ≤ 10 文本（已验证 OMLX 稳定）
+      const allVectors: number[][] = [];
+      for (let i = 0; i < texts.length; i += LocalEmbedder.BATCH_SIZE) {
+        const batch = texts.slice(i, i + LocalEmbedder.BATCH_SIZE);
+        const params: EmbeddingCreateParams = {
+          model: this.model,
+          input: batch,
+          encoding_format: "float",
+          dimensions: this.expectedDim,
+        };
+        const resp = await this.client.embeddings.create(params);
+        const vectors = resp.data.map((d) => d.embedding);
+        if (vectors.length > 0) {
+          const dim = vectors[0]?.length ?? 0;
+          if (dim !== this.expectedDim) {
+            throw new EmbedError(
+              `Embedding dim mismatch: expected ${this.expectedDim}, got ${dim} (model=${this.model})`,
+              "DimensionMismatch",
+            );
+          }
         }
+        allVectors.push(...vectors);
       }
-      return vectors;
+      return allVectors;
     } catch (err) {
       if (err instanceof EmbedError) throw err;
       const msg = err instanceof Error ? err.message : String(err);
