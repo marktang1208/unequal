@@ -23,6 +23,7 @@ vi.mock("../../src/lib/db.js", async (importOriginal) => {
 import { main as askMain } from "../../src/handlers/api-ask.js";
 import * as db from "../../src/lib/db.js";
 import { loadEnvForTest, resetEnv } from "../../src/lib/env.js";
+import { resetProviders } from "../../src/lib/llm-provider.js";
 
 const ADMIN_TOKEN = "***REMOVED***";
 const ALLOW_IP = "127.0.0.1";
@@ -77,6 +78,7 @@ describe("api-ask handler (CP-7-D #1/#2)", () => {
 
   beforeEach(() => {
     resetEnv();
+    resetProviders();  // CP-7-D #2: 懒加载单例必须 reset，避免前测试 embedder 复用
     loadEnvForTest({
       ADMIN_TOKEN,
       JWT_SECRET: "jwt-secret-32-bytes-min-aaaaaaaaa",

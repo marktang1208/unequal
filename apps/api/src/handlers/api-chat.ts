@@ -15,7 +15,8 @@ import {
 } from "../lib/handler-utils.js";
 import { getEnv } from "../lib/env.js";
 import { verifyJwt } from "../lib/jwt.js";
-import { createMiniMaxEmbedder } from "@unequal/shared/embedding";
+// CP-7-D #2: 走 factory（不再 import createMiniMaxEmbedder）
+import { getEmbedder, getChatProvider } from "../lib/llm-provider.js";
 import { searchChunks, type ChunkWithEmbedding } from "@unequal/shared/retrieval";
 import { add, getById, whereQuery, COLLECTIONS } from "../lib/db.js";
 import { newId } from "../lib/db.js";
@@ -123,11 +124,8 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
   }
 
   // 2. 检索 top-5 chunks
-  const embed = createMiniMaxEmbedder({
-    apiKey: env.MINIMAX_API_KEY,
-    baseUrl: env.MINIMAX_BASE_URL,
-    model: env.EMBED_MODEL,
-  });
+  // CP-7-D #2: 走 factory
+  const embed = getEmbedder();
   const queryVec = (await embed.embed([q]))[0] ?? [];
 
   const chunks = await whereQuery<Chunk>(COLLECTIONS.chunk, { userId }, { limit: 500 });
@@ -180,7 +178,8 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
     { role: m.role, content: m.content },
   ]);
 
-  // 6. MiniMax chat completion（带 system + history + 当前 q）
+  // 6. LLM chat completion（带 system + history + 当前 q）
+  // CP-7-D #2: 走 factory；错误包成 502 保持对外兼容
   // CP-7-B bugfix：原 prompt "引用用 [N] 格式" 被 LLM 误解为字面字符串 [N]。
   // 改为明确说明 N 是 1-5 的具体数字，并给出示例，避免 LLM 抄字面占位符。
   const systemPrompt = `你是"不等号"——一个育儿知识库助手。
@@ -195,30 +194,21 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
 # 参考资料
 ${contextLines || "(无)"}`;
 
-  const res = await fetch(`${env.MINIMAX_BASE_URL}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      authorization: `Bearer ${env.MINIMAX_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: env.LLM_MODEL,
+  let answer: string;
+  try {
+    const result = await getChatProvider().chat({
       messages: [
         { role: "system", content: systemPrompt },
         ...chatHistoryMsgs,
         { role: "user", content: q },
       ],
       temperature: 0.3,
-    }),
-  });
-
-  if (!res.ok) {
-    const body = await res.text();
-    return errorResponse("MINIMAX_FAILED", `MiniMax chat failed: ${res.status} ${body}`, 502);
+    });
+    answer = result.content || "(无回答)";
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return errorResponse("MINIMAX_FAILED", `LLM chat failed: ${message}`, 502);
   }
-
-  const chatRes = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
-  const answer = chatRes.choices?.[0]?.message?.content ?? "(无回答)";
 
   // 7. 持久化 messages
   const now = Date.now();

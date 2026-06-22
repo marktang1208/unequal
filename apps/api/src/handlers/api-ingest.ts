@@ -27,7 +27,8 @@ import {
 } from "../lib/handler-utils.js";
 import { getEnv } from "../lib/env.js";
 import { requireAdmin, requireIngestProxy } from "../lib/auth-admin.js";
-import { createMiniMaxEmbedder } from "@unequal/shared/embedding";
+// CP-7-D #2: 走 factory（不再 import createMiniMaxEmbedder）
+import { getEmbedder } from "../lib/llm-provider.js";
 import { chunkText } from "@unequal/shared/chunking";
 import { COLLECTIONS, type CollectionName } from "../lib/collections.js";
 import { add } from "../lib/db.js";
@@ -180,11 +181,8 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
 
     const chunks = chunkText(body.content, { maxTokens: 500, overlapTokens: 80 });
 
-    const embed = createMiniMaxEmbedder({
-      apiKey: env.MINIMAX_API_KEY,
-      baseUrl: env.MINIMAX_BASE_URL,
-      model: "embo-01",
-    });
+    // CP-7-D #2: 走 factory
+    const embed = getEmbedder();
 
     const texts = chunks.map((c) => c.content);
     let embeddings: number[][] = [];

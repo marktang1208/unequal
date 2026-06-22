@@ -73,6 +73,18 @@ vi.mock("@unequal/shared/embedding", () => ({
   })),
 }));
 
+// CP-7-D #2: handler 走 llm-provider factory，mock factory 而不是 mock shared/embedding
+const mockEmbedFn = vi.fn(async (texts: string[]) => texts.map(() => new Array(1536).fill(0.1)));
+vi.mock("../../src/lib/llm-provider.js", () => ({
+  getEmbedder: () => ({ embed: mockEmbedFn }),
+  getChatProvider: () => ({
+    chat: vi.fn(async () => ({ content: "mock answer" })),
+  }),
+  resetProviders: vi.fn(),
+  __setEmbedderForTest: vi.fn(),
+  __setChatProviderForTest: vi.fn(),
+}));
+
 vi.mock("@unequal/shared/chunking", () => ({
   chunkText: vi.fn((content: string) => [
     { content, tokenCount: 100 },
@@ -362,13 +374,10 @@ describe("api-ingest (CP-7-C #2)", () => {
     const auditSpy = vi.fn().mockResolvedValue(undefined);
     __setAuditImpl(auditSpy);
 
-    // mock embed 失败
-    const { createMiniMaxEmbedder } = await import("@unequal/shared/embedding");
-    vi.mocked(createMiniMaxEmbedder).mockReturnValueOnce({
-      embed: vi.fn(async () => {
-        throw new Error("MiniMax timeout");
-      }),
-    } as never);
+    // mock embed 失败（CP-7-D #2: 直接 mock factory 的 embed 函数）
+    mockEmbedFn.mockImplementationOnce(async () => {
+      throw new Error("MiniMax timeout");
+    });
 
     const res = await main(
       makeEvent({

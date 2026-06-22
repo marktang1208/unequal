@@ -315,9 +315,57 @@ CP-7-C + CP-7-D 上线后跑 admin 6 步 smoke（state-cp6 §4），全 PASS：
 
 ---
 
+## 12. P2 清理（2026-06-22）
+
+CP-7-C T15 真跑后，admin 端架构从「admin 自己 embed」改为「admin 推 content + API 端自己 embed」，
+两个 P2 清理任务同步推进。
+
+### 12.1 P2-5: API 端 LLM Provider 解耦
+
+- **问题**：`api-ask` / `api-chat` / `api-search` / `api-ingest` 直接 import `createMiniMaxEmbedder` + 直接 fetch `${env.MINIMAX_BASE_URL}/chat/completions`，
+  handlers 字符串 hardcode MiniMax。未来切 OpenAI / DeepSeek / 自部署 LLM 要改 4 个文件 + env。
+- **改动**：
+  - 新建 `apps/api/src/lib/llm-provider.ts` — `getEmbedder()` / `getChatProvider()` 懒加载单例；
+    `ChatProvider` 接口封装 OpenAI 兼容 chat（`{ messages, temperature?, model? } → { content }`）
+  - 4 个 handler 改用 `getEmbedder()` / `getChatProvider()`（删除 `createMiniMaxEmbedder` import + `MINIMAX_*` 字面量）
+  - `env.ts` `validateEmbeddingDim` 改用 `getEmbedder()`（启动硬验证走同一路径）
+  - 测试 mock 改向：mock `llm-provider.js` 而非 `@unequal/shared/embedding`
+- **新测试**：`apps/api/test/lib/llm-provider.test.ts`（12 个用例：单例 / reset / 真发 HTTP / override model+temperature / 401+500 失败 / 空 content）
+- **价值**：
+  - handlers 对实现无感（切 LLM provider 只改 `llm-provider.ts`）
+  - 测试不再依赖 MiniMax HTTP 行为（mock factory 即可）
+  - 启动硬验证 / 生产路径 / 测试路径用同一工厂
+- **当前实现**仍是 cloud（MiniMax）；OMLX local 分支保留扩展点，未来 dev 环境想切可加 `EMBED_PROVIDER` env 驱动
+- **验证**：api 113 → 129 tests PASS（+12 llm-provider + 4 api-upload-deprecated），typecheck 干净
+
+### 12.2 P2-6: 旧 /api-upload 路径弃用 v3
+
+- **调研结论**：grep 整个 repo（admin / minipgm / scripts / docs）— admin 端已切 `/api-ingest`，minipgm 还没接上传（v2 规划中），**无活跃客户端调 `/api-upload`**
+- **改动**：`apps/api/src/handlers/api-upload.ts` 整个 main 改 410 GONE + JSON `error:"GONE"` + message 含新路径（`/api-ingest` + 字段说明）；
+  - 保留 import `handler-utils` + `env`（仅 OPTIONS 走 CORS）
+  - 删除 9 个 unused import（`createMiniMaxEmbedder` / `chunkText` / `add` / `newId` / `storage` / `parsers` / `COLLECTIONS` / `CollectionName` / `Source,Document,Chunk`）
+  - 文件头加 deprecation 注释（指 state-arch-v2.3.md + 弃用日期 2026-06-22 + 计划删除时间 2026-Q3）
+- **未移动文件**：
+  - 移到 `src/handlers/deprecated/api-upload.ts` 收益小（要改 `index.ts` import 路径，且 CloudBase fn-all.json 是聚合 `api-router` 函数，没有"子函数注册"概念）
+  - 保留 `index.ts` `HANDLER_MAP["api-upload"]` 注册（让客户端拿到 410 而不是 404，便于区分）
+- **新测试**：`apps/api/test/handlers/api-upload-deprecated.test.ts`（4 个用例：POST/GET/PUT 都 410 GONE + OPTIONS CORS 204 通过）
+- **deploy 状态**：api-router 13 env vars 完整保留（deploy:secrets 两步法不变）
+- **客户端迁移**：admin dev 5173 走 `/api-ingest`（CP-7-C T15 真跑验证），minipgm 还没接上传（Phase D 设计中，spec 独立 brainstorming）
+- **验证**：api 129 tests PASS（含 4 个新 deprecation 测试），typecheck 干净
+
+### 12.3 P2-5 + P2-6 全量回归
+
+- `api` 单测：113 → **129 tests**（+12 llm-provider + +4 api-upload-deprecated）
+- `admin` 单测：141 tests PASS（未动，回归 0 破坏）
+- 全 monorepo：**406 tests** all PASS（minipgm 49 + crawler 29 + shared 58 + api 129 + admin 141）
+- typecheck：5 workspaces（api / admin / minipgm / crawler / shared）都干净
+
+---
+
 ## 11. References
 
 - **CP-7-A state**：`docs/superpowers/state-cp7-a.md`
 - **CP-7-B state**：`docs/superpowers/state-cp7-b.md`
 - **CP-7 真接 checklist**：`docs/superpowers/cp7-zhenjie-checklist.md`
+- **v2.3 架构修正**（admin 不 embed + API 自己 embed）：`docs/superpowers/state-arch-v2.3.md`
 - **测试文章**：https://mp.weixin.qq.com/s/50y5re6jivLGLzd5fTtaTA

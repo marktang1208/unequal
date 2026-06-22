@@ -17,7 +17,8 @@ import {
 } from "../lib/handler-utils.js";
 import { getEnv } from "../lib/env.js";
 import { requireAdmin } from "../lib/auth-admin.js";
-import { createMiniMaxEmbedder } from "@unequal/shared/embedding";
+// CP-7-D #2: 走 factory（不再 import createMiniMaxEmbedder）
+import { getEmbedder, getChatProvider } from "../lib/llm-provider.js";
 import { searchChunks, type ChunkWithEmbedding } from "@unequal/shared/retrieval";
 import { buildAskPrompt, DISCLAIMER_TEXT } from "@unequal/shared/prompt";
 import { COLLECTIONS } from "../lib/collections.js";
@@ -69,11 +70,8 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
   const excludeSourceIds = body.excludeSourceIds && body.excludeSourceIds.length > 0 ? body.excludeSourceIds : undefined;
 
   // 1. embed query
-  const embed = createMiniMaxEmbedder({
-    apiKey: env.MINIMAX_API_KEY,
-    baseUrl: env.MINIMAX_BASE_URL,
-    model: env.EMBED_MODEL,
-  });
+  // CP-7-D #2: 走 factory
+  const embed = getEmbedder();
   const queryVec = (await embed.embed([q]))[0] ?? [];
 
   // 2. fetch chunks + retrieval
@@ -125,30 +123,22 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
   };
   const { system, user } = buildAskPrompt(q, ctx);
 
-  // 5. MiniMax chat completion
-  const res = await fetch(`${env.MINIMAX_BASE_URL}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      authorization: `Bearer ${env.MINIMAX_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: env.LLM_MODEL,
+  // 5. LLM chat completion
+  // CP-7-D #2: 走 factory；错误包成 502 MINIMAX_FAILED 保持对外兼容
+  let answer: string;
+  try {
+    const result = await getChatProvider().chat({
       messages: [
         { role: "system", content: system },
         { role: "user", content: user },
       ],
       temperature: 0.2,
-    }),
-  });
-
-  if (!res.ok) {
-    const body = await res.text();
-    return errorResponse("MINIMAX_FAILED", `MiniMax chat failed: ${res.status} ${body}`, 502);
+    });
+    answer = result.content;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return errorResponse("MINIMAX_FAILED", `LLM chat failed: ${message}`, 502);
   }
-
-  const chatRes = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
-  const answer = chatRes.choices?.[0]?.message?.content ?? "";
 
   // 6. CP-7-D #2-a: 解析 [N] 引用（复用 chat 的 parseAnswerSegments）
   const topChunks = top.slice(0, 5);

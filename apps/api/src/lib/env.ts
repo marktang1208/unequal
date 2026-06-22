@@ -105,7 +105,7 @@ export function loadEnvForTest(source: Record<string, string>): AppEnv {
 }
 
 /**
- * 启动时硬验证：调一次 MiniMax embedding，验证维度匹配 EMBEDDING_DIM。
+ * 启动时硬验证：调一次 embedding，验证维度匹配 EMBEDDING_DIM。
  * 失败 throw → CloudBase 函数冷启动失败 → 不会接收任何请求。
  *
  * 仅在 production 跑（避免本地 dev 强依赖外网）。
@@ -113,14 +113,9 @@ export function loadEnvForTest(source: Record<string, string>): AppEnv {
 export async function validateEmbeddingDim(): Promise<void> {
   if (process.env.ENVIRONMENT !== "production") return;
 
-  const { createMiniMaxEmbedder } = await import("@unequal/shared/embedding");
-  const embed = createMiniMaxEmbedder({
-    apiKey: process.env.MINIMAX_API_KEY!,
-    baseUrl: process.env.MINIMAX_BASE_URL!,
-    // CP-7-D #1: 跟随 env.EMBED_MODEL（默认 embo-01）
-    model: process.env.EMBED_MODEL ?? EMBED_MODEL_DEFAULT,
-  });
-
+  // CP-7-D #2: 走 factory（handler 解耦后，dim 验证也走同一路径）
+  const { getEmbedder } = await import("./llm-provider.js");
+  const embed = getEmbedder();
   const result = await embed.embed(["dimension probe"]);
   if (!result[0] || result[0].length !== EMBEDDING_DIM) {
     throw new Error(

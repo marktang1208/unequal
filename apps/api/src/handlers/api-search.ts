@@ -15,7 +15,8 @@ import {
 } from "../lib/handler-utils.js";
 import { getEnv } from "../lib/env.js";
 import { requireAdmin } from "../lib/auth-admin.js";
-import { createMiniMaxEmbedder } from "@unequal/shared/embedding";
+// CP-7-D #2: 走 factory（不再 import createMiniMaxEmbedder）
+import { getEmbedder } from "../lib/llm-provider.js";
 import { searchChunks, type ChunkWithEmbedding } from "@unequal/shared/retrieval";
 import { COLLECTIONS, type CollectionName } from "../lib/collections.js";
 import { getAllByFilter } from "../lib/db.js";
@@ -46,11 +47,8 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
     : undefined;
 
   // embed query
-  const embed = createMiniMaxEmbedder({
-    apiKey: env.MINIMAX_API_KEY,
-    baseUrl: env.MINIMAX_BASE_URL,
-    model: env.EMBED_MODEL,
-  });
+  // CP-7-D #2: 走 factory；model 在 factory 内读 env.EMBED_MODEL
+  const embed = getEmbedder();
   const queryVec = (await embed.embed([q]))[0] ?? [];
 
   // fetch chunks for user
