@@ -3,6 +3,7 @@ import type { ReactElement } from "react";
 import { Link, Route, Routes, useNavigate } from "react-router-dom";
 import Upload from "./pages/Upload.js";
 import Sources from "./pages/Sources.js";
+import SeedsPage from "./pages/Seeds.js";
 import Documents from "./pages/Documents.js";
 import SearchTest from "./pages/SearchTest.js";
 import AskTest from "./pages/AskTest.js";
@@ -92,6 +93,14 @@ export default function App() {
             element={
               <RequireAuth>
                 <Sources />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/seeds"
+            element={
+              <RequireAuth>
+                <SeedsPage />
               </RequireAuth>
             }
           />

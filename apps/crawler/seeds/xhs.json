@@ -1,0 +1,28 @@
+{
+  "source": "xhs",
+  "version": 1,
+  "updated_at": "2026-06-22T12:00:00Z",
+  "urls": [
+    {
+      "url": "https://www.xiaohongshu.com/explore/example-1",
+      "trust_level": 0,
+      "active": true,
+      "last_crawled_at": null,
+      "last_status": null
+    },
+    {
+      "url": "https://www.xiaohongshu.com/explore/example-2",
+      "trust_level": 0,
+      "active": true,
+      "last_crawled_at": null,
+      "last_status": null
+    },
+    {
+      "url": "https://www.xiaohongshu.com/explore/example-3",
+      "trust_level": 1,
+      "active": false,
+      "last_crawled_at": null,
+      "last_status": null
+    }
+  ]
+}

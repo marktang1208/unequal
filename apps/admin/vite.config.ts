@@ -11,7 +11,13 @@
  */
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { join } from "node:path";
 import { localIngestMiddleware, initProductionDeps } from "./server/local-ingest.js";
+import { seedsMiddleware } from "./server/seeds-middleware.js";
+
+// P3-7: monorepo root 路径（vite dev server cwd = apps/admin，需从 monorepo root 算 seeds 路径）
+const MONOREPO_ROOT = join(process.cwd(), "..", "..");
+const DEFAULT_SEEDS_DIR = join(MONOREPO_ROOT, "apps", "crawler", "seeds");
 
 export default defineConfig({
   plugins: [
@@ -23,6 +29,18 @@ export default defineConfig({
         // 不能 await：configureServer 是 sync；middleware 在第一次请求时已经初始化
         void initProductionDeps();
         server.middlewares.use(localIngestMiddleware);
+        // P3-7: 种子 URL 库（绝对路径 seedsDir 避免 dev cwd 漂移）
+        server.middlewares.use((req, res, next) => {
+          const url = new URL(req.url ?? "/", "http://localhost");
+          if (url.pathname === "/api/seeds" || url.pathname.startsWith("/api/seeds?")) {
+            if (!url.searchParams.has("seedsDir")) {
+              url.searchParams.set("seedsDir", DEFAULT_SEEDS_DIR);
+            }
+            req.url = url.pathname + url.search;
+          }
+          next();
+        });
+        server.middlewares.use(seedsMiddleware);
       },
     },
   ],

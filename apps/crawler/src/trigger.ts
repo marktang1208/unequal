@@ -23,6 +23,7 @@ import { fetchWechatMpArticle } from "./sources/wechat-mp.js";
 import { chunkText } from "@unequal/shared/chunking";
 import { createEmbedder, type Embedder } from "@unequal/local-llm";
 import { ingestCrawlerMarkdown, createCrawlerStore } from "./ingest-sqlite.js";
+import { SeedsLoader, type SeedRecord } from "./seeds-loader.js";
 import type { CrawledDocument } from "./types.js";
 
 export type SourceType = "xhs" | "wechat-mp" | "webpage" | "all";
@@ -135,13 +136,30 @@ async function processOne(
  * 调用方实际传 url 或 source= 具体来源配对 seed URL。
  * 真实场景：admin 配 JSON 种子文件（待未来 spec 补）。
  */
-function resolveSeedUrls(opts: TriggerOptions): Array<{ url: string; sourceType: SourceType }> {
+function resolveSeedUrls(opts: TriggerOptions): Array<{ url: string; sourceType: SourceType; trustLevel: 0 | 1 | 2 | 3 }> {
   if (opts.url) {
-    return [{ url: opts.url, sourceType: (opts.source && opts.source !== "all" ? opts.source : "webpage") }];
+    return [{
+      url: opts.url,
+      sourceType: (opts.source && opts.source !== "all" ? opts.source : "webpage"),
+      trustLevel: opts.trustLevel ?? 1,
+    }];
   }
-  // v1 简化：fullScan 或 limit 模式无 seed → 返空 → 主流程会返 0/0/0
-  // 真实场景：未来读 `apps/crawler/seed-urls.json` 之类
-  return [];
+  // P3-7: 批量模式读 seeds-loader（admin SeedsStore 启动时已把 JSON 同步到 SQLite）
+  const loader = new SeedsLoader(opts.dbPath ?? "../admin/.tmp/unequal.db");
+  try {
+    const seeds = (opts.source && opts.source !== "all")
+      ? loader.loadOne(opts.source, { limit: opts.limit })
+      : loader.loadAll({ limit: opts.limit });
+    return seeds
+      .filter((s) => s.active)
+      .map((s) => ({
+        url: s.url,
+        sourceType: s.source as SourceType,
+        trustLevel: s.trust_level,
+      }));
+  } finally {
+    loader.close();
+  }
 }
 
 /**
@@ -154,8 +172,7 @@ function resolveSeedUrls(opts: TriggerOptions): Array<{ url: string; sourceType:
  */
 export async function runCrawler(opts: TriggerOptions): Promise<CrawlerResult> {
   const seedUrls = resolveSeedUrls(opts);
-  const sourceType: SourceType = opts.source ?? "webpage";
-  const trustLevel = opts.trustLevel ?? 1;
+  const defaultTrustLevel = opts.trustLevel ?? 1;
 
   if (seedUrls.length === 0) {
     console.warn(`[crawler-trigger] no seed urls resolved (url=${opts.url}, source=${opts.source}, fullScan=${opts.fullScan})`);
@@ -163,11 +180,20 @@ export async function runCrawler(opts: TriggerOptions): Promise<CrawlerResult> {
   }
 
   const store = createCrawlerStore(opts.dbPath ?? "../admin/.tmp/unequal.db");
-  const embedder: Embedder = opts.embedderOverride ?? createEmbedder({ provider: "auto", expectedDim: 1536 } as any);
+  let embedder: Embedder;
+  if (opts.embedderOverride) {
+    embedder = opts.embedderOverride;
+  } else {
+    // P3-7: 用 loadLocalLLMConfig 拿真实 provider（auto mode 解析 → local/cloud）
+    const { loadLocalLLMConfig } = await import("@unequal/local-llm");
+    const cfg = await loadLocalLLMConfig();
+    embedder = createEmbedder(cfg.embed);
+  }
+  const seedsLoader = new SeedsLoader(opts.dbPath ?? "../admin/.tmp/unequal.db");
 
   const result: CrawlerResult = { total: 0, succeeded: 0, failed: 0, file_ids: [], errors: [] };
 
-  for (const { url, sourceType: src } of seedUrls) {
+  for (const { url, sourceType: src, trustLevel } of seedUrls) {
     result.total++;
     try {
       const doc = await fetchOne(url, src, opts.fetchImpl);
@@ -175,20 +201,24 @@ export async function runCrawler(opts: TriggerOptions): Promise<CrawlerResult> {
       if ("file_id" in r) {
         result.succeeded++;
         result.file_ids.push(r.file_id);
-        console.log(`[crawler-trigger] OK url=${url} file_id=${r.file_id} chunks=N/A`);
+        seedsLoader.markCrawled(url, "done");
+        console.log(`[crawler-trigger] OK url=${url} file_id=${r.file_id} trust=${trustLevel}`);
       } else {
         result.failed++;
         result.errors.push({ url, error: r.error });
+        seedsLoader.markCrawled(url, "failed", r.error);
         console.error(`[crawler-trigger] FAIL url=${url} error=${r.error}`);
       }
     } catch (err) {
       result.failed++;
       const msg = err instanceof Error ? err.message : String(err);
       result.errors.push({ url, error: msg });
+      seedsLoader.markCrawled(url, "failed", msg);
       console.error(`[crawler-trigger] FAIL url=${url} error=${msg}`);
     }
   }
 
   store.close();
+  seedsLoader.close();
   return result;
 }
