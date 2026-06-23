@@ -52,15 +52,16 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
   const queryVec = (await embed.embed([q]))[0] ?? [];
 
   // fetch chunks for user
-  // CloudBase 单次回包 1MB 上限；limit=500 与 api-chat/api-ask 对齐（state-ask-search-retrieval.md §3）。
+  // CloudBase 单次回包 1MB 上限；chunk 平均 87KB（1536 floats + content），1MB / 87KB ≈ 12 chunks 安全上限。
+  // 留 1.5x buffer → limit=8（与 api-ask 对齐）。暴力 cosine 架构在 production 1963 chunks 下不 work — v2 上向量 DB
   const chunks = await whereQuery<Chunk>(
     COLLECTIONS.chunk as CollectionName,
     { userId: env.DEFAULT_USER_ID },
-    { limit: 500 },
+    { limit: 8 },
   );
-  if (chunks.length === 500) {
+  if (chunks.length === 8) {
     // eslint-disable-next-line no-console
-    console.warn(`[api-search] chunk retrieval hit 500 limit; user ${env.DEFAULT_USER_ID} may have more (v2 待分页)`);
+    console.warn(`[api-search] chunk retrieval hit 8 limit; user ${env.DEFAULT_USER_ID} has more chunks (production 1963) - retrieval 准确度受限; v2 需上向量 DB`);
   }
   const chunksWithEmb: ChunkWithEmbedding[] = chunks.map((c) => ({
     id: c.id,

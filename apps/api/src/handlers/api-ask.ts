@@ -86,13 +86,13 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
   const queryVec = (await embed.embed([q]))[0] ?? [];
 
   // 2. fetch chunks + retrieval
-  // CloudBase 单次回包 1MB 上限；limit=500 与 api-chat 一致（state-ask-search-retrieval.md §3）。
-  // chunk 平均 10KB（含 1536 浮点 embedding），500 chunks ≈ 5MB 上界；暴力 cosine 排序后取 topK=5 安全。
-  // 若用户实际 > 500 chunks，warn log 提示 v2 需分页（spec §6）。
-  const chunks = await whereQuery<Chunk>(COLLECTIONS.chunk, { userId: env.DEFAULT_USER_ID }, { limit: 500 });
-  if (chunks.length === 500) {
+  // CloudBase 单次回包 1MB 上限；chunk 平均 87KB（1536 floats + content），1MB / 87KB ≈ 12 chunks 安全上限。
+  // 留 1.5x buffer → limit=8（覆盖 topK=5 + 部分候选）。
+  // WARN：production 1963 chunks 时，仅 8 个被检索，准确度低；v2 需上向量数据库（spec §6 留路）
+  const chunks = await whereQuery<Chunk>(COLLECTIONS.chunk, { userId: env.DEFAULT_USER_ID }, { limit: 8 });
+  if (chunks.length === 8) {
     // eslint-disable-next-line no-console
-    console.warn(`[api-ask] chunk retrieval hit 500 limit; user ${env.DEFAULT_USER_ID} may have more (v2 待分页)`);
+    console.warn(`[api-ask] chunk retrieval hit 8 limit; user ${env.DEFAULT_USER_ID} has more chunks (production 1963) - retrieval 准确度受限; v2 需上向量 DB`);
   }
   const chunksWithEmb: ChunkWithEmbedding[] = chunks.map((c) => ({
     id: c.id,

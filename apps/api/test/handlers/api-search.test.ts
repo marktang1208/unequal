@@ -136,8 +136,8 @@ describe("api-search handler (ask-search-retrieval fix)", () => {
     expect(body.results.length).toBeLessThanOrEqual(3);
   });
 
-  // ask-search-retrieval fix: 1000 chunks 模拟大数据场景 → handler 必须传 limit=500 给 DB（防 CloudBase 1MB 阻塞）
-  it("1000 chunks mock 不 throw：handler 传 limit=500 给 DB", async () => {
+  // ask-search-retrieval fix: 1000 chunks 模拟大数据场景 → handler 必须传 limit=8 给 DB（防 CloudBase 1MB 阻塞；chunk avg 87KB）
+  it("1000 chunks mock 不 throw：handler 传 limit=8 给 DB", async () => {
     const bigChunks = Array.from({ length: 1000 }, (_, i) => ({
       ...MOCK_CHUNK_1,
       _id: `01K_CHUNK_${i}`,
@@ -147,8 +147,8 @@ describe("api-search handler (ask-search-retrieval fix)", () => {
     }));
     vi.mocked(db.whereQuery).mockImplementation(async (coll: string, _filter: any, opts?: any) => {
       if (coll === "chunk") {
-        // 验证 handler 传了 limit: 500（修复前不传；修复后传）
-        expect(opts?.limit).toBe(500);
+        // 验证 handler 传了 limit: 8（修复前不传；修复后传；防止 CloudBase 1MB 阻塞）
+        expect(opts?.limit).toBe(8);
         return bigChunks as any;
       }
       return [];

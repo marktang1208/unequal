@@ -136,7 +136,12 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
   const embed = getEmbedder();
   const queryVec = (await embed.embed([q]))[0] ?? [];
 
-  const chunks = await whereQuery<Chunk>(COLLECTIONS.chunk, { userId }, { limit: 500 });
+  // CloudBase 单次回包 1MB 上限；chunk 平均 87KB → limit=8 安全；暴力 cosine 在 production 1963 chunks 下不 work — v2 上向量 DB
+  const chunks = await whereQuery<Chunk>(COLLECTIONS.chunk, { userId }, { limit: 8 });
+  if (chunks.length === 8) {
+    // eslint-disable-next-line no-console
+    console.warn(`[api-chat] chunk retrieval hit 8 limit; user ${userId} has more chunks (production 1963) - retrieval 准确度受限; v2 需上向量 DB`);
+  }
   const chunksWithEmb: ChunkWithEmbedding[] = chunks.map((c) => ({
     id: c.id,
     _id: c._id,
