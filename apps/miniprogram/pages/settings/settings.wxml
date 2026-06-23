@@ -1,0 +1,55 @@
+<!-- M7-D settings page — 显示当前用户信息 + 数据隔离说明 + 登出 -->
+<view class="container">
+  <!-- 加载中 -->
+  <view class="loading" wx:if="{{loading}}">加载中…</view>
+
+  <!-- 错误 -->
+  <view class="error" wx:if="{{error}}">{{error}}</view>
+
+  <!-- 未登录 -->
+  <view class="empty" wx:if="{{!loading && !error && !me}}">
+    <view class="empty-title">未登录</view>
+    <view class="empty-desc">请先打开"问答"页触发微信登录</view>
+  </view>
+
+  <!-- 用户信息卡片 -->
+  <view class="card" wx:if="{{me}}">
+    <view class="card-title">账号信息</view>
+    <view class="row">
+      <view class="row-label">用户 ID</view>
+      <view class="row-value mono">{{me.user_id}}</view>
+    </view>
+    <view class="row">
+      <view class="row-label">昵称</view>
+      <view class="row-value">{{me.nickname || '（未设置）'}}</view>
+    </view>
+    <view class="row">
+      <view class="row-label">注册时间</view>
+      <view class="row-value">{{createdAtText}}</view>
+    </view>
+  </view>
+
+  <!-- 数据统计卡片 -->
+  <view class="card" wx:if="{{me}}">
+    <view class="card-title">我的数据</view>
+    <view class="row">
+      <view class="row-label">对话会话</view>
+      <view class="row-value">{{me.session_count}} 个</view>
+    </view>
+    <view class="row">
+      <view class="row-label">累计消息</view>
+      <view class="row-value">{{me.total_messages}} 条</view>
+    </view>
+  </view>
+
+  <!-- 隔离说明卡片 -->
+  <view class="card" wx:if="{{me}}">
+    <view class="card-title">数据隔离</view>
+    <view class="isolation-text">{{me.isolation}}</view>
+  </view>
+
+  <!-- 登出按钮 -->
+  <view class="card" wx:if="{{me}}">
+    <button class="logout-btn" bindtap="onTapLogout">退出登录</button>
+  </view>
+</view>

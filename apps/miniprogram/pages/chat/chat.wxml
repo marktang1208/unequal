@@ -56,4 +56,9 @@
       disabled="{{submitting || !q}}"
     >提问</button>
   </view>
+
+  <!-- M7-D: 设置入口（右上角悬浮） -->
+  <view class="settings-fab" bindtap="onTapSettings">
+    <text class="settings-fab-icon">⚙</text>
+  </view>
 </view>

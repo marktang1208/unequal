@@ -153,3 +153,28 @@
   transform: translate(2rpx, 2rpx);
   box-shadow: 0rpx 0rpx 0 0 #3d2914;
 }
+
+/* M7-D: 右上角设置入口 FAB */
+.settings-fab {
+  position: fixed;
+  top: 24rpx;
+  right: 24rpx;
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.settings-fab:active {
+  transform: scale(0.92);
+}
+
+.settings-fab-icon {
+  font-size: 40rpx;
+  color: #333;
+}

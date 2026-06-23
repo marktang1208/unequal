@@ -39,6 +39,7 @@ import * as userNickname from "./handlers/api-user-nickname.js";
 import * as stats from "./handlers/api-stats.js";
 import * as authWxLogin from "./handlers/api-auth-wx-login.js";
 import * as authAdminLogin from "./handlers/api-auth-admin-login.js";
+import * as authMe from "./handlers/api-auth-me.js";  // M7-D: 当前用户信息（settings 页用）
 import * as cronCleanup from "./handlers/api-cron-cleanup.js";
 import * as health from "./handlers/api-health.js";
 
@@ -86,6 +87,7 @@ const HANDLER_MAP: Record<string, HandlerModule> = {
   "api-stats": stats as unknown as HandlerModule,
   "api-auth-wx-login": authWxLogin as unknown as HandlerModule,
   "api-auth-admin-login": authAdminLogin as unknown as HandlerModule,
+  "api-auth-me": authMe as unknown as HandlerModule,
   "api-cron-cleanup": cronCleanup as unknown as HandlerModule,
   "api-health": health as unknown as HandlerModule,
 };

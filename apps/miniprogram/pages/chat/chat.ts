@@ -264,6 +264,12 @@ Page({
     });
   },
 
+  // M7-D: 跳转到 settings 页（右上角 ⚙ 入口）
+  onTapSettings(): void {
+    // @ts-expect-error wx 全局类型 mock-first 缺失
+    wx.navigateTo({ url: "/pages/settings/settings" });
+  },
+
   onTapCitation(): void {
     // citation-card 自带 bindtap 触发 wx.navigateTo，无需在父页处理
   },

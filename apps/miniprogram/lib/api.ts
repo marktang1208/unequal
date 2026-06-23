@@ -131,3 +131,28 @@ export async function updateNickname(nickname: string): Promise<void> {
     jwt: getJwtToken() ?? undefined,
   });
 }
+
+/* ---------- M7-D 当前用户信息（settings 页用） ---------- */
+
+export interface MeResponse {
+  user_id: string;
+  nickname: string | null;
+  created_at: number;
+  session_count: number;
+  total_messages: number;
+  isolation: string;
+}
+
+/** GET /api-auth-me → 返当前 user 的 profile + 数据统计（settings 页展示用）
+ *
+ * 失败 throw ApiError：
+ * - 401 → user 未登录
+ * - 404 → user record 不存在（异常情况，可能 JWT 异常但 decode pass）
+ */
+export async function me(): Promise<MeResponse> {
+  return cloudCall<MeResponse>({
+    path: "/api-auth-me",
+    httpMethod: "GET",
+    jwt: getJwtToken() ?? undefined,
+  });
+}
