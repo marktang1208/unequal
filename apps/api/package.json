@@ -14,7 +14,9 @@
     "deploy:collections": "tsx scripts/deploy-collections.ts",
     "deploy:indexes": "tsx scripts/deploy-indexes.ts",
     "deploy:secrets": "tsx scripts/deploy-secrets.ts",
+    "deploy:secrets-v2": "tsx scripts/deploy-secrets-v2.ts",
     "deploy:clean": "tsx scripts/deploy-clean.ts",
+    "setup:keychain-secrets": "bash scripts/setup-keychain-secrets.sh",
     "migrate:schema-ids": "tsx scripts/migrate-schema-ids.ts"
   },
   "dependencies": {
