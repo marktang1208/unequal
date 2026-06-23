@@ -27,7 +27,7 @@ import { getAllByFilter } from "../lib/db.js";
 import { parseAnswerSegments } from "./api-chat.js";
 import type { Chunk, Document } from "@unequal/shared/types";
 // P5 NLI 后置验证（spec §3.1 step 9-11）
-import { getProvider as getNliProvider } from "../lib/nli/get-provider.js";
+import { getProvider as getNliProvider, recordNliFailure, recordNliSuccess } from "../lib/nli/get-provider.js";
 import { applyWarning } from "../lib/nli/apply-warning.js";
 import { NliRuntimeError, NliTimeoutError } from "../lib/nli/errors.js";
 import type { NliVerdict } from "../lib/nli/types.js";
@@ -188,9 +188,11 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
   try {
     const provider = await getNliProvider();
     verdict = await provider.verify(cleaned, nliHypothesis);
+    recordNliSuccess();
   } catch (err) {
     // 降级：runtime 错 / timeout → NoopNliProvider 风格 verdict (entailed)，不阻塞 ask
     nliSucceeded = false;
+    recordNliFailure(err instanceof Error ? err : new Error(String(err)));
     if (err instanceof NliTimeoutError) {
       nliErrorReason = "timeout";
     } else {
