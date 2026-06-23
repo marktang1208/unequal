@@ -14,9 +14,11 @@ import { COLLECTIONS } from "./collections.js";
 export interface AuditEntry {
   id: string;
   timestamp: number;
-  action: "ingest" | "session_rename" | "session_delete" | "nickname_update";
+  /** P4 #2 deploy pipeline: 加 "deploy" 枚举 */
+  action: "ingest" | "session_rename" | "session_delete" | "nickname_update" | "deploy";
   actor: {
-    via: "admin_token" | "admin_jwt" | "ingest_proxy" | "jwt_user";
+    /** P4 #2 deploy pipeline: 加 "deploy_script"（本地 deploy CLI） */
+    via: "admin_token" | "admin_jwt" | "ingest_proxy" | "jwt_user" | "deploy_script";
     clientIp: string;
     tokenFingerprint?: string;
     /** M7-C: 越权 / 非 admin 路径需记当前 userId */
@@ -29,7 +31,8 @@ export interface AuditEntry {
     chunksInserted?: number;
     /** M7-C: 越权审计用 */
     resourceId?: string;
-    resourceType?: "chat_session" | "user" | "document" | "chunk" | "source";
+    /** P4 #2 deploy pipeline: 加 "function"（deploy 行为的目标资源） */
+    resourceType?: "chat_session" | "user" | "document" | "chunk" | "source" | "function";
   };
   request: {
     contentLen: number;
@@ -40,6 +43,16 @@ export interface AuditEntry {
   result: "success" | "failure" | "in_progress" | "denied";
   error?: string;
   requestId: string;
+  /** P4 #2 deploy pipeline: deploy action 专用 — 记录 deploy 前后 vars diff */
+  deploySnapshot?: {
+    before: Record<string, string>;
+    after: Record<string, string>;
+    added: string[];
+    removed: string[];
+    changed: { key: string; before?: string; after?: string }[];
+  };
+  /** P4 #2 deploy pipeline: deploy action 专用 — 操作者 OS username (os.userInfo().username) */
+  operator?: string;
 }
 
 type AuditImpl = (entry: AuditEntry) => Promise<void>;
