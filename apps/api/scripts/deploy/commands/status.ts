@@ -33,7 +33,8 @@ function maskValue(key: string, value: string): string {
 
 interface DeployAuditEntry {
   id: string;
-  timestamp: number;
+  /** tcb Mongo 输出 timestamp 形如 { "$numberLong": "1782194000000" } 或纯 number */
+  timestamp: number | { $numberLong?: string; $numberInt?: string };
   action: string;
   actor: { via: string; userId?: string; clientIp: string };
   request: { title?: string };
@@ -45,19 +46,40 @@ interface DeployAuditEntry {
   };
 }
 
+/** 解 Mongo $numberLong/$numberInt 字符串回 number */
+function unMongoNumber(v: unknown): number {
+  if (typeof v === "number") return v;
+  if (typeof v === "string") {
+    const n = parseInt(v, 10);
+    return Number.isFinite(n) ? n : 0;
+  }
+  if (v && typeof v === "object") {
+    const obj = v as { $numberLong?: string; $numberInt?: string };
+    if (obj.$numberLong) return parseInt(obj.$numberLong, 10);
+    if (obj.$numberInt) return parseInt(obj.$numberInt, 10);
+  }
+  return 0;
+}
+
 function queryDeployAudit({ envId, limit }: { envId: string; limit: number }): DeployAuditEntry[] {
-  const query = JSON.stringify({
-    filter: { action: "deploy" },
-    sort: { timestamp: -1 },
-    limit,
-  });
+  const mongoCommand = JSON.stringify([
+    {
+      TableName: "audit_log",
+      CommandType: "QUERY",
+      Command: JSON.stringify({
+        find: "audit_log",
+        filter: { action: "deploy" },
+        sort: { timestamp: -1 },
+        limit,
+      }),
+    },
+  ]);
 
   const r = spawnSync(
     "tcb",
     [
-      "db", "nosql", "query",
-      "--env-id", envId,
-      "--direct", query,
+      "db", "nosql", "execute",
+      "--command", mongoCommand,
     ],
     { encoding: "utf-8" },
   );
@@ -68,8 +90,15 @@ function queryDeployAudit({ envId, limit }: { envId: string; limit: number }): D
   }
 
   try {
-    const data = JSON.parse(r.stdout);
-    return (data?.data ?? []) as DeployAuditEntry[];
+    // 真实输出前 4 行是 banner / 进度，从第一个 '[' 开始解析
+    const stdout = r.stdout ?? "";
+    const firstBracket = stdout.indexOf("[");
+    if (firstBracket < 0) {
+      logger.warn(`[status] audit query returned no JSON array`);
+      return [];
+    }
+    const data = JSON.parse(stdout.slice(firstBracket));
+    return Array.isArray(data) ? (data as DeployAuditEntry[]) : [];
   } catch {
     logger.warn(`[status] audit query returned invalid JSON`);
     return [];
@@ -110,7 +139,8 @@ export async function status(_opts: Record<string, unknown>): Promise<void> {
     console.log(`[status] (no deploy audit records found)`);
   } else {
     for (const entry of history) {
-      const ts = new Date(entry.timestamp).toISOString();
+      const tsMs = unMongoNumber(entry.timestamp);
+      const ts = tsMs > 0 ? new Date(tsMs).toISOString() : "(no timestamp)";
       const added = entry.deploySnapshot?.added?.length ?? 0;
       const removed = entry.deploySnapshot?.removed?.length ?? 0;
       const changed = entry.deploySnapshot?.changed?.length ?? 0;

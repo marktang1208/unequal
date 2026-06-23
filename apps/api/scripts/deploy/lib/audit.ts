@@ -1,8 +1,10 @@
 /**
  * lib/audit.ts — 写 CloudBase audit_log collection (action="deploy")
  *
- * 复用现有 audit_log 写入能力（spec §6 扩展 AuditEntry）
- * 走 tcb db nosql insert 命令（避免引入 SDK 依赖）
+ * tcb CLI 3.5.7 真实命令：
+ *   tcb db nosql execute --command '[{"TableName":"audit_log","CommandType":"INSERT","Command":"{\"insert\":\"audit_log\",\"documents\":[{...}]}"}]'
+ *
+ * 复用现有 audit_log collection（spec §6 扩展 AuditEntry）。
  */
 
 import { spawnSync } from "node:child_process";
@@ -55,12 +57,22 @@ export async function writeDeployAudit(input: WriteDeployAuditInput): Promise<vo
     operator: input.operator,
   };
 
+  const mongoCommand = JSON.stringify([
+    {
+      TableName: "audit_log",
+      CommandType: "INSERT",
+      Command: JSON.stringify({
+        insert: "audit_log",
+        documents: [entry],
+      }),
+    },
+  ]);
+
   const r = spawnSync(
     "tcb",
     [
-      "db", "nosql", "insert",
-      "--env-id", TCB_ENV,
-      "--direct", JSON.stringify(entry),
+      "db", "nosql", "execute",
+      "--command", mongoCommand,
     ],
     { encoding: "utf-8" },
   );

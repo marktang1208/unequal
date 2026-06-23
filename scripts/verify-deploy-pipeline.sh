@@ -65,7 +65,8 @@ echo "✅ push (Merge) 通过"
 echo ""
 
 echo "[3/6] push --override (强制重写)"
-pnpm deploy push --override || {
+# pnpm 默认拦截未知 flag 给子命令，用 `--` 显式分隔
+pnpm deploy push -- --override || {
   echo "❌ push --override 失败"
   exit 1
 }
@@ -73,7 +74,7 @@ echo "✅ push --override 通过"
 echo ""
 
 echo "[4/6] push --force (跳过 KEK_CURRENT_VERSION 检查)"
-pnpm deploy push --force || {
+pnpm deploy push -- --force || {
   echo "❌ push --force 失败"
   exit 1
 }
@@ -81,7 +82,7 @@ echo "✅ push --force 通过"
 echo ""
 
 echo "[5/6] rotate-kek --force (KEK 轮换 + 推云)"
-pnpm deploy rotate-kek --force || {
+pnpm deploy rotate-kek -- --force || {
   echo "❌ rotate-kek 失败"
   exit 1
 }

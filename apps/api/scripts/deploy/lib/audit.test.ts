@@ -98,12 +98,21 @@ describe("writeDeployAudit", () => {
     });
     const [bin, args] = mockSpawnSync.mock.calls[0] as [string, string[]];
     expect(bin).toBe("tcb");
-    // --direct 后面是 JSON 字符串
-    const directIdx = args.indexOf("--direct");
-    expect(directIdx).toBeGreaterThan(0);
-    const json = args[directIdx + 1];
-    const entry = JSON.parse(json);
-    expect(entry.id).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);  // ulid pattern
+    // 命令应是 "db nosql execute --command <MgoCommands JSON 数组>"
+    expect(args[0]).toBe("db");
+    expect(args[1]).toBe("nosql");
+    expect(args[2]).toBe("execute");
+    const commandIdx = args.indexOf("--command");
+    expect(commandIdx).toBeGreaterThan(0);
+    const mgoCommands = JSON.parse(args[commandIdx + 1]);
+    expect(Array.isArray(mgoCommands)).toBe(true);
+    expect(mgoCommands[0].TableName).toBe("audit_log");
+    expect(mgoCommands[0].CommandType).toBe("INSERT");
+    const innerCmd = JSON.parse(mgoCommands[0].Command);
+    expect(innerCmd.insert).toBe("audit_log");
+    expect(Array.isArray(innerCmd.documents)).toBe(true);
+    const entry = innerCmd.documents[0];
+    expect(entry.id).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
     expect(entry.requestId).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
     expect(entry.timestamp).toBeGreaterThan(0);
   });
@@ -120,7 +129,9 @@ describe("writeDeployAudit", () => {
       operator: "tester",
     });
     const [, args] = mockSpawnSync.mock.calls[0] as [string, string[]];
-    const entry = JSON.parse(args[args.indexOf("--direct") + 1]);
+    const commandIdx = args.indexOf("--command");
+    const mgoCommands = JSON.parse(args[commandIdx + 1]);
+    const entry = JSON.parse(mgoCommands[0].Command).documents[0];
     expect(entry.action).toBe("deploy");
     expect(entry.actor.via).toBe("deploy_script");
     expect(entry.actor.clientIp).toBe("localhost");
@@ -141,7 +152,9 @@ describe("writeDeployAudit", () => {
       operator: "tester",
     });
     const [, args] = mockSpawnSync.mock.calls[0] as [string, string[]];
-    const entry = JSON.parse(args[args.indexOf("--direct") + 1]);
+    const commandIdx = args.indexOf("--command");
+    const mgoCommands = JSON.parse(args[commandIdx + 1]);
+    const entry = JSON.parse(mgoCommands[0].Command).documents[0];
     expect(entry.deploySnapshot).toEqual({
       before: { A: "1", B: "2" },
       after: { A: "1", B: "2", C: "3" },
