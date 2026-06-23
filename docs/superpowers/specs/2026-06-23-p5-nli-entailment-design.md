@@ -1,8 +1,14 @@
 # P5 NLI 蕴含验证 — design
 
-> 日期: 2026-06-23
+> 日期: 2026-06-23 (v1.1: HttpNliProvider)
 > 前置: CP-7 / P3-7 / P4 #1 / P4 #2 完成（基础设施就绪：audit + secrets manager + deploy pipeline）
 > 目标: 给 /api-ask 加 NLI 蕴含验证后置插入，过滤 LLM 兜底常识幻觉
+>
+> **v1.1 revision (2026-06-23)**：NLI provider 从本地 ONNX (`TransformersNliProvider`)
+> 改为云端 HTTP (`HttpNliProvider`，走硅基流动 Qwen2.5-7B-Instruct)。
+> 原因：本地 ONNX 部署包超 CloudBase 50MB 限制；国内模型镜像（魔搭/hf-mirror）
+> 不稳定；中文 NLI 模型都得 400MB+；用户手头有硅基流动 API key。
+> v1 抽象 (`NliProvider` interface) 保留，未来 v2 可加本地 ONNX 或其他云端 NLI。
 
 ## 1. 背景与动机
 
@@ -32,7 +38,30 @@ NLI 是**双层模型架构**：
 - LLM 层：负责"会说话"（生成流畅答案）
 - NLI 层：负责"真不真"（独立裁判，不被 LLM 训练数据污染）
 
-### 1.3 为什么是现在（而不是 CP-7 之前）
+### 1.3 为什么选硅基流动 Qwen2.5-7B（而不是本地 ONNX 或 MiniMax-as-judge）
+
+**v1 原本设计本地 ONNX（`TransformersNliProvider` via `@xenova/transformers` + `nli-MiniLM-L6-v2`）**，
+真接发现 3 个问题（spec §9 / commit 9950196 类教训）：
+
+| 问题 | 详情 | 结论 |
+|---|---|---|
+| Hugging Face 国内被墙 | `huggingface.co` TCP 超时 10s+ | ❌ 无法自动下载模型 |
+| hf-mirror 镜像不稳 | TLS 握手中卡 / `nli-MiniLM-L6-v2` 没镜像 / quantized 版 404 | ❌ 不可靠 |
+| 魔搭无 quantized 版 | `cross-encoder/nli-MiniLM2-L6-H768` 全精度 113MB；`nli-deberta-v3-*` 系列 176MB+ | ❌ 部署包超 CloudBase 50MB 限制 |
+| 中文 NLI 模型体积 | `uer/sbert-base-chinese-nli` 409MB；`IDEA-CCNL/Erlangshen-MacBERT-325M-NLI-Chinese` 1.3GB | ❌ OSS fallback 也复杂 |
+
+**改用 `HttpNliProvider` 走硅基流动 Qwen2.5-7B-Instruct**：
+
+| 维度 | 价值 |
+|---|---|
+| 价格 | ¥0.0005/1K（输入）/ ¥0.002/1K（输出）— NLI 1000 ask/天 ≈ ¥22/月 |
+| 中文 NLI 质量 | 强（Qwen 中文 SOTA） |
+| Bias 隔离 | ✅ 完全不同模型家族（Qwen vs MiniMax），避免"自己审自己" |
+| 部署 | ✅ 0 部署 — 不下载模型，不超 CloudBase 50MB |
+| Latency | +1-2s（硅基流动 Qwen2.5-7B 通常 500-1500ms） |
+| 可替换 | ✅ `NliProvider` interface 抽象 — v2 可换 ONNX / DeepSeek / 其他 |
+
+### 1.4 为什么是现在（而不是 CP-7 之前）
 
 CP-7 完成的**基础设施** NLI 之前做没意义：
 - 没有 audit → NLI 触发率没法量化
@@ -84,7 +113,7 @@ CP-7 完成的**基础设施** NLI 之前做没意义：
 api-ask.ts
   ↓ depends on
 nli/get-provider → nli/types
-                 → nli/transformers-provider → nli/types + nli/errors
+                 → nli/http-provider → nli/types + nli/errors
                  → nli/noop-provider → nli/types
 nli/apply-warning → nli/types
 audit.ts (加 action 联合) ← api-ask.ts 复用
@@ -96,23 +125,17 @@ audit.ts (加 action 联合) ← api-ask.ts 复用
 
 ```
 apps/api/
-├── functions/
-│   └── assets/
-│       └── nli/                                  # 模型资源目录
-│           ├── nli-MiniLM-L6-v2-quantized.onnx   # 90MB ONNX 模型
-│           ├── tokenizer.json                    # 3MB WordPiece tokenizer
-│           └── README.md                         # 下载来源 + checksum
 ├── src/
 │   └── lib/
 │       └── nli/                                  # NLI 模块
 │           ├── types.ts                          # NliProvider interface + NliVerdict
-│           ├── transformers-provider.ts          # v1 实现 (ONNX via transformers.js)
+│           ├── http-provider.ts                  # v1.1 实现 (硅基流动 Qwen2.5-7B)
 │           ├── noop-provider.ts                  # 兜底 (禁用/降级)
 │           ├── apply-warning.ts                  # verdict → warning prefix 注入
 │           ├── errors.ts                         # NliError + 3 子类
 │           ├── get-provider.ts                   # 单例 factory (env 路由)
 │           └── __tests__/                        # 单元测试
-│               ├── transformers-provider.test.ts
+│               ├── http-provider.test.ts
 │               ├── noop-provider.test.ts
 │               ├── apply-warning.test.ts
 │               └── get-provider.test.ts
@@ -120,14 +143,18 @@ apps/api/
 │   ├── handlers/
 │   │   └── api-ask.ts                            # 改：插入 NLI 调用
 │   └── lib/
-│       ├── env.ts                                # 改：NLI_ENABLED + NLI_MODEL_PATH
+│       ├── env.ts                                # 改：NLI_PROVIDER + SILICONFLOW_API_KEY
 │       └── audit.ts                              # 改：action 联合加 "ask_nli_reject"
 ├── scripts/
-│   ├── deploy-readiness.ts                       # 改：校验 deploy 包大小
-│   ├── download-nli-model.ts                     # 新：一次性下载脚本
-│   └── verify-nli.sh                             # 新：真接验收脚本
-└── package.json                                  # 改：+ @xenova/transformers
+│   └── verify-nli.sh                             # 新：真接验收脚本 (硅基流动 API 6 步)
+└── package.json                                  # 不变 (无新 runtime 依赖)
 ```
+
+**v1.1 变化**：
+- 删 `transformers-provider.ts` + `download-nli-model.ts` + `functions/assets/nli/` 整个目录
+- 删 `@xenova/transformers` 依赖
+- 删 `deploy-readiness` NLI 大小校验（无模型文件）
+- 新增 `http-provider.ts` 调硅基流动 OpenAI 兼容 API
 
 ### 4.1 文件行数预算
 
@@ -136,10 +163,9 @@ apps/api/
 | `types.ts` | ~30 | interface + types |
 | `errors.ts` | ~40 | 3 个 error 子类 |
 | `noop-provider.ts` | ~25 | 永远返回 entailed |
-| `transformers-provider.ts` | ~150 | pipeline init + verify 单方法 |
+| **`http-provider.ts`** | **~180** | **HTTP 调硅基流动 + strict prompt + JSON 解析 + retry** |
 | `apply-warning.ts` | ~50 | verdict → prefix 注入 |
-| `get-provider.ts` | ~50 | env 路由 + 5 分钟缓存 |
-| `download-nli-model.ts` | ~60 | 一次性脚本（开发用） |
+| `get-provider.ts` | ~70 | env 路由 + 5 分钟缓存 + 10-timeout 降级 |
 
 每个文件 ≤ 200 行。
 
@@ -177,16 +203,51 @@ export interface NliProvider {
 }
 ```
 
-### 5.2 `TransformersNliProvider`（v1 实现）
+### 5.2 `HttpNliProvider`（v1.1 实现 — 硅基流动 Qwen2.5-7B）
 
-- 加载 `apps/api/functions/assets/nli/nli-MiniLM-L6-v2-quantized.onnx` + `tokenizer.json`
-- 用 `@xenova/transformers` 的 `pipeline('text-classification')`
-- 单例 lazy init（首次 verify 时初始化）
-- verify 单方法：
-  1. `premise + ' [SEP] ' + hypothesis` 拼接
-  2. `tokenizer.encode` → 截断到 512 token
-  3. `model.forward` → softmax 三分类
-  4. argmax → verdict，max → score
+**API 端点**：`POST https://api.siliconflow.cn/v1/chat/completions`（OpenAI 兼容）
+
+**Strict system prompt**（保证 JSON 输出）：
+```
+你是自然语言推理 (NLI) 专家。任务：判断 hypothesis 的事实内容是否被 premise 蕴含。
+
+返回严格的 JSON object，不要任何其他文字：
+{"entailment": <0-1>, "neutral": <0-1>, "contradiction": <0-1>}
+
+三个分数和必须为 1.0（允许 ±0.01 浮点误差）。
+- entailment: premise 的所有事实细节都被 hypothesis 支持
+- neutral: premise 含 hypothesis 未提及的细节（可能是常识幻觉）
+- contradiction: premise 与 hypothesis 冲突
+
+示例 1：
+premise: "发烧 38.5 吃 0.4ml/kg 美林"
+hypothesis: "美林剂量标准 0.4ml/kg"
+→ {"entailment": 0.95, "neutral": 0.03, "contradiction": 0.02}
+
+示例 2：
+premise: "X 星人住在仙女座星系"
+hypothesis: "X 星人是 2025 年发现的外星文明"
+→ {"entailment": 0.05, "neutral": 0.15, "contradiction": 0.80}
+```
+
+**User 模板**：
+```
+Premise（待验证陈述）:
+{cleaned}
+
+Hypothesis（证据）:
+{joinedChunks}
+```
+
+**verify 方法流程**：
+1. 拼 system + user message
+2. `fetch(SILICONFLOW_BASE_URL + "/chat/completions", POST, { model, messages, temperature: 0, response_format: {type: "json_object"} })`
+3. 解析 `choices[0].message.content` JSON
+4. 校验 `e + n + c ≈ 1.0`，归一化
+5. argmax → verdict，max → score
+
+**超时**：5s（AbortController.timeout）
+**重试**：JSON 解析失败 → 1 次重试（不同 seed temperature 0.2）；2 次失败 → 抛 `NliRuntimeError`
 
 ### 5.3 `NoopNliProvider`（兜底）
 
@@ -196,11 +257,11 @@ export interface NliProvider {
 
 ### 5.4 `getProvider()` factory
 
-- env `NLI_ENABLED=false` → NoopNliProvider
-- env `NLI_ENABLED=true` + 模型文件存在 → TransformersNliProvider（首次 init 慢）
-- env `NLI_ENABLED=true` + 模型文件不存在 → throw `NliConfigError`（启动期 fail fast）
-- 5 分钟内累计失败 > 0 → 切到 NoopNliProvider 缓存（避免每次 ask 都尝试 init）。5 分钟后下次 `getProvider()` 调用重新尝试初始化 TransformersNliProvider。
-- 累计 timeout > 10 次（按进程内 in-memory 计数）→ 切到 NoopNliProvider 永久缓存该实例，**直到 CloudBase 函数实例重启**（warm 进程内不重试；cold 重启后清零，重新走启动期判定）。管理员如需强制重试，需 deploy 一次触发函数实例全量重启。
+- env `NLI_PROVIDER=noop` → NoopNliProvider
+- env `NLI_PROVIDER=http`（默认）+ `SILICONFLOW_API_KEY` 存在 → HttpNliProvider
+- env `NLI_PROVIDER=http` + `SILICONFLOW_API_KEY` 缺失 → throw `NliConfigError`（启动期 fail fast）
+- 5 分钟内累计失败 > 0 → 切到 NoopNliProvider 缓存（避免每次 ask 都尝试 HTTP）。5 分钟后下次 `getProvider()` 调用重新尝试 HttpNliProvider。
+- 累计 timeout > 10 次（按进程内 in-memory 计数）→ 切到 NoopNliProvider 永久缓存该实例，**直到 CloudBase 函数实例重启**。
 
 ### 5.5 `applyWarning(cleaned, verdict)`
 
@@ -255,10 +316,10 @@ interface AuditEntry {
 
 | 类别 | 触发 | 策略 | 响应 | audit |
 |---|---|---|---|---|
-| **A: runtime 故障** | transformers.js 初始化失败 / 推理抛错 | 5 分钟 NoopNliProvider 缓存 | 不加 warning，console.warn | 不写 |
-| **B: timeout** | 推理 > 3 秒 | AbortController.timeout(3000) | 不加 warning | 写 `reason: "timeout"` |
+| **A: runtime 故障** | HTTP 4xx/5xx / JSON 解析失败 2 次 | 5 分钟 NoopNliProvider 缓存 | 不加 warning，console.warn | 写 `reason: "runtime_error"` |
+| **B: timeout** | 推理 > 5 秒 | AbortController.timeout(5000) | 不加 warning | 写 `reason: "timeout"` |
 | **C: reject** | 推理成功，verdict !== entailed | 加 warning prefix | 加 warning | 写 `reason: "rejected"` |
-| **D: 配置错误** | 模型文件缺失 | 启动期 fail fast | 启动失败 | 启动失败 |
+| **D: 配置错误** | `SILICONFLOW_API_KEY` 缺失 | 启动期 fail fast | 启动失败 | 启动失败 |
 
 ### 7.1 Error 类型
 
@@ -277,94 +338,102 @@ export class NliConfigError extends NliError { code = "NLI_CONFIG"; }
 
 ```bash
 # apps/api/.dev.vars.example（追加）
-NLI_ENABLED=true
-NLI_MODEL_PATH=functions/assets/nli/nli-MiniLM-L6-v2-quantized.onnx
-NLI_TOKENIZER_PATH=functions/assets/nli/tokenizer.json
-NLI_TIMEOUT_MS=3000
+NLI_PROVIDER=http             # 'http' (默认, 走硅基流动) | 'noop' (禁用)
+SILICONFLOW_API_KEY=sk-xxx    # 硅基流动 API key（用户已有）
+SILICONFLOW_BASE_URL=https://api.siliconflow.cn/v1  # 默认
+NLI_MODEL=Qwen/Qwen2.5-7B-Instruct  # 默认
+NLI_TIMEOUT_MS=5000           # HTTP 超时（硅基流动通常 500-1500ms）
+NLI_RETRY_COUNT=1             # JSON 解析失败重试次数
 ```
 
 **env.ts 启动校验**（`getEnv` 调用时）：
-- `NLI_ENABLED=true` + `NLI_MODEL_PATH` 存在 → TransformersNliProvider
-- `NLI_ENABLED=true` + `NLI_MODEL_PATH` 不存在 → throw `NliConfigError`
-- `NLI_ENABLED=false` → NoopNliProvider + warn 一次
+- `NLI_PROVIDER=noop` → NoopNliProvider + warn "NLI disabled via env"
+- `NLI_PROVIDER=http` + `SILICONFLOW_API_KEY` 存在 → HttpNliProvider
+- `NLI_PROVIDER=http` + `SILICONFLOW_API_KEY` 缺失 → throw `NliConfigError`（启动期 fail fast）
+
+**云端配置**：deploy 时需把 `SILICONFLOW_API_KEY` 加到 `cloudbaserc.json` 的 `envVariables`（与 `MINIMAX_API_KEY` 同样的部署机制）。**注意**：API key 落 cloudbaserc.json 文件，**不能 commit 到 git**（`.gitignore` 已覆盖 `cloudbaserc.*.json`，但 `cloudbaserc.json` 主文件在 repo；管理员用 `deploy push` 前手动 export + setup-keychain-secrets 模式从 Keychain 拉）。
 
 ## 9. 部署策略
 
-### 9.1 模型文件位置
+### 9.1 无模型文件（v1.1 重大变化）
 
-`apps/api/functions/assets/nli/`（**关键**：路径必须在 `functionRoot` 下，CloudBase 部署时随代码打包）：
-- `nli-MiniLM-L6-v2-quantized.onnx` (~90MB)
-- `tokenizer.json` (~3MB)
-- `README.md`（下载来源 + SHA-256 checksum）
+**NLI 不需要任何模型文件** —— 全部在硅基流动云端推理。部署包大小不变。
 
-**路径解析**：`NLI_MODEL_PATH` env 写绝对路径或相对 `apps/api/` 的相对路径。`getEnv()` 启动期 `path.resolve(process.cwd(), NLI_MODEL_PATH)` 校验文件存在性。开发环境 `process.cwd() = apps/api`，所以默认 `NLI_MODEL_PATH=functions/assets/nli/nli-MiniLM-L6-v2-quantized.onnx` 可工作。
+**删 v1 的部署约束**：
+- ❌ 无 CloudBase 50MB zip 限制
+- ❌ 无 OSS fallback 需求
+- ❌ 无 `pnpm -F api download-nli-model` 脚本
+- ❌ 无 `deploy-readiness.ts` NLI 大小校验
 
-**首次获取模型**：开发者本地跑 `pnpm -F api download-nli-model`（commit 3 新增脚本），从 Hugging Face `Xenova/nli-MiniLM-L6-v2` 仓库下载到 `apps/api/functions/assets/nli/`。脚本幂等：文件已存在且 SHA-256 匹配 → 跳过；不匹配 → 报错退出。
+**部署步骤**：
+1. 用户本地 `pnpm -F api setup:keychain-secrets` 把 `SILICONFLOW_API_KEY` 加进 Keychain（P4 #1 模式）
+2. `pnpm -F api deploy push` 推 cloudbaserc.json（含 SILICONFLOW_API_KEY env）
+3. CloudBase 函数冷启动 → `validateNliConfig` → 有 key → HttpNliProvider ready
 
-### 9.2 deploy-readiness 大小校验
-
-`apps/api/scripts/deploy-readiness.ts` 加一段：
-```ts
-const NLI_ASSETS = path.join(FUNCTION_ROOT, "assets/nli");
-const nliSize = sumDirSize(NLI_ASSETS);
-if (nliSize > 40 * 1024 * 1024) {  // 留 10MB buffer
-  throw new Error(
-    `NLI assets = ${(nliSize / 1024 / 1024).toFixed(1)}MB. ` +
-    `CloudBase function zip limit is 50MB. Consider OSS fallback (v1.1).`
-  );
-}
-```
-
-**v1.1 OSS fallback**（如超限）：
-- 模型存 CloudBase 静态存储
-- 函数冷启动时按需下载到 `/tmp/.nli-cache/`
-- 后续启动读缓存（避免重复下载）
-
-### 9.3 冷启动预算
+### 9.2 冷启动预算
 
 - 现状：CloudBase 函数 cold start ~500ms
-- 加 NLI：首次 +1-2s（transformers.js pipeline 初始化）
-- warm 实例复用：NLI init 已完成，verify 单次 ~50-100ms
-- 用户体验：cold 路径总 ~3s（可接受），warm 路径不变
+- 加 NLI：首次 +0ms（HTTP provider 无本地 init，lazy first-call 触发 HTTP）
+- warm 实例：每次 NLI HTTP call 500-1500ms（硅基流动 Qwen2.5-7B）
+- 用户体验：cold 路径总 ~500ms + 首次 NLI 1500ms ≈ 2s；warm 路径 +1-2s
+
+### 9.3 限流 / rate limit
+
+硅基流动免费档有 RPM 限制。**生产前确认账号 RPM/TPM**：
+- 免费档：60 RPM
+- 付费档：600+ RPM
+
+**应对**：
+- get-provider 5min cache + 10-timeout 永久降级（spec §5.4）已覆盖部分场景
+- 高峰期 NLI 失败 → NoopNliProvider → ask 仍正常（仅无 warning）
+- audit 记录 reason="timeout"，可观察触发率
 
 ## 10. 依赖
 
-`apps/api/package.json`：
-```json
-"dependencies": {
-  "@xenova/transformers": "^2.17.0"  // ~10MB runtime
+**v1.1 不增任何新依赖**：
+
+- ❌ 删 `@xenova/transformers` (~10MB runtime + models)
+- ✅ 用 `fetch` (Node 20 内置) 调硅基流动 OpenAI 兼容 API
+- ✅ 用现有 `AbortController.timeout` 做超时
+
+`apps/api/package.json`：去掉 `@xenova/transformers`。
 }
 ```
 
-不引入：`onnxruntime-node`（transformers.js 自带 ONNX runtime，避免重复依赖）
-
 ## 11. 测试
 
-### 11.1 单元测试（4 个文件，25 cases）
+### 11.1 单元测试（4 个文件，30 cases）
 
-#### `transformers-provider.test.ts`（8 cases）
-- entailment=0.9 → `{verdict: "entailed", score: 0.9, scores: {...}}`
-- entailment=0.3, neutral=0.6 → `{verdict: "neutral", score: 0.6}`
-- contradiction=0.7 → `{verdict: "contradiction", score: 0.7}`
-- pipeline reject → throw `NliRuntimeError`
-- pipeline 3s 不返回 → throw `NliTimeoutError`
-- 空 premise → throw `NliError("empty premise")`
-- premise + hypothesis > 512 token → 截断 + warn 日志
-- 单例 cache：第二次调用复用同一 pipeline 实例
+#### `http-provider.test.ts`（10 cases）
+- 推理成功，e=0.85 → `{verdict: "entailed", score: 0.85, scores: {e: 0.85, n: 0.10, c: 0.05}}`
+- 推理成功，n=0.6 最高 → `{verdict: "neutral", score: 0.6}`
+- 推理成功，c=0.7 最高 → `{verdict: "contradiction", score: 0.7}`
+- 三个分数和不为 1.0 → 归一化
+- API 4xx/5xx → throw `NliRuntimeError`
+- API timeout > 5s → throw `NliTimeoutError`
+- 第一次 JSON 解析失败 → 1 次重试
+- 第二次 JSON 解析失败 → throw `NliRuntimeError`
+- 空 premise / 空 hypothesis → throw `NliRuntimeError`
+- 缺 `SILICONFLOW_API_KEY` → constructor 抛 `NliConfigError`
 
-**mock 模式**：
+**mock 模式**（用 `vi.stubGlobal("fetch", ...)`）：
 ```ts
-const { mockPipeline } = vi.hoisted(() => ({ mockPipeline: vi.fn() }));
-vi.mock("@xenova/transformers", () => ({
-  pipeline: mockPipeline,
-  env: { cacheDir: "/tmp/test-nli" },
-}));
+const mockFetch = vi.fn();
+vi.stubGlobal("fetch", mockFetch);
+mockFetch.mockResolvedValue({
+  ok: true,
+  status: 200,
+  json: async () => ({
+    choices: [{ message: { content: '{"entailment":0.9,"neutral":0.05,"contradiction":0.05}' } }],
+  }),
+});
 ```
 
-#### `noop-provider.test.ts`（3 cases）
+#### `noop-provider.test.ts`（4 cases）
 - 任意输入 → `{verdict: "entailed", score: 1, scores: {all: 1}}`
-- 不抛错
+- 空输入也不抛错
 - 不写 console
+- name 字段是 'noop'
 
 #### `apply-warning.test.ts`（6 cases）
 - entailed → 返回原 cleaned
@@ -374,48 +443,54 @@ vi.mock("@xenova/transformers", () => ({
 - cleaned 是空 → 返回空
 - prefix 长度 ≤ 60 字符
 
-#### `get-provider.test.ts`（8 cases）
-- `NLI_ENABLED=false` → NoopNliProvider
-- `NLI_ENABLED=true` + 模型文件存在 → TransformersNliProvider
-- `NLI_ENABLED=true` + 模型文件不存在 → throw `NliConfigError`
-- TransformersNliProvider init 失败 → 5 分钟 NoopNliProvider 缓存
-- 5 分钟后再次尝试 TransformersNliProvider
+#### `get-provider.test.ts`（10 cases）
+- `NLI_PROVIDER=noop` → NoopNliProvider
+- `NLI_PROVIDER=http` + `SILICONFLOW_API_KEY` 缺失 → throw `NliConfigError`
+- `NLI_PROVIDER=http` + 有 key → HttpNliProvider
+- `providerOverride` → 用 override
+- 第一次 HTTP 失败 → 5 分钟 NoopNliProvider 缓存
+- 5 分钟后重试（fake timers）
 - 累计 timeout > 10 次 → 永久 NoopNliProvider
+- `__resetProviderStateForTest` 清状态
 - 单例：第二次 getProvider 复用同一实例
+- success path 复用 state.provider（不 new 实例）
 
 ### 11.2 集成测试（`api-ask.test.ts` 扩展，5 cases）
 
 基于现有 mock 模式：
-- NLI enabled + verdict entailed → response 无 warning
-- NLI enabled + verdict neutral → response 有 `⚠️` prefix
-- NLI runtime 抛错 → response 无 warning，console.warn
-- NLI 写 audit（mock `recordAudit`）→ action="ask_nli_reject" + nliSnapshot
-- NLI 跑超时 → 同 runtime 抛错路径 + 额外 audit
+- NLI HTTP 成功 + verdict entailed → response 无 warning
+- NLI HTTP 成功 + verdict neutral → response 有 `⚠️` prefix
+- NLI HTTP 4xx → response 无 warning，console.warn，audit reason="runtime_error"
+- NLI HTTP timeout → response 无 warning，audit reason="timeout"
+- NLI 写 audit（mock `recordAudit`）→ action="ask_nli_reject" + nliSnapshot 完整
 
 ### 11.3 真接验证（`scripts/verify-nli.sh`，6 步）
 
 ```
-[1/6] deploy push（带 NLI 模型文件 + verify deploy-readiness PASS）
-[2/6] curl /api-ask "发烧怎么办" → response 无 warning（chunk 支持）
-[3/6] curl /api-ask "X 星人住在哪个星系" → response 有 warning（chunk 不支持）
-[4/6] tcb db nosql query → audit_log 有 ask_nli_reject 记录
-[5/6] NLI_ENABLED=false 重 deploy → response 永远无 warning
+[1/6] setup:keychain-secrets 加 SILICONFLOW_API_KEY
+[2/6] deploy push（验证 cloudbaserc.json 含 SILICONFLOW_API_KEY）
+[3/6] curl /api-ask "发烧怎么办" → response 无 warning（chunk 支持）
+[4/6] curl /api-ask "X 星人住在哪个星系" → response 有 warning（chunk 不支持）
+[5/6] tcb db nosql query → audit_log 有 ask_nli_reject 记录
 [6/6] /api-search 走原路径不受影响
 ```
+
+**注**：v1.1 真接验证比 v1 简单 — 无 deploy-readiness 校验，无 NLI 大小问题。
 
 ## 12. 风险与缓解
 
 | 风险 | 缓解 |
 |---|---|
-| 冷启动 +1-2s | CloudBase 函数 warm 实例复用，cold 仅首次；NLI_ENABLED=false 兜底 |
-| ONNX 模型 ~90MB 接近 zip 限制 | deploy-readiness 校验；超限走 OSS（v1.1） |
-| transformers.js WASM 体积大 | Node 20 走 ONNX 后端，不走 WASM fallback；先实测部署包大小 |
-| chinese tokenize 效果（MiniLM 英文训练） | nli-MiniLM-L6-v2 有 XNLI 中文微调；先在 dev 跑 50 个真实家长问题验证 |
+| 硅基流动 API 不可达 / rate limit | 5min cache + 10-timeout 永久降级 NoopNliProvider；audit 记录触发率 |
+| API key 泄漏到 git | cloudbaserc.json 走 gitignore + Keychain 管理（P4 #1 模式）|
+| LLM-as-judge 精度问题（v.s. 专用 NLI 模型）| Qwen2.5-7B 中文 NLI 强；strict prompt + JSON 解析；dev 跑 50 真实问题验证 |
+| 每次 ask +1-2s latency + cost | 用户接受 trade-off；高峰期 NLI 失败降级（不影响主回答）|
+| JSON 解析失败 / 输出不合规 | retry 1 次 + 不同 temperature；2 次失败降级 NoopNliProvider |
 | audit 数据敏感（家长问题 hash 落库） | 只存 qHash（SHA-256 头 16 字符）+ chunksHash + 分数，**不全量存 q** |
 
 ## 13. 边界 / 不实现
 
-- v1 不支持 cloud NLI API（接口已抽象，v2 可加 `HttpNliProvider`）
+- v1 不支持本地 ONNX NLI（接口已抽象，v2 可加 `TransformersNliProvider`）
 - v1 不切片 NLI 推理（premise + 拼接 hypothesis，单次推理）
 - v1 不并行推理 LLM 和 NLI（顺序：LLM → NLI → response）
 - v1 不重生成答案（仅 warning marker）
@@ -423,24 +498,31 @@ vi.mock("@xenova/transformers", () => ({
 
 ## 14. 验收成功标准
 
-- [ ] 单元测试 25/25 PASS
-- [ ] 集成测试 5/5 PASS（api-ask 现有 + NLI 5 个新场景）
-- [ ] 全 monorepo tests 538 + 30 = **568/568 PASS**
+- [ ] 单元测试 30/30 PASS
+- [ ] 集成测试 5/5 PASS
+- [ ] 全 monorepo tests 568/568 PASS
 - [ ] 真接 6 步全过
-- [ ] 部署包大小 < 50MB（deploy-readiness 通过）
+- [ ] 部署包大小 < CloudBase 50MB 限制（v1.1 完全无此问题）
 - [ ] audit_log 有 ask_nli_reject 记录可查
 - [ ] NLI 关闭 fallback 验证
+- [ ] 硅基流动 API key 配置 → NLI 启用；缺失 → NliConfigError fail fast
 
 ## 15. Commit 计划
 
 ```
-1. docs(spec): NLI 蕴含验证 design (本文件)
-2. chore(api): + @xenova/transformers 依赖 + nli/ 目录骨架 (types/errors/noop/apply-warning)
-3. feat(nli): TransformersNliProvider + download-nli-model 脚本 (含 17 unit tests)
-4. feat(nli): get-provider 单例 factory + 5min cache + 10-timeout 降级
-5. feat(ask): api-ask 接入 NLI 后置插入 + audit "ask_nli_reject" + 5 integration tests
-6. chore(deploy): verify-nli.sh + state-p5-nli.md + deploy-readiness 大小校验
+1. docs(spec): P5 NLI 蕴含验证 design v1.1 (HttpNliProvider 硅基流动 Qwen2.5-7B)
+2. chore(api): - @xenova/transformers + - assets/nli/ + - download-nli-model + + http-provider 骨架
+3. feat(nli): HttpNliProvider + strict prompt + JSON 解析 + retry (含 10 unit tests)
+4. feat(nli): get-provider 路由 HttpNliProvider + env NLI_PROVIDER + SILICONFLOW_API_KEY
+5. chore(deploy): verify-nli.sh 重写为硅基流动真接 + state report
 ```
+
+**v1 历史 commit（已 commit 但要走 rebase 改造）**：
+- `82a093e` docs P5 spec v1（已重写为 v1.1）
+- `e823568` 骨架（保留 + 卸 transformers 依赖）
+- `e01ecae` TransformersNliProvider（**改造为 http-provider**）
+- `3de1b2f` get-provider（**改造路由**）
+- `ea0ad8f` ask 接入 + audit（保留，零改动）
 
 每个 commit 独立可测。
 
