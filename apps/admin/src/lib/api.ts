@@ -1,7 +1,35 @@
 import type { TrustLevel } from "@unequal/shared/types";
+import { isCloudBaseConfigured } from "./cloudbase.js";
 
-// React app 走 Vite proxy：`/api/*` → `http://localhost:8787/*`（前缀被剥离）
-const API_BASE = "/api";
+// React app dev 模式走 Vite proxy：`/api/*` → `http://localhost:8787/*`（前缀被剥离）
+// Production 模式走 CloudBase HTTP 触发器（api-router 部署在 envId-1444590671.ap-shanghai.app.tcloudbase.com）
+const DEV_API_BASE = "/api";
+
+/**
+ * 拿到 api-router 真实 base URL。
+ * - Dev：返回 "/api"，让 vite proxy 转给本地 api-router
+ * - Production：返回 CloudBase HTTP 触发器域名（api-router 在那里）
+ */
+export function getApiBase(): string {
+  if (import.meta.env.DEV) return DEV_API_BASE;
+  if (!isCloudBaseConfigured()) return DEV_API_BASE; // fallback
+  const envId = import.meta.env.VITE_TCB_ENV_ID as string;
+  // HTTP 触发器 URL：envId-1444590671.ap-shanghai.app.tcloudbase.com
+  // 1444590671 是 AppID（个人版 CloudBase 强制加在 envId 后面）
+  return `https://${envId}-1444590671.ap-shanghai.app.tcloudbase.com`;
+}
+
+/**
+ * 路径转换：把 `/ask` 短路径转成 `/api-ask` 真实路径。
+ * 注：admin 代码历史写 `/api/ask` 风格（dev proxy），但 api-router 真实路径是 `/api-ask`（短横线，不分段）。
+ *
+ * 实际：调用方直接传 `/api-xxx` 完整路径，不再用本函数（保留供未来短路径写法用）
+ */
+export function toApiPath(shortPath: string): string {
+  // 去掉开头的 "/"，把所有 "/" 替换为 "-"，再加 "/api-" 前缀
+  const clean = shortPath.startsWith("/") ? shortPath.slice(1) : shortPath;
+  return `/api-${clean.replace(/\//g, "-")}`;
+}
 
 export function getToken(): string {
   // 优先用 localStorage（M6.2 后 admin 都走 /auth/admin-login 拿 jwt 写 localStorage）
@@ -44,17 +72,40 @@ export interface AdminLoginResponse {
 }
 
 /**
- * POST /api/auth/admin-login：拿 admin_token 换 jwt。
- * 服务端（apps/api/src/routes/auth.ts）匹配 ENV.ADMIN_TOKEN → 返 jwt。
+ * POST /api-auth-admin-login：拿 admin_token 换 jwt。
+ * 服务端（apps/api/src/handlers/api-auth-admin-login.ts）匹配 ENV.ADMIN_TOKEN → 返 jwt。
  * 401/403 时抛 Error，message 含状态码 + body 便于诊断。
+ *
+ * Production 模式：直接调 api-router HTTP 触发器（避免 CloudBase Gateway 匿名登录需开权限）
+ *   URL: https://{envId}-1444590671.ap-shanghai.app.tcloudbase.com/api-auth-admin-login
+ *   Body field: { token: "..." } (server 期望的字段名)
+ * Dev 模式：走 vite proxy（/api/auth/admin-login → localhost:8787/api-auth-admin-login）
+ *
+ * CORS：api-router 显式 allow origin = https://{envId}-1444590671.tcloudbaseapp.com
+ *       （ALLOWED_ORIGIN=* 在个人版 CloudBase 实际生效为静态托管域名白名单）
  */
 export async function adminLogin(
   adminToken: string,
 ): Promise<AdminLoginResponse> {
-  const res = await fetch("/api/auth/admin-login", {
+  if (import.meta.env.DEV || !isCloudBaseConfigured()) {
+    // Dev / fallback：走 vite proxy
+    const res = await fetch("/api/auth/admin-login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token: adminToken }),  // server 期望字段名是 "token"
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`/auth/admin-login ${res.status}: ${text}`);
+    }
+    return (await res.json()) as AdminLoginResponse;
+  }
+  // Production：直接打 api-router HTTP 端点
+  const url = `${getApiBase()}${toApiPath("/auth/admin-login")}`;
+  const res = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ admin_token: adminToken }),
+    body: JSON.stringify({ token: adminToken }),
   });
   if (!res.ok) {
     const text = await res.text();
@@ -94,7 +145,7 @@ export async function uploadFile(
   form.append("trust_level", String(trustLevel));
 
   const resp = handleApiResponse(
-    await fetch(`${API_BASE}/upload`, {
+    await fetch(`${getApiBase()}/upload`, {
       method: "POST",
       headers: { Authorization: `Bearer ${getToken()}` },
       body: form,
@@ -110,7 +161,7 @@ export async function uploadFile(
 export async function search(q: string, topK = 5): Promise<SearchResponse> {
   const params = new URLSearchParams({ q, topK: String(topK) });
   const resp = handleApiResponse(
-    await fetch(`${API_BASE}/search?${params.toString()}`, {
+    await fetch(`${getApiBase()}/search?${params.toString()}`, {
       method: "GET",
       headers: { Authorization: `Bearer ${getToken()}` },
     }),
@@ -144,7 +195,7 @@ export async function ask(q: string): Promise<AskResponse> {
   const token = getToken();
   if (token) headers.authorization = `Bearer ${token}`;
   const res = handleApiResponse(
-    await fetch("/api/ask", {
+    await fetch(`${getApiBase()}/ask`, {
       method: "POST",
       headers,
       body: JSON.stringify({ q }),
@@ -186,6 +237,12 @@ export interface ChatSessionRow {
   degraded_at: number | null;
 }
 
+/**
+ * 调 admin 业务 endpoint。
+ * - path 接受 `/api-xxx` 完整路径（与 api-router 注册名一致）。
+ * - dev 模式：path 去掉 `/api-` 前缀变 `/xxx`，vite proxy 转给 api-router（api-router 接 `/api-xxx` 也接 `/xxx`，但 dev 习惯 `/api/xxx`）
+ * - production：path 直接用，调 CloudBase HTTP 触发器
+ */
 async function authedJson<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
     "content-type": "application/json",
@@ -193,8 +250,17 @@ async function authedJson<T>(path: string, init: RequestInit = {}): Promise<T> {
   };
   const token = getToken();
   if (token) headers.authorization = `Bearer ${token}`;
+  let url: string;
+  if (import.meta.env.DEV) {
+    // dev：path 形如 "/api-chat"，改成 "/api/chat" 让 vite proxy 转
+    const devPath = path.replace(/^\/api-/, "/api/");
+    url = `${getApiBase()}${devPath}`;
+  } else {
+    // production：path 直接是真实 endpoint（已在调用方写对）
+    url = `${getApiBase()}${path}`;
+  }
   const res = handleApiResponse(
-    await fetch(`/api${path}`, { ...init, headers }),
+    await fetch(url, { ...init, headers }),
   );
   if (!res.ok) {
     const text = await res.text();
@@ -204,25 +270,25 @@ async function authedJson<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export async function chat(q: string, sessionId?: string): Promise<ChatResponse> {
-  return authedJson<ChatResponse>("/chat", {
+  return authedJson<ChatResponse>("/api-chat", {
     method: "POST",
     body: JSON.stringify({ q, ...(sessionId ? { session_id: sessionId } : {}) }),
   });
 }
 
 export async function listSessions(): Promise<{ sessions: ChatSessionRow[] }> {
-  return authedJson<{ sessions: ChatSessionRow[] }>("/sessions", { method: "GET" });
+  return authedJson<{ sessions: ChatSessionRow[] }>("/api-sessions-list", { method: "GET" });
 }
 
 export async function renameSession(sessionId: string, title: string): Promise<void> {
-  await authedJson<{ ok: true }>(`/sessions/${encodeURIComponent(sessionId)}`, {
+  await authedJson<{ ok: true }>(`/api-sessions-rename/${encodeURIComponent(sessionId)}`, {
     method: "PATCH",
     body: JSON.stringify({ title }),
   });
 }
 
 export async function deleteSession(sessionId: string): Promise<void> {
-  await authedJson<{ ok: true }>(`/sessions/${encodeURIComponent(sessionId)}`, {
+  await authedJson<{ ok: true }>(`/api-sessions-delete/${encodeURIComponent(sessionId)}`, {
     method: "DELETE",
   });
 }
@@ -251,10 +317,10 @@ export async function crawlUrl(
   const token = getToken();
   if (token) headers.authorization = `Bearer ${token}`;
   const res = handleApiResponse(
-    await fetch(`/api/crawl?url=${encodeURIComponent(url)}&trust_level=${trustLevel}`, {
-      method: "POST",
-      headers,
-    }),
+    await fetch(
+      `${getApiBase()}${import.meta.env.DEV ? "/crawl" : toApiPath("/crawl")}?url=${encodeURIComponent(url)}&trust_level=${trustLevel}`,
+      { method: "POST", headers },
+    ),
   );
   if (!res.ok) {
     const text = await res.text();
@@ -352,12 +418,12 @@ export interface LoginAttemptStats {
 }
 
 /**
- * M6.5 admin dashboard：GET /stats/login-attempts?hours=24
+ * M6.5 admin dashboard：GET /api-stats-login-attempts?hours=24
  * 鉴权：admin JWT（走 authedJson + handleApiResponse，401 自动跳 /login）
  */
 export async function getLoginAttemptStats(hours: number): Promise<LoginAttemptStats> {
   return authedJson<LoginAttemptStats>(
-    `/stats/login-attempts?hours=${hours}`,
+    `/api-stats-login-attempts?hours=${hours}`,
     { method: "GET" },
   );
 }
