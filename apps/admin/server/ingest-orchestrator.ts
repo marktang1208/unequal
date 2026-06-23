@@ -85,7 +85,14 @@ export class IngestOrchestrator {
   /** v2.4: 注入 embedder */
   setEmbedder(embedder: Embedder): void { this.embedder = embedder; }
 
-  /** 主入口：处理单个文件（fire-and-forget 调） */
+  /** 主入口：处理单个文件（fire-and-forget 调）
+   *
+   * zhenjie6 快路径：若 record.chunks_with_emb_json 存在（说明之前 push 成功过或已 cache）
+   * → 跳过 parse/chunk/embed，直接 push（retry 场景：失败在 push → 重试不用重算 embedding）
+   *
+   * 注：只在 push 成功后才写 chunks_with_emb_json（markDone 之前写）。
+   *   若 push 失败 → markFailed，chunks_with_emb_json 仍保留，retry 时直接复用。
+   */
   async processFile(fileId: string): Promise<void> {
     const record = this.store.getByFileId(fileId);
     if (!record) {
@@ -94,6 +101,29 @@ export class IngestOrchestrator {
     }
 
     try {
+      // zhenjie6 快路径：cached chunks+embeddings → 跳过 parse/chunk/embed
+      if (record.chunks_with_emb_json) {
+        const cached = JSON.parse(record.chunks_with_emb_json) as Array<{
+          idx: number; content: string; embedding: number[]; tokenCount: number;
+        }>;
+        if (cached.length > 0) {
+          this.store.setStatus(fileId, "pushing", 90);
+          if (!this.pusher) throw new Error("Pusher not initialized");
+          const pushResult = await this.gate.push(() =>
+            this.pusher!.pushChunks({
+              chunks: cached,
+              title: record.filename,
+              url: `local://${record.filename}`,
+              trust_level: 1,
+              user_id: this.defaultUserId,
+            }),
+          );
+          this.store.markDone(fileId, pushResult.source_id, pushResult.document_id);
+          return;
+        }
+        // 缓存是空数组 → 落到下面正常路径重新跑
+      }
+
       // 1. 解析
       this.store.setStatus(fileId, "parsing", 10);
       if (!this.parser) throw new Error("Parser not initialized");
@@ -123,7 +153,11 @@ export class IngestOrchestrator {
         ...c,
         embedding: embeddings[i]!,
       }));
-      this.store.update(fileId, { progress: 80 });
+      // zhenjie6: 持久化 chunks+embeddings（retry 复用）
+      this.store.update(fileId, {
+        chunks_with_emb_json: JSON.stringify(chunksWithEmb),
+        progress: 80,
+      });
 
       // 4. push（v2.4: 推预嵌入 chunks，云端直接写库）
       this.store.setStatus(fileId, "pushing", 90);

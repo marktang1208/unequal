@@ -219,4 +219,95 @@ describe("IngestOrchestrator 集成 (CP-7-C T9)", () => {
     expect(r?.status).toBe("failed");
     expect(r?.error_code).toBe("ParseFailed");
   });
+
+  // ─── zhenjie6: retry 快路径 (跳过 parse/chunk/embed) ──────────────
+
+  it("zhenjie6: chunks_with_emb_json 存在 → 跳过 parse/chunk/embed, 直接 push", async () => {
+    // 准备：模拟上次跑成功，DB 里有 chunks_with_emb_json 缓存
+    const fileId = "f-cached";
+    const cachedChunks = [
+      { idx: 0, content: "cached-1", embedding: new Array(1536).fill(0.1), tokenCount: 10 },
+      { idx: 1, content: "cached-2", embedding: new Array(1536).fill(0.2), tokenCount: 10 },
+    ];
+    store.create({
+      file_id: fileId,
+      batch_id: "b-1",
+      filename: "cached.md",
+      ext: "md",
+      tmp_data: null, // retry 时甚至没有原始文件
+      chunks_with_emb_json: JSON.stringify(cachedChunks),
+    });
+
+    // 关键：把 parser/chunker/embedder 全部换成"绝对不能被调"的严格 mock
+    let parserCalled = 0, chunkerCalled = 0, embedderCalled = 0;
+    const strictParser: LocalParser = {
+      parseAuto: async () => { parserCalled++; throw new Error("PARSER_SHOULD_NOT_BE_CALLED"); },
+    };
+    const strictChunker: ChunkText = {
+      chunkText: async () => { chunkerCalled++; throw new Error("CHUNKER_SHOULD_NOT_BE_CALLED"); },
+    };
+    const strictEmbedder: Embedder = {
+      embed: async () => { embedderCalled++; throw new Error("EMBEDDER_SHOULD_NOT_BE_CALLED"); },
+    };
+    orchestrator.setParser(strictParser);
+    orchestrator.setChunker(strictChunker);
+    orchestrator.setEmbedder(strictEmbedder);
+
+    await orchestrator.processFile(fileId);
+
+    // 关键断言：parser/chunker/embedder 一次都没调
+    expect(parserCalled).toBe(0);
+    expect(chunkerCalled).toBe(0);
+    expect(embedderCalled).toBe(0);
+
+    // 推了 1 次
+    expect(pushCalls).toBe(1);
+    const r = store.getByFileId(fileId);
+    expect(r?.status).toBe("done");
+    expect(r?.cloud_source_id).toBe("01KSRC_1");
+  });
+
+  it("zhenjie6: 正常路径成功 → 自动写 chunks_with_emb_json (供下次 retry)", async () => {
+    const fileId = "f-normal";
+    store.create({
+      file_id: fileId,
+      batch_id: "b-1",
+      filename: "normal.md",
+      ext: "md",
+      tmp_data: Buffer.from("# test"),
+    });
+
+    await orchestrator.processFile(fileId);
+
+    const r = store.getByFileId(fileId);
+    expect(r?.status).toBe("done");
+    // 关键断言：done 时 chunks_with_emb_json 已被写
+    expect(r?.chunks_with_emb_json).toBeTruthy();
+    const parsed = JSON.parse(r!.chunks_with_emb_json!);
+    expect(parsed).toHaveLength(2); // mock chunker 产 2 chunks
+    expect(parsed[0].embedding).toHaveLength(1536);
+  });
+
+  it("zhenjie6: chunks_with_emb_json=空数组 → 视为 cache miss, 落到正常路径", async () => {
+    const fileId = "f-empty-cache";
+    store.create({
+      file_id: fileId,
+      batch_id: "b-1",
+      filename: "empty-cache.md",
+      ext: "md",
+      tmp_data: Buffer.from("# test"),
+      chunks_with_emb_json: "[]", // 0 chunks → 落到正常路径
+    });
+
+    await orchestrator.processFile(fileId);
+
+    // 应当落到正常路径：parser/chunker/embedder 都跑了，done
+    const r = store.getByFileId(fileId);
+    expect(r?.status).toBe("done");
+    // 跑完正常路径后 chunks_with_emb_json 已被覆盖为真数据
+    expect(r?.chunks_with_emb_json).toBeTruthy();
+    expect(r?.chunks_with_emb_json).not.toBe("[]");
+    const parsed = JSON.parse(r!.chunks_with_emb_json!);
+    expect(parsed).toHaveLength(2);
+  });
 });

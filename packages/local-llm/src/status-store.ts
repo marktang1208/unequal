@@ -25,6 +25,9 @@
  *     （crawler 路径直接带 markdown 入库，避免重解析）
  *   - T3 阶段会再加 `source` 列（区分 upload vs crawler）和 `metadata TEXT` 列
  *     本文件暂保留 metadata 作为 create 参数但不持久化（schema 暂无列）
+ *   - zhenjie6: 加 `chunks_with_emb_json` 列（持久化 chunks + embeddings 1536 floats）
+ *     retry 时直接读，跳过 parse/chunk/embed 全流程（仅重 push）
+ *     1520 chunks ≈ 19MB/record（大但可接受；只在 push 成功后写，failed 不污染）
  */
 
 import Database from "better-sqlite3";
@@ -44,6 +47,8 @@ export interface IngestRecord {
   tmp_data: Buffer | null;
   markdown: string | null;
   chunks_json: string | null;
+  /** zhenjie6: 持久化 chunks + embeddings 1536 floats，retry 跳过 parse/chunk/embed */
+  chunks_with_emb_json: string | null;
   markdown_chars: number | null;
   chunks_count: number | null;
   error_code: string | null;
@@ -96,6 +101,11 @@ const SCHEMA_MIGRATIONS = [
   `CREATE INDEX IF NOT EXISTS idx_source_status ON local_ingest(source, status)`,
 ];
 
+/** zhenjie6: chunks_with_emb_json 持久化（retry 跳过 parse/chunk/embed） */
+const SCHEMA_MIGRATION_ZHENJIE6 = [
+  `ALTER TABLE local_ingest ADD COLUMN chunks_with_emb_json TEXT`,
+];
+
 function getTableColumns(db: Database.Database, table: string): Set<string> {
   const rows = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
   return new Set(rows.map((r) => r.name));
@@ -116,6 +126,10 @@ function applyMigrations(db: Database.Database): void {
   }
   // idx_source_status 用 CREATE INDEX IF NOT EXISTS 幂等创建
   db.exec(SCHEMA_MIGRATIONS[3]!);
+  // zhenjie6: chunks_with_emb_json
+  if (!columns.has("chunks_with_emb_json")) {
+    for (const stmt of SCHEMA_MIGRATION_ZHENJIE6) db.exec(stmt);
+  }
 }
 
 export class StatusStore {
@@ -139,6 +153,8 @@ export class StatusStore {
     /** P3-7 / Phase B: crawler 路径直接带 markdown 入库（避免重解析） */
     markdown?: string | null;
     chunks_json?: string | null;
+    /** zhenjie6: 持久化 chunks + embeddings 1536 floats，retry 跳过 parse/chunk/embed */
+    chunks_with_emb_json?: string | null;
     markdown_chars?: number | null;
     chunks_count?: number | null;
     /** P3-7 / Phase B/C: crawler metadata（crawl_depth/source_domain/crawled_at/parent_url） JSON 序列化 */
@@ -165,6 +181,7 @@ export class StatusStore {
       tmp_data: input.tmp_data ?? null,
       markdown: input.markdown ?? null,
       chunks_json: input.chunks_json ?? null,
+      chunks_with_emb_json: input.chunks_with_emb_json ?? null,
       markdown_chars: input.markdown_chars ?? null,
       chunks_count: input.chunks_count ?? null,
       error_code: null,
@@ -182,13 +199,13 @@ export class StatusStore {
     this.db.prepare(`
       INSERT INTO local_ingest (
         file_id, batch_id, filename, ext, status, progress,
-        tmp_data, markdown, chunks_json, markdown_chars, chunks_count,
+        tmp_data, markdown, chunks_json, chunks_with_emb_json, markdown_chars, chunks_count,
         error_code, error_message, cloud_source_id, cloud_document_id,
         retry_count, retryable, created_at, updated_at,
         source, metadata, trust_level
       ) VALUES (
         @file_id, @batch_id, @filename, @ext, @status, @progress,
-        @tmp_data, @markdown, @chunks_json, @markdown_chars, @chunks_count,
+        @tmp_data, @markdown, @chunks_json, @chunks_with_emb_json, @markdown_chars, @chunks_count,
         @error_code, @error_message, @cloud_source_id, @cloud_document_id,
         @retry_count, @retryable, @created_at, @updated_at,
         @source, @metadata, @trust_level
