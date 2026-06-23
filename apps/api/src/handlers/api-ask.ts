@@ -23,7 +23,7 @@ import { getEmbedder, getChatProvider } from "../lib/llm-provider.js";
 import { searchChunks, type ChunkWithEmbedding } from "@unequal/shared/retrieval";
 import { buildAskPrompt, DISCLAIMER_TEXT } from "@unequal/shared/prompt";
 import { COLLECTIONS } from "../lib/collections.js";
-import { getAllByFilter } from "../lib/db.js";
+import { whereQuery } from "../lib/db.js";
 import { parseAnswerSegments } from "./api-chat.js";
 import type { Chunk, Document } from "@unequal/shared/types";
 // P5 NLI 后置验证（spec §3.1 step 9-11）
@@ -86,7 +86,14 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
   const queryVec = (await embed.embed([q]))[0] ?? [];
 
   // 2. fetch chunks + retrieval
-  const chunks = await getAllByFilter<Chunk>(COLLECTIONS.chunk, { userId: env.DEFAULT_USER_ID });
+  // CloudBase 单次回包 1MB 上限；limit=500 与 api-chat 一致（state-ask-search-retrieval.md §3）。
+  // chunk 平均 10KB（含 1536 浮点 embedding），500 chunks ≈ 5MB 上界；暴力 cosine 排序后取 topK=5 安全。
+  // 若用户实际 > 500 chunks，warn log 提示 v2 需分页（spec §6）。
+  const chunks = await whereQuery<Chunk>(COLLECTIONS.chunk, { userId: env.DEFAULT_USER_ID }, { limit: 500 });
+  if (chunks.length === 500) {
+    // eslint-disable-next-line no-console
+    console.warn(`[api-ask] chunk retrieval hit 500 limit; user ${env.DEFAULT_USER_ID} may have more (v2 待分页)`);
+  }
   const chunksWithEmb: ChunkWithEmbedding[] = chunks.map((c) => ({
     id: c.id,
     _id: c._id,
@@ -116,7 +123,7 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
   const findChunk = (chunkId: string) =>
     chunksWithEmb.find((c) => (c._id ?? c.id) === chunkId);
   const docIds = Array.from(new Set(top.map((t) => findChunk(t.chunkId)?.documentId).filter(Boolean) as string[]));
-  const docs = await Promise.all(docIds.map((id) => getAllByFilter<Document>(COLLECTIONS.document, { id }, 1).then((r) => r[0])));
+  const docs = await Promise.all(docIds.map((id) => whereQuery<Document>(COLLECTIONS.document, { id }, { limit: 1 }).then((r) => r[0])));
   const docMap = new Map(docs.filter(Boolean).map((d) => [d!.id, d!]));
 
   // 4. build prompt
@@ -271,7 +278,9 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
   }
 
   // 8. P5 NLI: 应用 warning prefix（spec §3.1 step 11）
-  const finalAnswer = nliSucceeded ? applyWarning(cleaned, verdict) : cleaned;
+  // answer 字段保留原文 [N]（用户端体验完整）；warning prefix 拼接到原文前（不破坏 [N] 引用）
+  // P5 commit ea0ad8f 误用 cleaned 作 finalAnswer，导致 D-2-a 测试期望含 [1] 失败 — 一起修
+  const finalAnswer = nliSucceeded ? applyWarning(answer, verdict) : answer;
 
   const response: AskResponse = {
     answer: finalAnswer,

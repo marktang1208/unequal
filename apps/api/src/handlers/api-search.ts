@@ -19,7 +19,7 @@ import { requireAdmin } from "../lib/auth-admin.js";
 import { getEmbedder } from "../lib/llm-provider.js";
 import { searchChunks, type ChunkWithEmbedding } from "@unequal/shared/retrieval";
 import { COLLECTIONS, type CollectionName } from "../lib/collections.js";
-import { getAllByFilter } from "../lib/db.js";
+import { whereQuery } from "../lib/db.js";
 import type { Chunk } from "@unequal/shared/types";
 
 export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse> {
@@ -52,10 +52,16 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
   const queryVec = (await embed.embed([q]))[0] ?? [];
 
   // fetch chunks for user
-  const chunks = await getAllByFilter<Chunk>(
+  // CloudBase 单次回包 1MB 上限；limit=500 与 api-chat/api-ask 对齐（state-ask-search-retrieval.md §3）。
+  const chunks = await whereQuery<Chunk>(
     COLLECTIONS.chunk as CollectionName,
     { userId: env.DEFAULT_USER_ID },
+    { limit: 500 },
   );
+  if (chunks.length === 500) {
+    // eslint-disable-next-line no-console
+    console.warn(`[api-search] chunk retrieval hit 500 limit; user ${env.DEFAULT_USER_ID} may have more (v2 待分页)`);
+  }
   const chunksWithEmb: ChunkWithEmbedding[] = chunks.map((c) => ({
     id: c.id,
     _id: c._id,

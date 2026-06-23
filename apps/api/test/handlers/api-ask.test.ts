@@ -6,17 +6,17 @@
  * 2. 答案 [N] 解析复用 parseAnswerSegments（不是 JSON 块）
  * 3. citedNums → citations 映射正确（title/snippet/chunkId 来自真 topChunks）
  *
- * 端到端 mock：fetch (MiniMax embedding/chat) + getAllByFilter (CloudBase DB)
+ * 端到端 mock：fetch (MiniMax embedding/chat) + whereQuery (CloudBase DB)
  */
 
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 
-// 1. mock CloudBase DB — getAllByFilter 返 mock chunks + docs
+// 1. mock CloudBase DB — whereQuery 返 mock chunks + docs
 vi.mock("../../src/lib/db.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/lib/db.js")>();
   return {
     ...actual,
-    getAllByFilter: vi.fn(),
+    whereQuery: vi.fn(),
   };
 });
 
@@ -96,8 +96,8 @@ describe("api-ask handler (CP-7-D #1/#2)", () => {
     fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
-    // mock getAllByFilter：chunk 查 → 返 MOCK_CHUNK_1/2；document 查 → 返 MOCK_DOC_1
-    vi.mocked(db.getAllByFilter).mockImplementation(async (coll: string, filter: any) => {
+    // mock whereQuery：chunk 查 → 返 MOCK_CHUNK_1/2；document 查 → 返 MOCK_DOC_1
+    vi.mocked(db.whereQuery).mockImplementation(async (coll: string, filter: any) => {
       if (coll === "chunk") return [MOCK_CHUNK_1, MOCK_CHUNK_2] as any;
       if (coll === "document") {
         if (filter && filter.id) return [MOCK_DOC_1] as any;
@@ -276,5 +276,50 @@ describe("api-ask handler (CP-7-D #1/#2)", () => {
     const body = JSON.parse(res.body);
     expect(res.statusCode).toBe(502);
     expect(body.error).toBe("MINIMAX_FAILED");
+  });
+
+  // P-1MB fix: 1000 chunks 模拟大数据场景 → handler 必须传 limit=500 给 DB（防 CloudBase 1MB 阻塞）
+  it("1000 chunks mock 不 throw：handler 传 limit=500 给 DB + 仍能 topK=5", async () => {
+    const bigChunks = Array.from({ length: 1000 }, (_, i) => ({
+      _id: `01K_CHUNK_${i}`,
+      id: `01K_CHUNK_${i}`,
+      documentId: "01K_DOC_1",
+      sourceId: "01K_SRC_1",
+      userId: MOCK_USER,
+      idx: i,
+      content: `mock chunk ${i}: ${"x".repeat(1000)}`, // 模拟大 payload
+      embedding: new Array(1536).fill(0.5),
+      tokenCount: 200,
+      trustLevel: 1,
+      createdAt: 1000 + i,
+    }));
+    vi.mocked(db.whereQuery).mockImplementation(async (coll: string, filter: any, opts?: any) => {
+      if (coll === "chunk") {
+        // 验证 handler 传了 limit: 500（修复前不传；修复后传）
+        expect(opts?.limit).toBe(500);
+        return bigChunks as any;
+      }
+      if (coll === "document") {
+        return [MOCK_DOC_1] as any;
+      }
+      return [];
+    });
+
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ vectors: [new Array(1536).fill(0.99)] }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: "答案 [1]." } }],
+        }),
+      } as Response);
+
+    const ev = makeEvent({ q: "q" });
+    const res = await askMain(ev);
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).citations.length).toBeGreaterThan(0);
   });
 });
