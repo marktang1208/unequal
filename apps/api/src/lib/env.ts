@@ -42,6 +42,12 @@ export interface AppEnv {
 
   // CloudBase specific (auto-injected by runtime)
   TCB_ENV?: string;
+
+  // P5 NLI configuration (spec §8)
+  NLI_ENABLED: boolean;
+  NLI_MODEL_PATH: string;
+  NLI_TOKENIZER_PATH: string;
+  NLI_TIMEOUT_MS: number;
 }
 
 let _env: AppEnv | null = null;
@@ -95,6 +101,12 @@ function validateEnvObject(source: NodeJS.ProcessEnv | Record<string, string | u
     EMBED_MODEL: source.EMBED_MODEL ?? EMBED_MODEL_DEFAULT,
 
     TCB_ENV: source.TCB_ENV,
+
+    // P5 NLI: 默认启用，模型路径相对 apps/api/ 解析
+    NLI_ENABLED: (source.NLI_ENABLED ?? "true").toLowerCase() === "true" || source.NLI_ENABLED === "1",
+    NLI_MODEL_PATH: source.NLI_MODEL_PATH ?? "functions/assets/nli/nli-MiniLM-L6-v2-quantized.onnx",
+    NLI_TOKENIZER_PATH: source.NLI_TOKENIZER_PATH ?? "functions/assets/nli/tokenizer.json",
+    NLI_TIMEOUT_MS: parseInt(source.NLI_TIMEOUT_MS ?? "3000", 10),
   };
 }
 
@@ -120,6 +132,28 @@ export async function validateEmbeddingDim(): Promise<void> {
   if (!result[0] || result[0].length !== EMBEDDING_DIM) {
     throw new Error(
       `Embedding dim mismatch: expected ${EMBEDDING_DIM}, got ${result[0]?.length ?? "undefined"}`,
+    );
+  }
+}
+
+/**
+ * P5 NLI 启动期校验：NLI_ENABLED=true 时，模型文件必须存在
+ * 否则 throw NliConfigError → CloudBase 函数冷启动失败
+ *
+ * 仅在 production 跑（避免本地 dev 强依赖外网 + 模型文件）
+ */
+export async function validateNliConfig(): Promise<void> {
+  if (process.env.ENVIRONMENT !== "production") return;
+  const env = getEnv();
+  if (!env.NLI_ENABLED) return;
+
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const modelPath = path.resolve(process.cwd(), env.NLI_MODEL_PATH);
+  if (!fs.existsSync(modelPath)) {
+    const { NliConfigError } = await import("./nli/errors.js");
+    throw new NliConfigError(
+      `NLI model not found: ${modelPath}. Run 'pnpm -F api download-nli-model' or set NLI_ENABLED=false.`,
     );
   }
 }
