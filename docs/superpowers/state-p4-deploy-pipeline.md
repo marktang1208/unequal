@@ -19,6 +19,37 @@
 | 单元测试 | 0 (脚本无单测) | 27 unit tests PASS |
 | 全 api tests | 511/511 | 163/163 (P4 #2 改了 audit.ts 类型) |
 | 平台 | macOS only | macOS only (Linux 兼容仍是 P4 #3) |
+| **真接验收** | 未跑 | **6/6 步全过 (commit 9950196)** |
+
+## 1.1 真接验证 (commit 9950196)
+
+6 步 deploy pipeline 全过：
+
+| 步 | 命令 | 结果 |
+|---|---|---|
+| [1/6] status | `pnpm -F api deploy:status` | ✅ 13 vars (audit_log remote) + 1 deploy record |
+| [2/6] push (Merge) | `pnpm -F api deploy push` | ✅ tcb 13 vars 推成功 + audit_log 写入 (mode=merge op=Mark) |
+| [3/6] push --override | `pnpm -F api deploy push -- --override` | ✅ audit_log 写入 (mode=override) |
+| [4/6] push --force | `pnpm -F api deploy push -- --force` | ✅ diff +0 -0 ~0 (KEK_CURRENT_VERSION 未漂移) |
+| [5/6] rotate-kek --force | `pnpm -F api deploy rotate-kek -- --force` | ✅ KEK 轮换 + 推云 + 提示 6 步 smoke |
+| [6/6] clean | `pnpm -F api deploy clean` | ✅ 恢复 7 vars 干净版 + audit_log 写入 (note=clean) |
+
+**真接期间发现 + 修的 3 bug**（commit 9950196）：
+
+| Bug | 现象 | 修法 |
+|---|---|---|
+| #1 tcb 命令签名错 | `tcb db nosql insert/query` 不存在 | 改用 `tcb db nosql execute --command '[{TableName,CommandType,Command}]'` |
+| #2 pnpm flag 拦截 | `pnpm deploy push --override` 报 Unknown option | `pnpm deploy push -- --override` (-- 分隔) |
+| #3 Mongo number 序列化 | `Invalid time value` on `{$numberLong: 'xxx'}` | `unMongoNumber()` helper 解 `$numberLong`/`$numberInt` |
+| #4 tcb stdout 解析 | `lines[lines.length-1]` 是单独 `]` 字符 | `stdout.indexOf('[')` 找 array 开始位置 |
+
+**手动 6 步 smoke**（rotate-kek 后必跑，state-cp6 §4）：
+```
+pnpm -F api deploy push   # 推 12 vars (含新 KEK)
+# /api-auth-admin-login (拿 JWT) → /api-auth-me → /api-search?q=发烧&topK=5
+# → /api-ask → /api-chat → /api-ingest
+# 全 PASS → pnpm -F api deploy clean
+```
 
 ## 2. 4 子项落地
 
@@ -178,6 +209,8 @@ fed4b1e feat(deploy): rotate-kek command - generate new KEK + Keychain + push (P
 3dcd430 refactor(deploy): 抽 deploy/ 模块 + keychain + tmp-config + tcb (P4 #2 commit 1)
 98cbbbd feat(deploy): diff + KEK_CURRENT_VERSION 防漂移 + deploy audit log (P4 #2 commit 2)
 fed4b1e feat(deploy): rotate-kek command - generate new KEK + Keychain + push (P4 #2 commit 3)
+1e655ff docs(deploy): verify-deploy-pipeline.sh + state-p4-deploy-pipeline.md (P4 #2 commit 4)
+9950196 fix(deploy): 真接验证发现 3 bug — tcb 命令签名 + pnpm flag 透传 + Mongo number 解
 ```
 
 外加 verify-deploy-pipeline.sh 准备 commit（commit 4 待定 — 需真接通过）。
