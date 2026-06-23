@@ -2,6 +2,12 @@
  * P3-7 / Phase A: CloudEmbedder — MiniMax API embedding
  *
  * 迁移自 `apps/admin/server/cloud-embedder.ts`，行为保持一致。
+ *
+ * MiniMax embo-01 schema（实测，与 OpenAI 不兼容）：
+ *   request:  { model, type: "query"|"db", texts: string[] }
+ *   response: { vectors: number[][] }
+ *
+ * OMLX / OpenAI 风格 { input, data[].embedding } 当前不支持，需走本适配。
  */
 
 import { EmbedError, EXPECTED_EMBED_DIM, type Embedder } from "./types.js";
@@ -15,6 +21,9 @@ export interface CloudEmbedderOptions {
 }
 
 export class CloudEmbedder implements Embedder {
+  /** zhenjie5: MiniMax embo-01 单次请求 batch 限，实测 1520 一次性发返 vectors=null
+   * 设 100 留余量（10 chunks/批在 OMLX 上限，MiniMax 可以更大；100 平衡 RTT vs 稳定性） */
+  private static readonly BATCH_SIZE = 100;
   private apiKey: string;
   private baseUrl: string;
   private model: string;
@@ -31,6 +40,17 @@ export class CloudEmbedder implements Embedder {
 
   async embed(texts: string[]): Promise<number[][]> {
     if (texts.length === 0) return [];
+    // zhenjie5: MiniMax 单次 batch 限，分批调
+    const allVectors: number[][] = [];
+    for (let i = 0; i < texts.length; i += CloudEmbedder.BATCH_SIZE) {
+      const batch = texts.slice(i, i + CloudEmbedder.BATCH_SIZE);
+      const batchVectors = await this._embedBatch(batch);
+      allVectors.push(...batchVectors);
+    }
+    return allVectors;
+  }
+
+  private async _embedBatch(texts: string[]): Promise<number[][]> {
     try {
       const res = await this.fetch(`${this.baseUrl}/embeddings`, {
         method: "POST",
@@ -40,8 +60,8 @@ export class CloudEmbedder implements Embedder {
         },
         body: JSON.stringify({
           model: this.model,
-          input: texts,
-          encoding_format: "float",
+          type: "query",
+          texts,
         }),
       });
       if (!res.ok) {
@@ -51,8 +71,11 @@ export class CloudEmbedder implements Embedder {
         }
         throw new EmbedError(`Cloud embed failed: ${res.status} ${text.slice(0, 200)}`, "Unknown");
       }
-      const data = (await res.json()) as { data: Array<{ embedding: number[] }> };
-      const vectors = data.data.map((d) => d.embedding);
+      const data = (await res.json()) as { vectors: number[][] | null };
+      const vectors = data.vectors;
+      if (!vectors) {
+        throw new EmbedError(`Cloud embed returned null vectors (texts=${texts.length})`, "Unknown");
+      }
       if (vectors.length > 0) {
         const dim = vectors[0]?.length ?? 0;
         if (dim !== this.expectedDim) {
