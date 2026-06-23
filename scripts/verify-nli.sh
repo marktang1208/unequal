@@ -32,6 +32,11 @@ echo "  repo: $REPO_ROOT"
 echo "  tcb env: unequal-d4ggf7rwg82e0900b"
 echo ""
 
+# API URL（可 export 覆盖；默认 d4gg env 与 cloudbaserc.json 一致）
+API_URL="${API_URL:-https://unequal-d4ggf7rwg82e0900b.ap-shanghai.app.tcloudbase.com}"
+echo "  api url: $API_URL"
+echo ""
+
 # 检查前置
 if ! command -v tcb &> /dev/null; then
   echo "❌ tcb CLI 未安装"
