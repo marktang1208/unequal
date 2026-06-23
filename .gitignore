@@ -32,3 +32,4 @@ cloudbaserc.fn-all.json
 # CP-7-C #2 deployment artifacts (contain INGEST_PROXY_SECRET / ADMIN_TOKEN plaintext)
 ac-verify-cp7c2.sh
 cloudbaserc.smoke.cp7c2.json
+apps/admin/.tmp/
