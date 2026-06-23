@@ -55,10 +55,16 @@ const MAX_HISTORY = 10;  // 最多带 10 条历史消息（控制 token）
  * - rawNums: 解析出的所有数字（不去重；调试用）
  * - citedNums: 去重保 first 顺序（包含越界数字；调用方按需过滤）
  *
+/**
+ * 解析 LLM 答案中的 [N] 引用标记。
+ * - rawNums: 解析出的所有数字（不去重；调试用）
+ * - citedNums: 去重保 first 顺序（包含越界数字；调用方按需过滤）
+ * - cleaned: 去掉 [N] 标记后的答案文本（P5 NLI 用作 premise）
+ *
  * @param answer - LLM 答案文本
  * @param topLength - 检索 top-N 数量（unused；保留供 caller 决策）
  */
-export function parseAnswerSegments(answer: string, topLength: number): { rawNums: number[]; citedNums: number[] } {
+export function parseAnswerSegments(answer: string, topLength: number): { rawNums: number[]; citedNums: number[]; cleaned: string } {
   void topLength; // 保留参数；不强制使用
   const matches = answer.match(/\[\d+\]/g) ?? [];
   const rawNums = matches.map((m) => parseInt(m.slice(1, -1), 10)).filter((n) => Number.isFinite(n));
@@ -69,7 +75,9 @@ export function parseAnswerSegments(answer: string, topLength: number): { rawNum
     seen.add(n);
     citedNums.push(n);
   }
-  return { rawNums, citedNums };
+  // 去掉 [N] 标记（如 "[1] 发烧..." → "发烧..."）
+  const cleaned = answer.replace(/\[\d+\]/g, "").trim();
+  return { rawNums, citedNums, cleaned };
 }
 
 export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse> {

@@ -9,7 +9,7 @@
 
 export abstract class NliError extends Error {
   abstract readonly code: string;
-  constructor(message: string, public cause?: unknown) {
+  constructor(message: string, public override cause?: unknown) {
     super(message);
     this.name = this.constructor.name;
   }

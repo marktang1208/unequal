@@ -9,6 +9,7 @@
  */
 import {
   errorResponse,
+  getClientIp,
   jsonResponse,
   optionsResponse,
   parseJsonBody,
@@ -25,6 +26,14 @@ import { COLLECTIONS } from "../lib/collections.js";
 import { getAllByFilter } from "../lib/db.js";
 import { parseAnswerSegments } from "./api-chat.js";
 import type { Chunk, Document } from "@unequal/shared/types";
+// P5 NLI 后置验证（spec §3.1 step 9-11）
+import { getProvider as getNliProvider } from "../lib/nli/get-provider.js";
+import { applyWarning } from "../lib/nli/apply-warning.js";
+import { NliRuntimeError, NliTimeoutError } from "../lib/nli/errors.js";
+import type { NliVerdict } from "../lib/nli/types.js";
+// P5 NLI: audit 写入
+import { recordAudit } from "../lib/audit.js";
+import { createHash } from "node:crypto";
 
 interface AskRequest {
   q: string;
@@ -56,6 +65,8 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
 
   const auth = await requireAdmin(event, env);
   if (!auth.ok) return auth.response;
+
+  const clientIp = getClientIp(event);
 
   const body = parseJsonBody<AskRequest>(event);
   if (!body?.q || typeof body.q !== "string") {
@@ -142,7 +153,7 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
 
   // 6. CP-7-D #2-a: 解析 [N] 引用（复用 chat 的 parseAnswerSegments）
   const topChunks = top.slice(0, 5);
-  const { citedNums } = parseAnswerSegments(answer, topChunks.length);
+  const { citedNums, cleaned } = parseAnswerSegments(answer, topChunks.length);
   // 过滤越界（保 citedNums 顺序）
   const validCitedNums = citedNums.filter((n) => n >= 1 && n <= topChunks.length);
 
@@ -165,8 +176,103 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
     })
     .filter((c): c is CitationOut => c !== null);
 
+  // 7. P5 NLI 后置验证：LLM 答案是否被 retrieved chunks 蕴含
+  const nliHypothesis = topChunks
+    .map((t) => findChunk(t.chunkId)?.content ?? "")
+    .filter((s) => s.length > 0)
+    .join("\n\n");
+  const nliStart = Date.now();
+  let verdict: NliVerdict;
+  let nliErrorReason: "rejected" | "timeout" | "runtime_error" = "rejected";
+  let nliSucceeded = true;
+  try {
+    const provider = await getNliProvider();
+    verdict = await provider.verify(cleaned, nliHypothesis);
+  } catch (err) {
+    // 降级：runtime 错 / timeout → NoopNliProvider 风格 verdict (entailed)，不阻塞 ask
+    nliSucceeded = false;
+    if (err instanceof NliTimeoutError) {
+      nliErrorReason = "timeout";
+    } else {
+      nliErrorReason = "runtime_error";
+    }
+    // eslint-disable-next-line no-console
+    console.warn(`[nli] verify failed (${nliErrorReason}): ${err instanceof Error ? err.message : String(err)}`);
+    verdict = {
+      verdict: "entailed",
+      score: 1,
+      scores: { entailment: 1, neutral: 0, contradiction: 0 },
+      latencyMs: Date.now() - nliStart,
+    };
+  }
+
+  // 仅 reject 时写 audit（pass 不写减少噪声，spec §3.1 step 10）
+  if (nliSucceeded && verdict.verdict !== "entailed") {
+    const queryHash = createHash("sha256").update(q).digest("hex").slice(0, 16);
+    const chunksHash = createHash("sha256")
+      .update(topChunks.map((t) => t.chunkId).join(","))
+      .digest("hex")
+      .slice(0, 16);
+    try {
+      await recordAudit({
+        action: "ask_nli_reject",
+        actor: { via: "admin_token", userId: env.DEFAULT_USER_ID, clientIp },
+        target: { userId: env.DEFAULT_USER_ID, resourceType: "chunk" },
+        request: { contentLen: q.length, trustLevel: 0, title: q.slice(0, 100) },
+        result: "success",
+        requestId: `ask_nli_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        nliSnapshot: {
+          queryHash,
+          chunksHash,
+          verdict: verdict.verdict,
+          score: verdict.score,
+          scores: verdict.scores,
+          latencyMs: verdict.latencyMs,
+          reason: "rejected",
+        },
+      });
+    } catch (auditErr) {
+      // 审计失败不阻塞响应（spec §7 fail-open）
+      // eslint-disable-next-line no-console
+      console.warn(`[audit] ask_nli_reject write failed: ${auditErr instanceof Error ? auditErr.message : String(auditErr)}`);
+    }
+  } else if (!nliSucceeded) {
+    // runtime 错 / timeout 写 audit（spec §7 类别 B）
+    const queryHash = createHash("sha256").update(q).digest("hex").slice(0, 16);
+    const chunksHash = createHash("sha256")
+      .update(topChunks.map((t) => t.chunkId).join(","))
+      .digest("hex")
+      .slice(0, 16);
+    try {
+      await recordAudit({
+        action: "ask_nli_reject",
+        actor: { via: "admin_token", userId: env.DEFAULT_USER_ID, clientIp },
+        target: { userId: env.DEFAULT_USER_ID, resourceType: "chunk" },
+        request: { contentLen: q.length, trustLevel: 0, title: q.slice(0, 100) },
+        result: "failure",
+        error: `nli_${nliErrorReason}`,
+        requestId: `ask_nli_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        nliSnapshot: {
+          queryHash,
+          chunksHash,
+          verdict: "neutral", // 失败时无法判断
+          score: 0,
+          scores: { entailment: 0, neutral: 0, contradiction: 0 },
+          latencyMs: verdict.latencyMs,
+          reason: nliErrorReason,
+        },
+      });
+    } catch (auditErr) {
+      // eslint-disable-next-line no-console
+      console.warn(`[audit] ask_nli_reject (failure) write failed: ${auditErr instanceof Error ? auditErr.message : String(auditErr)}`);
+    }
+  }
+
+  // 8. P5 NLI: 应用 warning prefix（spec §3.1 step 11）
+  const finalAnswer = nliSucceeded ? applyWarning(cleaned, verdict) : cleaned;
+
   const response: AskResponse = {
-    answer,
+    answer: finalAnswer,
     citations,
     disclaimer: DISCLAIMER_TEXT,
   };

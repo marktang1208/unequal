@@ -140,6 +140,7 @@ export class TransformersNliProvider implements NliProvider {
       ["contradiction", scores.contradiction],
     ];
     entries.sort((a, b) => b[1] - a[1]);
-    return entries[0][0];
+    // entries 永远 ≥ 1（3 个 hardcoded element）
+    return entries[0]![0];
   }
 }

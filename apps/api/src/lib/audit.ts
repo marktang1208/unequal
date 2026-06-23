@@ -15,7 +15,8 @@ export interface AuditEntry {
   id: string;
   timestamp: number;
   /** P4 #2 deploy pipeline: 加 "deploy" 枚举 */
-  action: "ingest" | "session_rename" | "session_delete" | "nickname_update" | "deploy";
+  /** P5 NLI: 加 "ask_nli_reject" — LLM 答案不被 retrieved chunks 蕴含 */
+  action: "ingest" | "session_rename" | "session_delete" | "nickname_update" | "deploy" | "ask_nli_reject";
   actor: {
     /** P4 #2 deploy pipeline: 加 "deploy_script"（本地 deploy CLI） */
     via: "admin_token" | "admin_jwt" | "ingest_proxy" | "jwt_user" | "deploy_script";
@@ -53,6 +54,16 @@ export interface AuditEntry {
   };
   /** P4 #2 deploy pipeline: deploy action 专用 — 操作者 OS username (os.userInfo().username) */
   operator?: string;
+  /** P5 NLI: ask_nli_reject action 专用 — 记录 NLI 验证结果 */
+  nliSnapshot?: {
+    queryHash: string;        // SHA-256(q).slice(0, 16) — 避免 PII 落库
+    chunksHash: string;       // SHA-256(chunkIds.join(",")).slice(0, 16)
+    verdict: "entailed" | "neutral" | "contradiction";
+    score: number;
+    scores: { entailment: number; neutral: number; contradiction: number };
+    latencyMs: number;
+    reason: "rejected" | "timeout" | "runtime_error";
+  };
 }
 
 type AuditImpl = (entry: AuditEntry) => Promise<void>;
