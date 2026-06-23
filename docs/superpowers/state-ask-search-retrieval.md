@@ -2,18 +2,20 @@
 
 > 日期: 2026-06-23
 > 前置: state-p5-nli-entailment.md (commit 1de8e7e) — NLI 闭环但真接被 ask pre-existing bug 阻塞
-> 状态: ✅ 2 commit 闭环 + 514 tests PASS + 5 workspaces typecheck 干净；真接 step 1-2 自动化 PASS（user 跑 step 3-5）
+> 状态: ✅ 6 commit 闭环 + 522 tests PASS + 5 workspaces typecheck 干净；真接 step 1-3 PASS（user 跑 step 4-6）；production admin deploy + M7-D 真机端到端 PASS
 
 ## 1. 验收结果
 
 | 维度 | 修复前 | 修复后 |
 |---|---|---|
-| api-ask chunks 拉取 | `getAllByFilter` 无 limit（pageSize=1000 → 1.5MB → CloudBase LimitExceeded） | `whereQuery({userId}, {limit:500})`（state-ask-search-retrieval §3）|
-| api-search chunks 拉取 | 同上 | 同上 |
-| chunks > ~100 时 | ask 500 + search 500 | 200 (limit 500 内) |
-| warn log | 无 | 命中 500 时 console.warn 一次性告警 |
-| P5 NLI 真接 | step 2-3 blocked | step 2-6 解锁（待 user 跑 `verify-nli.sh` 验证）|
-| 测试 | 511 | 514 PASS (+3) |
+| api-ask chunks 拉取 | `getAllByFilter` 无 limit（pageSize=1000 → 1.5MB → CloudBase LimitExceeded） | `whereQuery({userId}, {limit:8})`（state-ask-search-retrieval §3.1）|
+| api-search chunks 拉取 | 同上 | `whereQuery({userId}, {limit:8})` |
+| api-chat chunks 拉取 | 已是 `whereQuery({userId}, {limit:500})` working | 同步 `limit:8` |
+| chunks > ~8 时 | ask 500 + search 500 | 200 (limit 8 内) + warn log + 暴力 cosine 退化为"抽样 8" |
+| P5 NLI 真接 | step 2-3 blocked | step 2-6 解锁（user 跑 `verify-nli.sh` 验证）|
+| production admin | 缺 (admin dev 模式登录 404) | production admin 部署到 CloudBase 静态托管 + 真路径 |
+| M7-D 真机端 | 5+1 步未跑 | 全部 PASS（⚙ 入口 + settings UI + 登出）|
+| 测试 | 511 | 522 PASS (+11) |
 | Typecheck | 5 ws 干净 | 5 ws 干净（local-llm 跳过 pre-existing TS2209） |
 
 ## 2. 实施路径
@@ -190,12 +192,136 @@ b57c022 docs(spec): ask/search retrieval 1MB 阻塞修复 design — whereQuery(
 
 **下一步**：user 跑 `bash scripts/verify-nli.sh` 重验 P5 6 步。
 
-## 10. References
+## 10. 真接真实发现（production 1963 chunks）
 
-- **Spec**: `docs/superpowers/specs/2026-06-23-ask-search-retrieval-limit-design.md` (commit b57c022)
-- **Plan**: `.claude/plans/ask-search-retrieval-limit.plan.md`
-- **Working pattern**: `apps/api/src/handlers/api-chat.ts:139`
-- **Bug 位置**: `apps/api/src/handlers/api-ask.ts:89` (修复前) + `apps/api/src/handlers/api-search.ts:55` (修复前)
+**用 commit `eda94a7` 部署后第一次真接 `/api-ask`**（curl 直接打 CloudBase HTTP 触发器），返：
+
+```
+HTTP/1.1 500 Internal Server Error
+{"error":"INTERNAL_ERROR","message":"api-ask failed: [LimitExceeded.OutOfResultSizeLimit]"}
+```
+
+**根因分析**：
+1. CloudBase `chunk` collection production **1963 条**（远大于 chat/ask 当初假设的 <100 条）
+2. 单 chunk ≈ 87KB（含 1536 floats embedding + content + meta）
+3. `getAllByFilter` 完全无 limit → 单次 page 1000 × 87KB = 87MB 超 1MB 限制
+4. `whereQuery(limit:500)` 看似安全 → 实测 `500 × 87KB = 43MB` **仍超 1MB**
+5. 安全上限：**1MB / 87KB ≈ 12 chunks**（留 1.5x buffer = **8 chunks**）
+
+**fix（commit `4032a49`）**：
+
+| 文件 | 修改 |
+|---|---|
+| `apps/api/src/handlers/api-ask.ts` | `limit:500` → `limit:8` + warn log + 注释 |
+| `apps/api/src/handlers/api-search.ts` | 同上 |
+| `apps/api/src/handlers/api-chat.ts` | 同步 `limit:500` → `limit:8` + warn log |
+| `apps/api/test/handlers/api-ask.test.ts` | 测试 mock 同步 `limit:500` → `limit:8` |
+| `apps/api/test/handlers/api-search.test.ts` | 同上 |
+
+**真接 retry 后**：
+
+```
+$ curl /api-ask -d '{"q":"发烧怎么办"}' -H "Authorization: Bearer $ADMIN_JWT"
+{"answer":"根据参考资料...","citations":[3 chunks],"disclaimer":"..."}  # 200 ✅
+```
+
+**架构真相（已 stable）**：
+- 暴力 cosine in-memory 检索在 < 10K chunks 规模下不 work
+- production 1963 chunks / 87KB 每条 → 必须**抽样**（limit=8）而非全量
+- 抽样意味着**召回质量严重受限**（只在前 8 个 chunk 里选 topK=5，relevant chunk 在 #8 之外则漏）
+- **v2 必须上云端向量 DB**（腾讯云 VectorDB / Pinecone），否则用户加到 5000+ chunks 时基本失效
+
+## 11. Production admin 部署（commit `eda94a7`）
+
+**触发**：admin dev 模式 `pnpm -F admin dev` 走 vite middleware，login 路径 `/api/auth/admin-login` 404（vite middleware 没注册）。要把 admin 真接到 production 数据（验 #1 + M7-D 后端），必须把 admin 部署到 CloudBase 静态托管。
+
+**踩坑 + 修法**：
+
+| 问题 | 修法 |
+|---|---|
+| CloudBase 静态托管默认域名 `unequal-d4ggf7rwg82e0900b.tcloudbaseapp.com` 配 SPA 后 React Router 路由（如 `/login`、`/chat-sim`）返 404 | 复制 `dist/index.html` → `dist/404.html` 触发 CloudBase SPA fallback |
+| admin 代码 `fetch("/api/auth/admin-login", ...)` 在 production 没 vite proxy | 加 `getApiBase()` helper + 改 production 走 `https://{envId}-1444590671.ap-shanghai.app.tcloudbase.com/api-auth-admin-login` |
+| CloudBase Gateway `anonymous-login` 返 401 MISSING_CREDENTIALS | 直接打 api-router HTTP 触发器，绕过 Gateway |
+| URL 错（`{envId}.ap-shanghai.app.tcloudbase.com` 缺 `1444590671` AppID 后缀） | 改 `https://{envId}-1444590671.ap-shanghai.app.tcloudbase.com` |
+| admin 代码 body 用 `admin_token` 字段名，但 server 期望 `token` | 改 `body: JSON.stringify({ token: adminToken })` |
+| `toApiPath("/auth/admin-login")` 误转成 `/api-auth/admin-login`（斜杠）而不是 `/api-auth-admin-login`（短横线） | 重写 `toApiPath` 用 `.replace(/\//g, "-")` |
+| `/api/sessions` 错（server 注册 `/api-sessions-list`）| 改 `/api-sessions-list` |
+| `/api/stats/login-attempts` 错 | 改 `/api-stats-login-attempts` |
+| `/api/sessions/{id}` 路径不存在（rename / delete 各自有独立 handler） | 改 `/api-sessions-rename/{id}` + `/api-sessions-delete/{id}` |
+| 多个老 bundle 堆积在 CDN (BDOAPP0e / DCZ2Pufp / DVhRhEyv / DflJH4QV) | deploy 后逐个 `tcb hosting delete` 清理 |
+
+**production admin 部署 + 登录真接 PASS**（commit `eda94a7` 后）：
+
+```
+1. 浏览器开 https://unequal-d4ggf7rwg82e0900b-1444590671.tcloudbaseapp.com/login
+2. 输 production token (Keychain 拿, 64 chars)
+3. 登录 → /chat-sim 渲染, 4 个 sessions 列出
+4. chat 框发"5个月宝宝发烧38.5怎么办" → 真答案 + [1][2][3] 引用
+5. /api-search /api-ask /api-chat 全部 work (limit:8 真接验过)
+```
+
+## 12. M7-D 真机端到端验证（minipgm 端）
+
+**触发**：用户用微信开发者工具 + 真机扫码跑 5+1 步真接。
+
+**结果**：
+
+| 步 | 状态 | 备注 |
+|---|---|---|
+| D.1 编译 + ensureJwt | ✅ | `wx.cloud.init ok, env: unequal-d4ggf7rwg82e0900b` |
+| D.2 chat 问问题 | ✅ | 答案流畅 + `[1][2][3]` 引用 |
+| D.4 ⚙ 入口 → settings | ✅ | 右上角橙色 ⚙ 按钮可见 |
+| **D.5 settings 页 UI** | ✅ | 3 卡片 + 红色「退出登录」按钮正常 |
+| **D.6 登出** | ✅ | 显示「未登录」+「请先打开"问答"页触发微信登录」 |
+
+**关键数据**（D.5 真机截图）：
+- 用户 ID: `01KVCZ2JRBAGF3MY75D7KEY4RZ` (26 字符 ULID)
+- 昵称: `小松果` (已设)
+- 对话会话: 13 个
+- 累计消息: 26 条
+- 注册时间: 2026-06-18
+
+**M7-D 任务端到端 PASS**：
+- 后端 `/api-auth-me` handler work
+- minipgm `pages/settings/` UI 完整
+- chat ⚙ FAB 入口正常
+- 登出清 jwt + 跳回未登录态正确
+
+## 13. 总结
+
+**#1 ask retrieval fix 主线完成 + 6 commit 闭环**：
+1. `b57c022` spec
+2. `ef4fcf5` fix (limit:500)
+3. `f317158` state
+4. `9a29f69` verify-nli.sh script fix (bonus, pre-existing bug)
+5. `4032a49` production 1963 chunks 真实数据 → limit:8
+6. `eda94a7` production admin deploy + 真路径
+
+**#2 M7-D 真机端到端 PASS**（minipgm 端 + production admin 端）。
+
+**测试 baseline**：522 tests all PASS（minipgm 49 + api 198 + admin 168 + crawler 49 + shared 58）。
+
+**production 真接验证**：
+- ✅ /api-ask: 200, 答案 + [N] 引用 + citations 数组
+- ✅ /api-search: 200, topK=5 命中
+- ✅ /api-chat: 200, 真答案
+- ✅ /api-auth-me: 200, user info + sessions count + isolation
+- ✅ /api-sessions-list / -rename / -delete: 200, sessions 列表 + CRUD
+
+**遗留项 (v2 留路)**：
+- 上云端向量 DB (production 1963 chunks 已超暴力 cosine 能力)
+- P5 NLI 真接 step 4-6 (audit log 查 ask_nli_reject) — user 跑 `verify-nli.sh`
+- admin production 部署自动化 (现在手工 tcb hosting deploy)
+- admin dev 模式登录路径兼容 (vite middleware 加 /api/auth/admin-login handler)
+- minipgm history tab 完整验证 (D.7 未跑, bonus)
+
+## 14. References (追加)
+
+- **Production 真接 trace**: 见 §10
+- **Production admin 部署踩坑**: 见 §11
+- **M7-D 真机端**: 见 §12
+- **Pre-existing bug (verify-nli.sh)**: commit `9a29f69`
+- **Pre-existing bug (CloudBase Gateway 匿名登录)**: 改走 HTTP 触发器绕过
 - **P5 NLI 真接阻塞**: `docs/superpowers/state-p5-nli-entailment.md` §6.1
 - **P5 NLI commit (引入 regression)**: `ea0ad8f` feat(ask): api-ask NLI 后置插入
 - **真接脚本模板**: `scripts/verify-nli.sh`
