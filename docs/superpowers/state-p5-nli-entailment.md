@@ -76,7 +76,7 @@ e823568 chore(api): NLI 骨架 + 10 unit tests
 | `apps/api/src/lib/nli/__tests__/http-provider.test.ts` | 195 | 11 cases |
 | `scripts/verify-nli.sh` | 145 | 真接验收 (6 步，硅基流动路径) |
 
-### 3.2 修改 (5 文件)
+### 3.2 修改 (7 文件)
 
 | 文件 | 改动 |
 |---|---|
@@ -86,7 +86,10 @@ e823568 chore(api): NLI 骨架 + 10 unit tests
 | `apps/api/src/handlers/api-ask.ts` | + recordNliFailure / recordNliSuccess 触发状态机 |
 | `apps/api/package.json` | - @xenova/transformers；- download-nli-model script |
 | `pnpm-workspace.yaml` | protobufjs: true → false |
-| `.gitignore` | - "!apps/api/functions/assets/nli/.gitkeep" 等放行规则 |
+| `.gitignore` | - "!apps/api/functions/assets/nli/.gitkeep" 等放行规则 + `push/` 防 ghost 目录 |
+| `apps/api/scripts/deploy/commands/push.ts` | SECRETS 数组 + SILICONFLOW_API_KEY (7 secrets)；log 字符串动态化 |
+| `apps/api/scripts/setup-keychain-secrets.sh` | + SILICONFLOW_API_KEY 入口 + `: "${VAR:=}"` env 兼容（避免子 shell 覆盖） |
+| `apps/api/cloudbaserc.json` | + NLI_PROVIDER + SILICONFLOW_BASE_URL + NLI_MODEL + NLI_TIMEOUT_MS + NLI_RETRY_COUNT（公开值）|
 
 ### 3.3 删除 (5 文件)
 
