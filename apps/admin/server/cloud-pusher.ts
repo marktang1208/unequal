@@ -73,7 +73,7 @@ export class CloudPusher {
   private backoff429: number;
 
   constructor(opts: CloudPusherOptions = {}) {
-    this.baseUrl = opts.baseUrl ?? "https://unequal-d4ggf7rwg82e0900b-1444590671.ap-shanghai.app.tcloudbase.com";
+    this.baseUrl = opts.baseUrl ?? process.env.CLOUDBASE_API_INGEST_URL ?? "https://unequal-d4ggf7rwg82e0900b-1444590671.ap-shanghai.app.tcloudbase.com";
     this.secret = opts.proxySecret ?? process.env.INGEST_PROXY_SECRET ?? "5852adc613c74d479907d68c22c478d2d11edb7340c9a4b8b0e1061b21be58a1";
     this.fetch = opts.fetchImpl ?? fetch;
     this.maxRetries5xx = opts.maxRetries5xx ?? 2;
