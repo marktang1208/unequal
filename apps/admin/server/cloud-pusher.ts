@@ -40,6 +40,9 @@ export interface ChunksPushInput {
   url: string;
   trust_level: 0 | 1 | 2 | 3;
   user_id?: string;
+  /** v2.4 opt: 复用已有 source/document（切批后续批传，避免重复创建） */
+  source_id?: string;
+  document_id?: string;
 }
 
 export class PushError extends Error {
@@ -84,7 +87,8 @@ export class CloudPusher {
 
   /** v2.4: 推预嵌入 chunks（云端直接写库，不调 LLM）
    *  - 单 batch 内自动按 MAX_CHUNKS_PER_PUSH 切批（避免 CloudBase 1MB maxRequestBodySize 限制）
-   *  - 每批独立 POST，合并 source_id / document_id（首批带 ID）
+   *  - 首批带新 chunks（handler 自动创建 source + document）
+   *  - 后续批复用 first batch 的 source_id + document_id（仅追加 chunks，省 75% 写入开销）
    *  - 全部失败抛首条 PushError
    */
   async pushChunks(input: ChunksPushInput): Promise<CloudPusherResult> {
@@ -102,7 +106,13 @@ export class CloudPusher {
     let firstResult: CloudPusherResult | null = null;
     let totalInserted = 0;
     let totalFailed = 0;
-    for (const batch of allBatches) {
+    for (let i = 0; i < allBatches.length; i++) {
+      const batch = allBatches[i]!;
+      // 后续批传 first batch 的 source_id + document_id（handler 复用，跳过 source/document 新建）
+      if (i > 0 && firstResult) {
+        batch.source_id = firstResult.source_id;
+        batch.document_id = firstResult.document_id;
+      }
       const r = await this._doPost(batch);
       if (!firstResult) firstResult = r;
       totalInserted += r.chunks_inserted;

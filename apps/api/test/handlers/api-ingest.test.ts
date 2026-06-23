@@ -48,7 +48,7 @@ vi.mock("../../src/lib/db.js", () => ({
     chunk: "chunk",
     auditLog: "audit_log",
   },
-  add: vi.fn(async () => "01HNEWID"),
+  add: vi.fn(async (_coll: string) => (_coll === "source" ? "01HNEWSRC" : _coll === "document" ? "01HNEWDOC" : _coll === "chunk" ? "01HNEWCHK" : "01HNEWID")),
   getById: vi.fn(),
   whereQuery: vi.fn(),
   update: vi.fn(),
@@ -416,16 +416,61 @@ describe("api-ingest (CP-7-C #2)", () => {
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
     expect(body.chunks_inserted).toBe(1);
-    expect(body.document_id).toBe("01HNEWID");
+    expect(body.document_id).toBe("01HNEWDOC");
     const successAudit = auditSpy.mock.calls[1]?.[0] as AuditEntry;
     expect(successAudit.result).toBe("success");
     expect(successAudit.target.userId).toBe("wx-user-002");
-    expect(successAudit.target.sourceId).toBe("01HNEWID");
-    expect(successAudit.target.documentId).toBe("01HNEWID");
+    expect(successAudit.target.sourceId).toBe("01HNEWSRC");
+    expect(successAudit.target.documentId).toBe("01HNEWDOC");
     expect(successAudit.target.chunksInserted).toBe(1);
     expect(successAudit.request.title).toBe("断奶指南");
     expect(successAudit.request.contentLen).toBe(6);
     expect(successAudit.request.trustLevel).toBe(2);
+  });
+
+  it("14b. v2.4 切批复用: body.document_id → 跳过 document add", async () => {
+    // v2.4 性能优化：切批后续批带 document_id，handler 应复用跳过新建 document
+    vi.mocked(requireIngestProxy).mockResolvedValue(makeProxyOk());
+    const auditSpy = vi.fn().mockResolvedValue(undefined);
+    __setAuditImpl(auditSpy);
+    vi.mocked(add).mockClear();
+
+    const res = await main(
+      makeEvent({
+        headers: { "x-ingest-proxy-secret": PROXY_SECRET },
+        body: JSON.stringify({
+          source_id: "01HNEWSRC",
+          document_id: "01HEXISTINGDOC",
+          chunks: [
+            { idx: 0, content: "c1", embedding: new Array(1536).fill(0.1), tokenCount: 10 },
+            { idx: 1, content: "c2", embedding: new Array(1536).fill(0.2), tokenCount: 10 },
+          ],
+          title: "切批续推",
+          trust_level: 1,
+          user_id: "wx-user-003",
+        }),
+      }),
+    );
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    // 复用传入的 document_id
+    expect(body.document_id).toBe("01HEXISTINGDOC");
+    expect(body.source_id).toBe("01HNEWSRC");
+    expect(body.chunks_inserted).toBe(2);
+
+    // 关键断言: document collection 的 add 不应被调用
+    const addCalls = vi.mocked(add).mock.calls;
+    const docAdds = addCalls.filter((c) => c[0] === "document");
+    expect(docAdds).toHaveLength(0);  // ← 复用，跳过 document 新建
+
+    // chunk add 仍应被调 (每 chunk 一次)
+    const chunkAdds = addCalls.filter((c) => c[0] === "chunk");
+    expect(chunkAdds).toHaveLength(2);
+
+    // source add 不应被调 (复用 source_id)
+    const srcAdds = addCalls.filter((c) => c[0] === "source");
+    expect(srcAdds).toHaveLength(0);
   });
 
   // ─── Group 4: IP / dev mode (3) ────────────────────────────────────

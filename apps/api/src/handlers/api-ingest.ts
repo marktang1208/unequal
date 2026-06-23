@@ -37,6 +37,8 @@ import type { Source, Document, Chunk } from "@unequal/shared/types";
 
 interface IngestRequest {
   source_id?: string;
+  /** v2.4 opt: 复用已有 document（切批后续批传，避免重复创建） */
+  document_id?: string;
   content?: string;           // v1/v2.3: 原始 markdown
   chunks?: Array<{            // v2.4: 预嵌入 chunks（已含 embedding）
     idx: number;
@@ -188,16 +190,21 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
       throw new Error("source create failed");
     }
 
-    docId = (await add<Document>(COLLECTIONS.document, {
-      id: "",
-      sourceId,
-      userId: targetUserId,
-      title: body.title ?? body.url,
-      rawPath: "",
-      // v2.4: chunks 路径 previewSnippet 从 chunks[0] 拿
-      previewSnippet: hasChunks ? body.chunks![0]!.content.slice(0, 200) : body.content!.slice(0, 200),
-      createdAt: Date.now(),
-    } as Document)) ?? "";
+    if (body.document_id) {
+      // v2.4 切批：复用 first batch 的 document_id，跳过新建
+      docId = body.document_id;
+    } else {
+      docId = (await add<Document>(COLLECTIONS.document, {
+        id: "",
+        sourceId,
+        userId: targetUserId,
+        title: body.title ?? body.url,
+        rawPath: "",
+        // v2.4: chunks 路径 previewSnippet 从 chunks[0] 拿
+        previewSnippet: hasChunks ? body.chunks![0]!.content.slice(0, 200) : body.content!.slice(0, 200),
+        createdAt: Date.now(),
+      } as Document)) ?? "";
+    }
 
     // v2.4: chunks 分支 — 直接写预嵌入 chunks，零 LLM 调用
     if (hasChunks) {
