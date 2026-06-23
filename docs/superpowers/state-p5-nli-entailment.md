@@ -1,8 +1,8 @@
-# state-p5-nli-entailment — NLI 蕴含验证 (HttpNliProvider 硅基流动 Qwen2.5-7B) PASS
+# state-p5-nli-entailment — NLI 蕴含验证 (HttpNliProvider 硅基流动 Qwen2.5-7B) 部分 PASS
 
 > 日期: 2026-06-23 (v1.1)
 > 前置: state-p4-deploy-pipeline.md (commit f6ae3b8) — 基础设施就绪
-> 状态: ✅ 11 commits + 31 unit tests PASS；待真接验证（用户跑 verify-nli.sh）
+> 状态: ✅ 12 commits + 31 unit tests PASS；**真接验证 step 1 PASS**，step 2-3 被 ask handler pre-existing bug 阻塞（与 NLI 无关，独立 fix task）
 
 ## 1. 验收结果
 
@@ -19,9 +19,27 @@
 | 审计 | ingest / session / deploy | + **ask_nli_reject** (仅 reject 写，含 nliSnapshot) |
 | 单元测试 | n/a | 31 unit tests PASS (4 文件) |
 
-## 1.1 v1.1 11 commit 链
+## 1.1 真接验证结果（2026-06-23）
+
+| 步 | 命令 | 结果 |
+|---|---|---|
+| [1/6] | deploy push（cloudbaserc.json 含 SILICONFLOW_API_KEY） | ✅ **PASS** — 19 vars 推云（12 + SILICONFLOW + 5 NLI env），audit 写入 |
+| [2/6] | ask "发烧怎么办" → 无 warning | ⚠️ **blocked** — api-ask handler 拉所有 chunk 超 CloudBase 1MB（`[LimitExceeded.OutOfResultSizeLimit]`）|
+| [3/6] | ask "X 星人住在哪个星系" → 有 warning | ⚠️ **blocked** — 同上 pre-existing bug |
+| [4/6] | tcb audit_log 查 ask_nli_reject | ⏸️ 未验证（ask 未达 NLI 步骤）|
+| [5/6] | NLI_PROVIDER=noop 重 deploy | ⏸️ 未验证（admin 手动操作）|
+| [6/6] | /api-search 走原路径不受影响 | ⏸️ 未验证 |
+
+**核心结论**：
+- **P5 NLI 闭环**：✅ 12 commits + 31 tests + deploy 推送 + SILICONFLOW_API_KEY 集成 — 全部完成
+- **NLI 真接生效**：⚠️ 被 ask handler pre-existing retrieval bug 阻塞（**与 NLI 无关** — `apps/api/src/handlers/api-ask.ts:78` `getAllByFilter<Chunk>({ userId })` 不带 limit，超 CloudBase 单次回包 1MB 限制）
+- **修复 ask bug 后**：NLI 6 步真接立即生效（无需改 NLI 代码）
+
+## 1.2 v1.1 12 commit 链
 
 ```
+96be3e0 feat(deploy): SILICONFLOW_API_KEY 走 Keychain + cloudbaserc.json NLI 配置 + push/ gitignore
+fafc186 chore(deploy): verify-nli.sh 真接 6 步 (硅基流动) + state-p5-nli-entailment.md
 1de8e7e feat(ask): api-ask 接入 recordNliFailure/Success 触发 5min cache + 10-timeout 永久降级
 123c8d9 feat(nli): HttpNliProvider (硅基流动 Qwen2.5-7B) + 21 unit tests + get-provider 路由 + env config
 98de30a refactor(nli): 删 transformers-provider + assets/nli/ + download-nli-model + 卸 @xenova/transformers
@@ -129,6 +147,29 @@ e823568 chore(api): NLI 骨架 + 10 unit tests
 | LLM-as-judge 理论缺陷 | 接受 | Qwen vs MiniMax bias 隔离；strict prompt + JSON 解析 |
 | 审计 PII 风险 | **已缓解** | 只存 queryHash SHA-256 头 16 字符 + chunksHash + 分数 |
 | API key 泄漏 | **已缓解** | 走 Keychain + cloudbaserc.json gitignore |
+| **ask handler retrieval pre-existing bug** | **阻塞真接** | `api-ask.ts:78` `getAllByFilter({ userId })` 不带 limit，超 CloudBase 1MB 单次回包限制。**与 NLI 无关**，独立 fix task（commit 96be3e0 之后另开 brainstorm）|
+
+## 6.1 Pre-existing bug 详情（独立 fix）
+
+**位置**：`apps/api/src/handlers/api-ask.ts:78`
+
+```ts
+// 当前（buggy）
+const chunks = await getAllByFilter<Chunk>(COLLECTIONS.chunk, { userId: env.DEFAULT_USER_ID });
+
+// 影响：chunk 数据增多后（CP-7 之后），单次 getAllByFilter 返回 > 1MB
+// 触发 CloudBase LimitExceeded.OutOfResultSizeLimit，ask 整体 500
+```
+
+**修复方向**（独立 brainstorm，不在本 P 范围）：
+- A. 加 `.limit(1000)` 简单 — 但超 1000 又爆
+- B. 用 searchChunks pattern（先 embed 找 topK，再精确拉 chunk 内容）— 正确但大改
+- C. 分页 + cursor — 云端友好
+
+**P5 NLI 闭环判断**：
+- ✅ NLI 代码独立完整（spec + impl + tests + deploy 推送 + audit）
+- ⚠️ 真接 step 2-3 因 ask pre-existing bug 阻塞
+- 📋 ask fix 后 NLI 立即生效（无需改 NLI 代码）
 
 ## 7. 边界 / 限制
 
