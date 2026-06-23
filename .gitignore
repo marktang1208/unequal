@@ -16,7 +16,10 @@ coverage/
 # (apps/api/test/integration.test.ts bundles src/index.ts here at suite-setup
 # so Miniflare can resolve node_modules-relative bare specifiers.)
 apps/api/.test-bundle/---
+push/
 apps/api/functions/
+apps/api/dist/
+
 apps/api/dist/
 cloudbaserc.smoke.json
 cloudbaserc.smoke.*.json

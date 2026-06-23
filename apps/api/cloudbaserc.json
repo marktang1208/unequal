@@ -15,11 +15,16 @@
       "envVariables": {
         "ENVIRONMENT": "production",
         "ALLOWED_ORIGIN": "*",
-        "MINIMAX_BASE_URL": "https://api.MiniMax.chat/v1",
+        "MINIMAX_BASE_URL": "https://api.minimax.chat/v1",
         "DEFAULT_USER_ID": "01H0000000000000000000000",
         "LOGIN_MAX_ATTEMPTS": "5",
         "LOGIN_WINDOW_MS": "900000",
-        "KEK_CURRENT_VERSION": "1"
+        "KEK_CURRENT_VERSION": "1",
+        "NLI_PROVIDER": "http",
+        "SILICONFLOW_BASE_URL": "https://api.siliconflow.cn/v1",
+        "NLI_MODEL": "Qwen/Qwen2.5-7B-Instruct",
+        "NLI_TIMEOUT_MS": "5000",
+        "NLI_RETRY_COUNT": "1"
       }
     }
   ]

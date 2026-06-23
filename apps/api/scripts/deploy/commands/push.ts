@@ -26,7 +26,7 @@ import { writeDeployAudit } from "../lib/audit.js";
 import { logger } from "../lib/logger.js";
 import { DeployError, DiffError } from "../lib/errors.js";
 
-/** 6 个 secrets（顺序敏感，IP allowlist 是 config 不是 key） */
+/** 7 个 secrets（顺序敏感，IP allowlist 是 config 不是 key） */
 const SECRETS = [
   "ADMIN_TOKEN",
   "JWT_SECRET",
@@ -34,6 +34,8 @@ const SECRETS = [
   "KEK_SECRET_V1",
   "INGEST_PROXY_SECRET",
   "ADMIN_IP_ALLOWLIST",
+  // P5 NLI: 硅基流动 API key
+  "SILICONFLOW_API_KEY",
 ] as const;
 
 const TCB_ENV = "unequal-d4ggf7rwg82e0900b";
@@ -58,7 +60,7 @@ export async function push(opts: Record<string, unknown>): Promise<void> {
   for (const key of SECRETS) {
     merged[key] = keychainGet(key);
   }
-  logger.info(`[push] ✓ 6 secrets loaded`);
+  logger.info(`[push] ✓ ${SECRETS.length} secrets loaded`);
 
   // 3. 写 /tmp 临时 config + chmod 600
   const cfgPath = await makeTmpConfig(merged, TEMPLATE_PATH);
