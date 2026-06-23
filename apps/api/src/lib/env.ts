@@ -44,10 +44,12 @@ export interface AppEnv {
   TCB_ENV?: string;
 
   // P5 NLI configuration (spec §8)
-  NLI_ENABLED: boolean;
-  NLI_MODEL_PATH: string;
-  NLI_TOKENIZER_PATH: string;
+  NLI_PROVIDER: "http" | "noop";
+  SILICONFLOW_API_KEY?: string;
+  SILICONFLOW_BASE_URL: string;
+  NLI_MODEL: string;
   NLI_TIMEOUT_MS: number;
+  NLI_RETRY_COUNT: number;
 }
 
 let _env: AppEnv | null = null;
@@ -102,11 +104,13 @@ function validateEnvObject(source: NodeJS.ProcessEnv | Record<string, string | u
 
     TCB_ENV: source.TCB_ENV,
 
-    // P5 NLI: 默认启用，模型路径相对 apps/api/ 解析
-    NLI_ENABLED: (source.NLI_ENABLED ?? "true").toLowerCase() === "true" || source.NLI_ENABLED === "1",
-    NLI_MODEL_PATH: source.NLI_MODEL_PATH ?? "functions/assets/nli/nli-MiniLM-L6-v2-quantized.onnx",
-    NLI_TOKENIZER_PATH: source.NLI_TOKENIZER_PATH ?? "functions/assets/nli/tokenizer.json",
-    NLI_TIMEOUT_MS: parseInt(source.NLI_TIMEOUT_MS ?? "3000", 10),
+    // P5 NLI: 默认 http（硅基流动），可通过 NLI_PROVIDER=noop 禁用
+    NLI_PROVIDER: ((source.NLI_PROVIDER ?? "http").toLowerCase() === "noop" ? "noop" : "http") as "http" | "noop",
+    SILICONFLOW_API_KEY: source.SILICONFLOW_API_KEY || undefined,
+    SILICONFLOW_BASE_URL: source.SILICONFLOW_BASE_URL ?? "https://api.siliconflow.cn/v1",
+    NLI_MODEL: source.NLI_MODEL ?? "Qwen/Qwen2.5-7B-Instruct",
+    NLI_TIMEOUT_MS: parseInt(source.NLI_TIMEOUT_MS ?? "5000", 10),
+    NLI_RETRY_COUNT: parseInt(source.NLI_RETRY_COUNT ?? "1", 10),
   };
 }
 
@@ -145,15 +149,13 @@ export async function validateEmbeddingDim(): Promise<void> {
 export async function validateNliConfig(): Promise<void> {
   if (process.env.ENVIRONMENT !== "production") return;
   const env = getEnv();
-  if (!env.NLI_ENABLED) return;
+  if (env.NLI_PROVIDER === "noop") return;
 
-  const fs = await import("node:fs");
-  const path = await import("node:path");
-  const modelPath = path.resolve(process.cwd(), env.NLI_MODEL_PATH);
-  if (!fs.existsSync(modelPath)) {
+  if (!env.SILICONFLOW_API_KEY) {
     const { NliConfigError } = await import("./nli/errors.js");
     throw new NliConfigError(
-      `NLI model not found: ${modelPath}. Run 'pnpm -F api download-nli-model' or set NLI_ENABLED=false.`,
+      `NLI_PROVIDER=http requires SILICONFLOW_API_KEY. ` +
+      `Set NLI_PROVIDER=noop to disable, or export SILICONFLOW_API_KEY before deploy.`,
     );
   }
 }

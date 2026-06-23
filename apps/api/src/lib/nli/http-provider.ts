@@ -176,7 +176,7 @@ export class HttpNliProvider implements NliProvider {
     // 尝试提取 JSON（防止 LLM 包 ```json ... ``` 围栏）
     let jsonStr = content.trim();
     const fenced = jsonStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-    if (fenced) jsonStr = fenced[1];
+    if (fenced && fenced[1]) jsonStr = fenced[1];
 
     let parsed: unknown;
     try {
