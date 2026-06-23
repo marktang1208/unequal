@@ -19,13 +19,11 @@
     "deploy:status": "tsx scripts/deploy/index.ts status",
     "deploy:rotate-kek": "tsx scripts/deploy/index.ts rotate-kek",
     "setup:keychain-secrets": "bash scripts/setup-keychain-secrets.sh",
-    "migrate:schema-ids": "tsx scripts/migrate-schema-ids.ts",
-    "download-nli-model": "tsx scripts/download-nli-model.ts"
+    "migrate:schema-ids": "tsx scripts/migrate-schema-ids.ts"
   },
   "dependencies": {
     "@cloudbase/node-sdk": "^3.18.1",
     "@unequal/shared": "workspace:*",
-    "@xenova/transformers": "^2.17.2",
     "hono": "^4.5.0",
     "jose": "^4.15.9",
     "mammoth": "^1.12.0",

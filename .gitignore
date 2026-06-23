@@ -18,10 +18,6 @@ coverage/
 apps/api/.test-bundle/---
 apps/api/functions/
 apps/api/dist/
-# P5 NLI model assets: keep .gitkeep + README.md in source control,
-# but ignore the binary model files (downloaded via `pnpm -F api download-nli-model`).
-!apps/api/functions/assets/nli/.gitkeep
-!apps/api/functions/assets/nli/README.md
 cloudbaserc.smoke.json
 cloudbaserc.smoke.*.json
 
