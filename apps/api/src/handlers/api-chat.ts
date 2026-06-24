@@ -23,9 +23,11 @@ import { add, getById, whereQuery, COLLECTIONS } from "../lib/db.js";
 import { newId } from "../lib/db.js";
 import type { ChatSession, ChatMessage, Chunk, Document } from "@unequal/shared/types";
 // P5 v1.3 NLI 后置验证(同 ask v1.1.1 + v1.2 套路)
+// P5 v1.4 跨轮 NLI helper (union 当前 + 历史 retrievedChunkIds, cap 5)
 import { getProvider as getNliProvider, recordNliFailure, recordNliSuccess } from "../lib/nli/get-provider.js";
 import { applyWarning } from "../lib/nli/apply-warning.js";
 import { shouldSkipNli, getNliMinAnswerLen } from "../lib/nli/should-skip-nli.js";
+import { getCrossTurnHypothesis } from "../lib/nli/cross-turn-hypothesis.js";
 import { NliRuntimeError, NliTimeoutError } from "../lib/nli/errors.js";
 import type { NliVerdict } from "../lib/nli/types.js";
 // P5 v1.3 NLI: audit 写入
@@ -258,6 +260,7 @@ ${contextLines || "(无)"}`;
 
   // 8. P5 v1.3 NLI 后置验证（spec §2.2 / 复用 v1.1.1 + v1.2）
   // 短答案(< NLI_MIN_ANSWER_LEN=100)跳过 NLI,无空间塞幻觉
+  // P5 v1.4: NLI hypothesis 跨轮 union (当前 top-5 + session 历史 retrievedChunkIds, cap 5)
   const clientIp = getClientIp(event);
   const nliMinLen = getNliMinAnswerLen();
   let finalAnswer = answer;  // 默认原 answer(NLI pass / fail-open / skip)
@@ -267,10 +270,13 @@ ${contextLines || "(无)"}`;
     console.log(`[nli] skipped: answer too short (${cleaned.length} < ${nliMinLen})`);
     // 跳过 NLI,继续走 session 持久化(用 raw answer)— 短问题用户刷新不丢历史
   } else {
-    const nliHypothesis = topChunks
-      .map((t) => findChunk(t.chunkId)?.content ?? "")
-      .filter((s) => s.length > 0)
-      .join("\n\n");
+    // P5 v1.4 跨轮 union: 当前 top-5 + 历史 retrievedChunkIds (cap 5, 去重当前)
+    const crossTurn = getCrossTurnHypothesis({
+      currentChunkIds: topChunks.map((t) => t.chunkId),
+      sessionMessages: session.messages,
+      findChunkById: (chunkId) => findChunk(chunkId)?.content ?? null,
+    });
+    const nliHypothesis = crossTurn.hypothesis;
     const nliStart = Date.now();
     let verdict: NliVerdict;
     let nliErrorReason: "rejected" | "timeout" | "runtime_error" = "rejected";
@@ -366,10 +372,17 @@ ${contextLines || "(无)"}`;
 
   // 9. 持久化 messages(用 finalAnswer,可能含 ⚠️ prefix)— NLI 后一次性持久化,避免二次 update
   const now = Date.now();
+  // P5 v1.4: 把当前轮 retrieve 的 top chunkIds 写进 assistant message
+  // 下一轮 chat 时, getCrossTurnHypothesis 会 union 历史这些 chunkIds
   const newMessages: ChatMessage[] = [
     ...session.messages,
     { role: "user", content: q, createdAt: now },
-    { role: "assistant", content: finalAnswer, createdAt: now },
+    {
+      role: "assistant",
+      content: finalAnswer,
+      retrievedChunkIds: topChunks.map((t) => t.chunkId),
+      createdAt: now,
+    },
   ];
 
   // 自动标题（首次 user 消息前 30 字）

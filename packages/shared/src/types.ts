@@ -93,6 +93,16 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   citations?: Citation[];
+  /**
+   * P5 v1.4 跨轮 NLI: 该 assistant 轮 retrieve 出的 chunk IDs (top-K, optional)
+   *
+   * - 写 chat 时由 handler 在 assistant message 上设置
+   * - 读 chat 时 (跨轮 NLI): union 历史所有 messages 的 retrievedChunkIds
+   *   作为 NLI hypothesis 的额外 chunks, 让多轮对话的 answer 也能被验证
+   * - 旧 session 没此字段 → 优雅 fallback (历史无 chunks, 仅当前轮)
+   * - 不存 chunk content (避免 schema 膨胀; 读时按 ID 从 chunks collection 拉)
+   */
+  retrievedChunkIds?: string[];
   createdAt: number;
 }
 

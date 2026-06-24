@@ -24,6 +24,15 @@ function makeFetchResponse(body: unknown): Response {
   } as unknown as Response;
 }
 
+/** 提取 fetch mock 调用 body 为 parsed JSON (兼容 TS strict tuple) */
+function getFetchBody(fetchMock: ReturnType<typeof vi.fn>): Record<string, unknown> {
+  const call = fetchMock.mock.calls[0];
+  if (!call) throw new Error("fetch was not called");
+  const init = call[1] as RequestInit | undefined;
+  if (!init?.body) throw new Error("fetch init.body is empty");
+  return JSON.parse(init.body as string);
+}
+
 describe("getChatProvider — max_tokens support (P7 #5)", () => {
   beforeEach(() => {
     resetProviders();
@@ -55,7 +64,7 @@ describe("getChatProvider — max_tokens support (P7 #5)", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string);
+    const body = getFetchBody(fetchMock);
     expect(body.max_tokens).toBe(512);
   });
 
@@ -69,7 +78,7 @@ describe("getChatProvider — max_tokens support (P7 #5)", () => {
       messages: [{ role: "user", content: "hi" }],
     });
 
-    const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string);
+    const body = getFetchBody(fetchMock);
     expect(body.max_tokens).toBe(2048);
   });
 
@@ -91,7 +100,7 @@ describe("getChatProvider — max_tokens support (P7 #5)", () => {
       messages: [{ role: "user", content: "hi" }],
     });
 
-    const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string);
+    const body = getFetchBody(fetchMock);
     expect(body.max_tokens).toBe(1024);
   });
 
@@ -113,7 +122,7 @@ describe("getChatProvider — max_tokens support (P7 #5)", () => {
       messages: [{ role: "user", content: "hi" }],
     });
 
-    const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string);
+    const body = getFetchBody(fetchMock);
     expect(body.max_tokens).toBe(2048);
   });
 
@@ -132,7 +141,7 @@ describe("getChatProvider — max_tokens support (P7 #5)", () => {
       maxTokens: 800,
     });
 
-    const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string);
+    const body = getFetchBody(fetchMock);
     expect(body.model).toBe("MiniMax-Text-01");
     expect(body.messages).toEqual([
       { role: "system", content: "sys" },
