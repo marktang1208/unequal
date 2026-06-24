@@ -109,8 +109,8 @@ export async function status(_opts: Record<string, unknown>): Promise<void> {
   // 1. 读当前云端 env vars
   console.log(`\n[status] === Current cloud env vars ===`);
   try {
-    const current = getRemoteEnvSnapshot(TCB_ENV);
-    console.log(`[status] Source: remote (audit_log latest deploy snapshot)`);
+    const current = await getRemoteEnvSnapshot(TCB_ENV);
+    console.log(`[status] Source: remote (SCF API GetFunctionConfiguration)`);
     console.log(`[status] Captured: ${new Date(current.capturedAt).toISOString()}`);
     console.log(`[status] Vars (${Object.keys(current.envVariables).length}):`);
     for (const [k, v] of Object.entries(current.envVariables)) {
