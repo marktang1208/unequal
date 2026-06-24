@@ -36,3 +36,7 @@ cloudbaserc.fn-all.json
 ac-verify-cp7c2.sh
 cloudbaserc.smoke.cp7c2.json
 apps/admin/.tmp/
+
+# P6 v1 NLI model assets (downloaded from hf-mirror, ~80MB; NOT committed)
+# Re-download via: pnpm -F api download-nli-model
+apps/api/scripts/nli-assets/

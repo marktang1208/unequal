@@ -5,6 +5,7 @@ allowBuilds:
   better-sqlite3: true
   core-js-pure: false
   esbuild: true
+  onnxruntime-node: false  # native binary pre-bundled, no build script needed (P6)
   protobufjs: false
   sharp: false
   workerd: true

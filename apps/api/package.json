@@ -19,7 +19,9 @@
     "deploy:status": "tsx scripts/deploy/index.ts status",
     "deploy:rotate-kek": "tsx scripts/deploy/index.ts rotate-kek",
     "setup:keychain-secrets": "bash scripts/setup-keychain-secrets.sh",
-    "migrate:schema-ids": "tsx scripts/migrate-schema-ids.ts"
+    "migrate:schema-ids": "tsx scripts/migrate-schema-ids.ts",
+    "download-nli-model": "tsx scripts/download-nli-model-local.ts",
+    "upload-nli-model": "tsx scripts/upload-nli-model-to-cos.ts"
   },
   "dependencies": {
     "@cloudbase/node-sdk": "^3.18.1",
@@ -27,6 +29,7 @@
     "hono": "^4.5.0",
     "jose": "^4.15.9",
     "mammoth": "^1.12.0",
+    "onnxruntime-node": "^1.27.0",
     "pdf-parse": "1.1.1",
     "tencentcloud-sdk-nodejs-common": "^4.1.220",
     "tencentcloud-sdk-nodejs-scf": "^4.1.168",
