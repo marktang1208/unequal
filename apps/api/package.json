@@ -18,6 +18,7 @@
     "deploy:clean": "tsx scripts/deploy/index.ts clean",
     "deploy:status": "tsx scripts/deploy/index.ts status",
     "deploy:rotate-kek": "tsx scripts/deploy/index.ts rotate-kek",
+    "deploy:full": "tsx scripts/deploy/index.ts full",
     "setup:keychain-secrets": "bash scripts/setup-keychain-secrets.sh",
     "migrate:schema-ids": "tsx scripts/migrate-schema-ids.ts",
     "download-nli-model": "tsx scripts/download-nli-model-local.ts",
