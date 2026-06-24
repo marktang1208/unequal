@@ -111,6 +111,31 @@ HTTP 204
 - **真机/微信开发者工具渲染** 需用户手动 verify（vscode 无 mini-pgm 模拟器）
 - 预期：右上角 ⚙ → 点击 → 跳到 settings 页 → 显示 user_id / nickname / 统计
 
+### 3.3 minipgm 真机 verify PASS（2026-06-24）
+
+**主线程预检**（我跑的,真实 gateway domain = `https://unequal-d4ggf7rwg82e0900b-1444590671.ap-shanghai.app.tcloudbase.com`,memory/state 里都没记录,这次发现）：
+
+| 验证项 | 结果 |
+|---|---|
+| OPTIONS /api-auth-me | ✅ 204 (CORS 正常) |
+| GET /api-auth-me 无 token | ✅ 401 (`Invalid JWT`) |
+| GET /api-auth-me 错 token | ✅ 401 (`Invalid JWT`) |
+| POST /api-auth-admin-login | ⚠️ IP_NOT_ALLOWED (你当前 IP `***REMOVED***.46` 不在 `ADMIN_IP_ALLOWLIST`,家庭 IP 漂移导致) — 不影响真机 verify,真机用 wx.login 走 user jwt,不走 admin token |
+
+**真机 verify**（用户截图,2026-06-24 10:37）：
+
+- ✅ chat 页右上角 ⚙ FAB 显示
+- ✅ 点 ⚙ 跳到 settings 页
+- ✅ 标题"设置" + 3 卡片 + 退出登录按钮
+- ✅ 账号信息卡片：user_id `01KVCZ2JRBAGF3MY75D7KEY4RZ` (25 位 ULID) / nickname "小松果" / 注册时间 2026-06-18
+- ✅ 我的数据卡片：对话会话 13 个 / 累计消息 26 条
+- ✅ 数据隔离卡片文案完整
+- ✅ "退出登录"红色 CTA
+- ✅ `wx.cloud.init ok, env: unequal-d4ggf7rwg82e0900b` (CloudBase envId 正确)
+- ⚠️ Console 红色 `Error: timeout at Function.<anonymous> (WAServiceMainContext...)` — **基础库 3.16.1 灰度版 known issue**,data 已成功渲染,不影响功能
+
+**真实 gateway domain 发现**：之前 `verify-ask-search-retrieval.sh` 和 `verify-nli.sh` 的 `API_BASE="https://unequal-d4ggf7rwg82e0900b.ap-shanghai.app.tcloudbase.com"` 实际访问,加上 admin `cloud-pusher.ts:79` 默认值 `https://unequal-d4ggf7rwg82e0900b-1444590671.ap-shanghai.app.tcloudbase.com` 才是真 endpoint。前者(无 -1444590671 段)返 `INVALID_ENV`,但有 `-1444590671` 才是真 gateway URL。这是个踩坑记录:以后真接 `verify-*.sh` 脚本里 `API_BASE` 应该是带 `-1444590671` 段的那个,而不是简版。
+
 ## 4. 部署状态
 
 | 步骤 | 状态 |
@@ -159,7 +184,9 @@ HTTP 204
 ## 7. Commit 链
 
 ```
-[tbd] feat(m7-d): settings 页 + /api-auth-me + chat ⚙ 入口  ← 本次
+[tbd] docs(state-m7-d): 真机 verify PASS — settings UI + 3 卡片 + 退出登录  ← 本次
+[tbd] docs(state-m7-d): 追加真接发现 + production admin 部署 + M7-D 真机端到端 PASS  ← 本次
+715187b docs(state): 追加真接发现 + production admin 部署 + M7-D 真机端到端 PASS
 d0eecdc perf(v2.4): retry 跳过 parse/chunk/embed — chunks_with_emb_json 持久化
 ccb98d2 fix(v2.4): CloudEmbedder MiniMax schema 修复 (texts+vectors) + BATCH_SIZE=100
 4e31292 docs: v2.4 pushChunks 性能优化真接报告
@@ -172,6 +199,6 @@ f707f5f perf(v2.4): pushChunks 切批复用 source/document_id
 2. **deploy 流程重写** — 修 env vars 覆盖问题；新增 `tcb config diff` 验证步骤
 3. **admin 错误处理改进** — 之前 8 真接场景的 silent failure 收集 / 重试更智能
 4. **embedder 切换 UX** — chunks_with_emb_json 是旧 OMLX，向量需要重算时手动 SQL 清 + retry
-5. **M7-D 真机验证** — 用户手动跑 minipgm 看 settings 页 UI 是否符合预期
+5. **M7-D 真机验证** — 用户手动跑 minipgm 看 settings 页 UI 是否符合预期 — ✅ **2026-06-24 PASS**（user_id 01KVCZ2JRBAGF3MY75D7KEY4RZ / 13 sessions / 26 messages / 退出登录按钮）
 
-建议优先级: **1 → 2** (production 健壮性) → 3 → 4 → 5
+建议优先级: **1 → 2** (production 健壮性) → 3 → 4 → 5(已完成)
