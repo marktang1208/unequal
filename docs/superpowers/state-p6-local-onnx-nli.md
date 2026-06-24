@@ -212,7 +212,7 @@ pnpm -F api deploy:status  # NLI_PROVIDER=onnx + 5 NLI vars + 7 secrets + 9 stan
 | 4 | clean up `@huggingface/transformers` 残留 (package.json) | ✅ **NO-OP** (P7 follow-up #2 验证: package.json 从未加此 dep, pnpm-lock 也无, state doc 误判已修正 §3.2/§6.4) |
 | 5 | auto-sync miniprogram path cloudbaserc.json from `apps/api/cloudbaserc.json` + Keychain secrets | ✅ **PASS** (commit `328d497`) — `deploy-build.ts` 末尾自动调 `syncCloudbasrcFromTemplate()` (template 14 + 9 Keychain secrets = 23 vars, mode 0o600, 已在 .gitignore) |
 | 6 | chat 总耗时从 21s 缩短 (主要 LLM 20s, 但可能 query 优化 / 缓存) | ✅ **PARTIAL** (P7 follow-up #5 加 `LLM_MAX_TOKENS=2048` safety net — commit 见本节底部 — 防 LLM 跑飞 4K+ 答; **真要省 21s → LLM streaming (大工程) 或本地推理 (P8)**, 见 §7.1 详细 ROI) |
-| 7 | P5 v1.4 跨轮 NLI (chat 多轮累计 entailment) | ✅ **PASS** (commit 见本节底部) — schema 加 `ChatMessage.retrievedChunkIds?: string[]` + `getCrossTurnHypothesis()` helper (current top-5 + 历史 union cap 5, 去重当前) + chat handler 集成 (line 270-281). **未真接 destructive** (避免污染 audit_log + retrieval 命中率仍是 v1.4 主瓶颈), 仅 7 unit tests + typecheck 验证 |
+| 7 | P5 v1.4 跨轮 NLI (chat 多轮累计 entailment) | ✅ **PASS** (commit `ccf6895` + `1e5cd82` = 2 commits) — schema 加 `ChatMessage.retrievedChunkIds?: string[]` + `getCrossTurnHypothesis()` helper (current top-5 + 历史 union cap 5, 去重当前) + chat handler 集成 (line 270-281). **真接 PASS** (P8 verify:vni-cross-turn, 2026-06-25): T1 26.4s ansLen 1116 → entailed; T2 "那 1 岁呢?" 6.0s ansLen 232 → entailed (跨轮 hypothesis 实际工作, 没 warning prefix). 7 unit tests + typecheck + 真接双轮 200 |
 
 ### 7.1 P7 #5 详细 ROI 评估 (chat 加速)
 
