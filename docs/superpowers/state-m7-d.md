@@ -230,5 +230,6 @@ f707f5f perf(v2.4): pushChunks 切批复用 source/document_id
 4. **embedder 切换 UX** — chunks_with_emb_json 是旧 OMLX，向量需要重算时手动 SQL 清 + retry
 5. **M7-D 真机验证** — ✅ **2026-06-24 PASS** (user_id 01KVCZ2JRBAGF3MY75D7KEY4RZ / 13 sessions / 26 messages / 退出登录按钮)
 6. **🆕 ADMIN_IP_ALLOWLIST 修 CIDR** — ✅ **2026-06-24 PASS** (见 §6.1.1)
+7. **🆕 P4 #3 deploy pipeline 修复** — ✅ **2026-06-24 PARTIAL PASS** (代码 + 单测 626/626, 3 commits `eaba082` `6d877fd` `8500309`. 真接 6 步 ⏸ 等待 Keychain 加 TCB_SECRET_ID/TCB_SECRET_KEY 长期 API key, 详见 spec `2026-06-24-p4-deploy-scf-sdk-design.md` + state 待 P4 #3 闭环报告)
 
 建议优先级: ~~**1 → 2**~~ (production 健壮性) → 3 → 4 → 5(已完成) → 6(已完成)
