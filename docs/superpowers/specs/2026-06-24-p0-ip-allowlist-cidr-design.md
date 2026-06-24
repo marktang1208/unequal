@@ -38,7 +38,7 @@ M7-D 真机端到端 verify 时发现：用户家庭 IP `***REMOVED***.46`（深
 
 ## 3. 改动清单
 
-5 处代码改动 + 1 个 Keychain 写入 + 1 次 deploy + 1 次真接验证。
+4 处代码改动 + 1 个 Keychain 写入 + 1 次 deploy + 1 次真接验证。
 
 ### 3.0 `apps/api/src/lib/admin-ip-allowlist.ts`（核心 ~30 行）
 
@@ -103,14 +103,7 @@ function ipToNumber(ip: string): number | null {
 | 11 | 混合 allowlist（单 IP + CIDR）OR 语义 | true if 任一匹配 |
 | 12 | IPv4 格式错误（5 段）→ false | false |
 
-### 3.1 `apps/api/cloudbaserc.json`（1 行）
-
-```diff
--        "ADMIN_IP_ALLOWLIST": "240e:3b4:38ed:4100:10a1:f77f:f362:d8b0,113.116.119.197",
-+        "ADMIN_IP_ALLOWLIST": "***REMOVED***.0/24",
-```
-
-### 3.2 `apps/api/scripts/deploy/commands/push.ts`（3 行注释）
+### 3.1 `apps/api/scripts/deploy/commands/push.ts`（3 行注释）
 
 在 `SECRETS` 数组 `ADMIN_IP_ALLOWLIST` 上方加注释，说明推荐 CIDR 格式：
 
@@ -128,7 +121,7 @@ const SECRETS = [
 ] as const;
 ```
 
-### 3.3 `docs/superpowers/state-m7-d.md`（~15 行）
+### 3.4 Keychain 写入（不入 git）
 
 §6.1 加修订小节，§8 P4 候选 #2 标"✅ 完成 (2026-06-24)"。见 §6。
 
@@ -141,7 +134,11 @@ security update-generic-password \
   -w "***REMOVED***.0/24"
 ```
 
-### 3.5 部署（不入 git）
+### 3.5 `docs/superpowers/state-m7-d.md`（~15 行）
+
+§6.1 加修订小节，§8 P4 候选 #2 标"✅ 完成 (2026-06-24)"。见 §6。
+
+### 3.6 部署（不入 git）
 
 ```bash
 cd /Users/Mark/cc_project/unequal

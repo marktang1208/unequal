@@ -181,11 +181,40 @@ HTTP 204
   - secrets 通过单独 channel（tcb secrets API / tcb config update fn with merge mode）注入
   - 跑 `tcb config diff fn` 验证最终 env
 
-## 7. Commit 链
+> **2026-06-24 备注**: §6.1 / §6.2 描述的 deploy 痛点已由 P4 #2 (`commit 3466258 / 3dcd430 / 98cbbbd / fed4b1e / 9950196`) 闭环 — Keychain + /tmp 临时 config + Merge/Override 二选一 + tcb diff 验证。P4 #2 完成后 §6.2 "P4 应重写 deploy 流程" 实质已 supersede, 详见 §8 P4 候选 #2 状态。
+
+## 6.1.1 修订 (2026-06-24): ADMIN_IP_ALLOWLIST 修 CIDR ✅
+
+**问题**: M7-D 真机端到端 verify 时发现 admin 真接 100% 失败, user IP `***REMOVED***.46`(深圳电信 AS4134 CHINANET) 不在 allowlist `240e:3b4:...d8b0, 113.116.119.197` 内。minipgm 真机走 user jwt 走通不受影响, 但 admin 端任何真接 (CP-7 / P5 NLI / ARCH-V2.4 / M3-D) 都失败。
+
+**根因**:
+- 现状 allowlist 两个单 IP 是半年前 entry。家庭 IP 漂移后失效, CloudBase allowlist 无 TTL 机制, 半年 entry 不会"自动过期" → 假安全
+- IP 校验实际在 `src/lib/admin-ip-allowlist.ts` (helper 函数 `isAdminIpAllowed`), 不是 CloudBase 网关层 (设计时误判)
+- helper 原 `string.includes` 不支持 CIDR
+
+**修复**:
+- `src/lib/admin-ip-allowlist.ts` 加 CIDR 范围匹配 (IPv4 only, IPv6 CIDR 留未来)
+- 12 个新单测 (admin-ip-allowlist.test.ts RED→GREEN) 覆盖: 回归 / /24 / /32 / /16 / /0 / 非法 bits / 格式错误 / IPv6 CIDR / 空 / 混合 / 5 段 IP
+- Keychain `ADMIN_IP_ALLOWLIST` 改 `***REMOVED***.0/24` (深圳电信家庭 C 段 254 IP)
+- 删两个老单 IP
+- 走 `pnpm -F api deploy push` (P4 pipeline), 保留 audit log
+
+**教训**:
+1. **家庭 admin IP 鉴权应该用 CIDR 不用单 IP** — 漂移是常态不是异常
+2. **老的单 IP entry 不会"自动过期"** — 半年没动 = 假安全
+3. **IP 鉴权代码层而非 CloudBase 网关层** — 之前误以为是 CloudBase 做 allowlist, 实际是 helper 函数。这是架构 lesson
+4. **设计 helper 时保留扩展点** — 现有 `isAdminIpAllowed` 用 `string.includes` 是最小实现, 但留了扩展成 CIDR 的位置 (拆分 entry 处理)
+5. **真接需要 verify admin login 真的能走通** — 之前 CP-7-B 真接走了 user jwt path 没暴露, M7-D 真机走 user jwt 走通但 admin path 没人验。M7-D 教训"admin 端没真接验证" 这次落地
+
+**Spec**: `docs/superpowers/specs/2026-06-24-p0-ip-allowlist-cidr-design.md`
+**Plan**: `.claude/plans/p0-1-ip-allowlist-cidr.plan.md`
 
 ```
-[tbd] docs(state-m7-d): 真机 verify PASS — settings UI + 3 卡片 + 退出登录  ← 本次
-[tbd] docs(state-m7-d): 追加真接发现 + production admin 部署 + M7-D 真机端到端 PASS  ← 本次
+[本次] docs(state-m7-d): §6.1.1 IP allowlist CIDR 修订 + §8 #2/#6 标完成
+[本次] docs(deploy): push.ts SECRETS 注释加 CIDR 提示
+[本次] feat(ip-allowlist): CIDR 范围匹配支持 (GREEN)
+[本次] test(ip-allowlist): 12 个 CIDR 单测 RED
+38f585d docs(state-m7-d): 真机 verify PASS — settings UI + 3 卡片 + 退出登录
 715187b docs(state): 追加真接发现 + production admin 部署 + M7-D 真机端到端 PASS
 d0eecdc perf(v2.4): retry 跳过 parse/chunk/embed — chunks_with_emb_json 持久化
 ccb98d2 fix(v2.4): CloudEmbedder MiniMax schema 修复 (texts+vectors) + BATCH_SIZE=100
@@ -195,10 +224,11 @@ f707f5f perf(v2.4): pushChunks 切批复用 source/document_id
 
 ## 8. P4 候选（v2.4 + M7-D 都完成后）
 
-1. **proper secrets manager** — 把 4 secrets + IP allowlist 移到 CAM / container env / 第三方 store；废弃 gitignored smoke config
-2. **deploy 流程重写** — 修 env vars 覆盖问题；新增 `tcb config diff` 验证步骤
+1. **proper secrets manager** — ✅ **2026-06-23 闭环 (P4 #1 commit 53fd0f8)** — macOS Keychain + /tmp 临时 config
+2. **deploy 流程重写** — ✅ **2026-06-23 闭环 (P4 #2 commit 链 3466258 / 3dcd430 / 98cbbbd / fed4b1e / 9950196)** — Keychain → /tmp → tcb Merge/Override → diff → audit。**2026-06-24 附加修订**: ADMIN_IP_ALLOWLIST 改 CIDR (见 §6.1.1)
 3. **admin 错误处理改进** — 之前 8 真接场景的 silent failure 收集 / 重试更智能
 4. **embedder 切换 UX** — chunks_with_emb_json 是旧 OMLX，向量需要重算时手动 SQL 清 + retry
-5. **M7-D 真机验证** — 用户手动跑 minipgm 看 settings 页 UI 是否符合预期 — ✅ **2026-06-24 PASS**（user_id 01KVCZ2JRBAGF3MY75D7KEY4RZ / 13 sessions / 26 messages / 退出登录按钮）
+5. **M7-D 真机验证** — ✅ **2026-06-24 PASS** (user_id 01KVCZ2JRBAGF3MY75D7KEY4RZ / 13 sessions / 26 messages / 退出登录按钮)
+6. **🆕 ADMIN_IP_ALLOWLIST 修 CIDR** — ✅ **2026-06-24 PASS** (见 §6.1.1)
 
-建议优先级: **1 → 2** (production 健壮性) → 3 → 4 → 5(已完成)
+建议优先级: ~~**1 → 2**~~ (production 健壮性) → 3 → 4 → 5(已完成) → 6(已完成)
