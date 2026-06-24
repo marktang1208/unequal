@@ -47,15 +47,19 @@ const SECRETS = [
   "ADMIN_IP_ALLOWLIST",
   // P5 NLI: 硅基流动 API key
   "SILICONFLOW_API_KEY",
+  // P6 Phase 5 真接发现: runtime onnx COS downloader 需要 (cloudbaserc.json
+  // env vars 是 cloud function 唯一来源, deploy 阶段 Keychain 注入)
+  "CLOUDBASE_SECRET_ID",
+  "CLOUDBASE_SECRET_KEY",
 ] as const;
 
 const TCB_ENV = "unequal-d4ggf7rwg82e0900b";
 const FUNCTION_NAME = "api-router";
 const TEMPLATE_PATH = "cloudbaserc.json";
 
-/** 部署所有 vars = template (13 vars) + 7 Keychain secrets = 20 vars
+/** 部署所有 vars = template (14 vars) + 9 Keychain secrets = 23 vars
  *  P4 #3: SCF API set 全 set, 不能再依赖 "Merge 模式保留云端 vars"
- *  → 必须显式构造 20 vars 字典
+ *  → 必须显式构造 23 vars 字典
  */
 function buildFullEnvVars(merged: Record<string, string>, templateEnvVars: Record<string, string>): Record<string, string> {
   return { ...templateEnvVars, ...merged };
