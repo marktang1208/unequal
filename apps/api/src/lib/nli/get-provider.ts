@@ -8,6 +8,9 @@
  *      - 成功 → 用之
  *      - 失败 (Runtime) → NoopNliProvider + 5 分钟内 retry
  *      - 失败 (Timeout) → NoopNliProvider + 累计 > 10 → 永久降级（直到函数实例重启）
+ *   4. NLI_PROVIDER=onnx + NLI_MODEL_LOCAL_PATH 存在 → try init OnnxNliProvider
+ *      - 成功 → 用之
+ *      - 失败 (Runtime / Timeout) → 同 http 路径（5min cache + 10-timeout 永久降级）
  *
  * 单例：进程内只 1 个 NliProvider 实例，per-process state。
  */
@@ -15,6 +18,8 @@
 import { NliConfigError, NliRuntimeError, NliTimeoutError } from "./errors.js";
 import { NoopNliProvider } from "./noop-provider.js";
 import { HttpNliProvider } from "./http-provider.js";
+import { OnnxNliProvider } from "./onnx-provider.js";
+import { createNliCosDownloader } from "./nli-cos-downloader.js";
 import type { NliProvider } from "./types.js";
 
 const FIVE_MIN_MS = 5 * 60 * 1000;
@@ -42,7 +47,7 @@ let state: ProviderState = createInitialState();
 
 export interface GetProviderOptions {
   /** 显式覆盖 provider 类型（测试用） */
-  nliProvider?: "http" | "noop";
+  nliProvider?: "http" | "noop" | "onnx";
   /** 显式提供 provider（测试用） */
   providerOverride?: NliProvider;
   /** 显式控制是否抛错（启动期 vs 运行时） */
@@ -57,6 +62,14 @@ export interface GetProviderOptions {
   timeoutMs?: number;
   /** HttpNliProvider 的 retry count override */
   retryCount?: number;
+  /** OnnxNliProvider 的本地模型路径 override (默认 NLI_MODEL_LOCAL_PATH env) */
+  onnxLocalPath?: string;
+  /** OnnxNliProvider 的临时目录 override (默认 NLI_LOCAL_TMP_DIR env 或 /tmp) */
+  onnxTmpDir?: string;
+  /** OnnxNliProvider 的推理超时 override (ms) */
+  onnxTimeoutMs?: number;
+  /** OnnxNliProvider 的 COS 下载函数 override (test 用) */
+  onnxDownloadFromCos?: () => Promise<void>;
 }
 
 /**
@@ -136,6 +149,56 @@ export async function getProvider(opts: GetProviderOptions = {}): Promise<NliPro
     }
   }
 
+  // 显式 onnx → 走 OnnxNliProvider
+  if (opts.nliProvider === "onnx" || (opts.nliProvider === undefined && getNliProviderFromEnv() === "onnx")) {
+    const localPath = opts.onnxLocalPath ?? process.env.NLI_MODEL_LOCAL_PATH;
+    if (!localPath) {
+      if (opts.throwOnConfigError) {
+        throw new NliConfigError(
+          "NLI_PROVIDER=onnx requires NLI_MODEL_LOCAL_PATH. Set NLI_PROVIDER=noop to disable.",
+        );
+      }
+      console.warn("[nli] NLI_MODEL_LOCAL_PATH not set, falling back to noop");
+      state.provider = new NoopNliProvider();
+      return state.provider;
+    }
+
+    try {
+      const tmpDir = opts.onnxTmpDir ?? process.env.NLI_LOCAL_TMP_DIR ?? "/tmp";
+      const timeoutMs = opts.onnxTimeoutMs ?? parseInt(process.env.NLI_TIMEOUT_MS ?? "5000", 10);
+      // P6 Phase 4.2: 若 opts.onnxDownloadFromCos 未注入 → 自动从 env 创建 COS downloader
+      // CloudBase 函数 cold start 时自动从 COS 拉模型到 /tmp
+      const downloadFromCos =
+        opts.onnxDownloadFromCos ??
+        (process.env.NLI_MODEL_LOCAL_PATH
+          ? createNliCosDownloader({
+              envId: process.env.TCB_ENV,
+              cosKey: process.env.NLI_MODEL_COS_KEY,
+              localPath: localPath,
+            }).downloadFromCos
+          : undefined);
+      state.provider = new OnnxNliProvider({
+        localModelPath: localPath,
+        tmpDir,
+        forwardTimeoutMs: timeoutMs,
+        downloadFromCos,
+      });
+      return state.provider;
+    } catch (err) {
+      // 构造函数本身不抛（OnnxNliProvider 懒加载），但保险 catch
+      state.failCount++;
+      state.lastFailAt = Date.now();
+      if (err instanceof NliConfigError) {
+        if (opts.throwOnConfigError) throw err;
+        console.warn(`[nli] config error: ${err.message}`);
+      } else {
+        console.warn(`[nli] onnx provider init error: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      state.provider = new NoopNliProvider();
+      return state.provider;
+    }
+  }
+
   // env 显式 noop
   if (getNliProviderFromEnv() === "noop") {
     state.provider = new NoopNliProvider();
@@ -198,10 +261,13 @@ export function __resetProviderStateForTest(): void {
   state = createInitialState();
 }
 
-function getNliProviderFromEnv(): "http" | "noop" {
+function getNliProviderFromEnv(): "http" | "noop" | "onnx" {
   const v = process.env.NLI_PROVIDER;
   if (v === undefined || v === "") return "http"; // 默认启用 http
-  return v.toLowerCase() === "noop" ? "noop" : "http";
+  const lower = v.toLowerCase();
+  if (lower === "noop") return "noop";
+  if (lower === "onnx") return "onnx";
+  return "http";
 }
 
 function getSiliconflowApiKeyFromEnv(): string | undefined {

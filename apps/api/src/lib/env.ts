@@ -44,12 +44,20 @@ export interface AppEnv {
   TCB_ENV?: string;
 
   // P5 NLI configuration (spec §8)
-  NLI_PROVIDER: "http" | "noop";
+  NLI_PROVIDER: "http" | "noop" | "onnx";
   SILICONFLOW_API_KEY?: string;
   SILICONFLOW_BASE_URL: string;
   NLI_MODEL: string;
   NLI_TIMEOUT_MS: number;
   NLI_RETRY_COUNT: number;
+
+  // P6 Phase 1: 本地 ONNX NLI 配置（NLI_PROVIDER=onnx 时用）
+  /** 本地模型绝对路径 (CloudBase: /tmp/nli-model.onnx) */
+  NLI_MODEL_LOCAL_PATH?: string;
+  /** COS 上模型 key (默认 nli-model/model.onnx) */
+  NLI_MODEL_COS_KEY?: string;
+  /** 本地临时目录 (默认 /tmp) */
+  NLI_LOCAL_TMP_DIR?: string;
 }
 
 let _env: AppEnv | null = null;
@@ -105,13 +113,28 @@ function validateEnvObject(source: NodeJS.ProcessEnv | Record<string, string | u
     TCB_ENV: source.TCB_ENV,
 
     // P5 NLI: 默认 http（硅基流动），可通过 NLI_PROVIDER=noop 禁用
-    NLI_PROVIDER: ((source.NLI_PROVIDER ?? "http").toLowerCase() === "noop" ? "noop" : "http") as "http" | "noop",
+    // P6: 新增 onnx 路由（本地 ONNX 模型，无外网依赖）
+    NLI_PROVIDER: parseNliProvider(source.NLI_PROVIDER),
     SILICONFLOW_API_KEY: source.SILICONFLOW_API_KEY || undefined,
     SILICONFLOW_BASE_URL: source.SILICONFLOW_BASE_URL ?? "https://api.siliconflow.cn/v1",
     NLI_MODEL: source.NLI_MODEL ?? "Qwen/Qwen2.5-7B-Instruct",
     NLI_TIMEOUT_MS: parseInt(source.NLI_TIMEOUT_MS ?? "5000", 10),
     NLI_RETRY_COUNT: parseInt(source.NLI_RETRY_COUNT ?? "1", 10),
+
+    // P6 Phase 1: 本地 ONNX 模型配置
+    NLI_MODEL_LOCAL_PATH: source.NLI_MODEL_LOCAL_PATH || undefined,
+    NLI_MODEL_COS_KEY: source.NLI_MODEL_COS_KEY || "nli-model/nli-MiniLM2-L6-H768-quint8_avx2.onnx",
+    NLI_LOCAL_TMP_DIR: source.NLI_LOCAL_TMP_DIR || "/tmp",
   };
+}
+
+/** 解析 NLI_PROVIDER env — 支持 http / noop / onnx，大小写不敏感 */
+function parseNliProvider(raw: string | undefined): "http" | "noop" | "onnx" {
+  if (!raw) return "http"; // 默认 http
+  const v = raw.toLowerCase();
+  if (v === "noop") return "noop";
+  if (v === "onnx") return "onnx";
+  return "http";
 }
 
 /** 测试用：直接传 env 对象（不读 process.env） */
@@ -145,18 +168,37 @@ export async function validateEmbeddingDim(): Promise<void> {
  * 否则 throw NliConfigError → CloudBase 函数冷启动失败
  *
  * 仅在 production 跑（避免本地 dev 强依赖外网 + 模型文件）
+ *
+ * P6 扩展：
+ *   - NLI_PROVIDER=http  需要 SILICONFLOW_API_KEY
+ *   - NLI_PROVIDER=onnx  需要 NLI_MODEL_LOCAL_PATH
+ *   - NLI_PROVIDER=noop  无需校验
  */
 export async function validateNliConfig(): Promise<void> {
   if (process.env.ENVIRONMENT !== "production") return;
   const env = getEnv();
   if (env.NLI_PROVIDER === "noop") return;
 
-  if (!env.SILICONFLOW_API_KEY) {
-    const { NliConfigError } = await import("./nli/errors.js");
-    throw new NliConfigError(
-      `NLI_PROVIDER=http requires SILICONFLOW_API_KEY. ` +
-      `Set NLI_PROVIDER=noop to disable, or export SILICONFLOW_API_KEY before deploy.`,
-    );
+  if (env.NLI_PROVIDER === "http") {
+    if (!env.SILICONFLOW_API_KEY) {
+      const { NliConfigError } = await import("./nli/errors.js");
+      throw new NliConfigError(
+        `NLI_PROVIDER=http requires SILICONFLOW_API_KEY. ` +
+        `Set NLI_PROVIDER=noop to disable, or export SILICONFLOW_API_KEY before deploy.`,
+      );
+    }
+    return;
+  }
+
+  if (env.NLI_PROVIDER === "onnx") {
+    if (!env.NLI_MODEL_LOCAL_PATH) {
+      const { NliConfigError } = await import("./nli/errors.js");
+      throw new NliConfigError(
+        `NLI_PROVIDER=onnx requires NLI_MODEL_LOCAL_PATH. ` +
+        `Set NLI_PROVIDER=noop to disable, or export NLI_MODEL_LOCAL_PATH=/path/to/model.onnx before deploy.`,
+      );
+    }
+    return;
   }
 }
 

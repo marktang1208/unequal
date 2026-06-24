@@ -20,10 +20,11 @@
         "LOGIN_MAX_ATTEMPTS": "5",
         "LOGIN_WINDOW_MS": "900000",
         "KEK_CURRENT_VERSION": "1",
-        "NLI_PROVIDER": "http",
-        "SILICONFLOW_BASE_URL": "https://api.siliconflow.cn/v1",
-        "NLI_MODEL": "Qwen/Qwen2.5-7B-Instruct",
-        "NLI_TIMEOUT_MS": "15000",
+        "NLI_PROVIDER": "onnx",
+        "NLI_MODEL_LOCAL_PATH": "/tmp/nli-model.onnx",
+        "NLI_MODEL_COS_KEY": "nli-model/nli-MiniLM2-L6-H768-quint8_avx2.onnx",
+        "NLI_LOCAL_TMP_DIR": "/tmp",
+        "NLI_TIMEOUT_MS": "5000",
         "NLI_RETRY_COUNT": "1",
         "NLI_MIN_ANSWER_LEN": "100"
       }
