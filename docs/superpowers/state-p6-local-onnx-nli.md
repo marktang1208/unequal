@@ -208,7 +208,7 @@ pnpm -F api deploy:status  # NLI_PROVIDER=onnx + 5 NLI vars + 7 secrets + 9 stan
 |---|---|---|
 | 1 | **P6 本地 ONNX NLI** | ✅ **PASS** (`f252367` + `a9d67b2` + `8b4863b` + `8832d3a` + `6ac7030` = 5 commits) — 307 tests + 真接 6 步 |
 | 2 | deploy pipeline 自动顺序 (`tcb fn deploy` + `pnpm deploy push` 一条命令) | ✅ **PASS** (commit `9872392`) — `pnpm -F api deploy:full` 三步串行 + 失败恢复矩阵 |
-| 3 | 真用户 + 真 chunks NLI 真接 (placeholder user 测不出 hypothesis 非空场景) | ⏸️ P1 |
+| 3 | 真用户 + 真 chunks NLI 真接 (placeholder user 测不出 hypothesis 非空场景) | ✅ **PASS** (commit 见本节底部) — `pnpm -F api verify:nli-real-user` 真接 chat HTTP 200 (29.3s, 1223 chars answer) + audit_log `chat_nli_reject` 真写 + onnx NLI 真 forward (`latencyMs=1919` cold, verdict=`neutral`, score=0). **注意**: NLI 拒绝因 `whereQuery(limit:8)` retrieval 命中率低, top-5 chunks 跟 query 不严格 match (P5 v1.3 retrieval 已知限制, v2 上向量 DB 解决) — **不是 NLI 自身问题** |
 | 4 | clean up `@huggingface/transformers` 残留 (package.json) | ✅ **NO-OP** (P7 follow-up #2 验证: package.json 从未加此 dep, pnpm-lock 也无, state doc 误判已修正 §3.2/§6.4) |
 | 5 | auto-sync miniprogram path cloudbaserc.json from `apps/api/cloudbaserc.json` + Keychain secrets | ✅ **PASS** (commit `328d497`) — `deploy-build.ts` 末尾自动调 `syncCloudbasrcFromTemplate()` (template 14 + 9 Keychain secrets = 23 vars, mode 0o600, 已在 .gitignore) |
 | 6 | chat 总耗时从 21s 缩短 (主要 LLM 20s, 但可能 query 优化 / 缓存) | ✅ **PARTIAL** (P7 follow-up #5 加 `LLM_MAX_TOKENS=2048` safety net — commit 见本节底部 — 防 LLM 跑飞 4K+ 答; **真要省 21s → LLM streaming (大工程) 或本地推理 (P8)**, 见 §7.1 详细 ROI) |

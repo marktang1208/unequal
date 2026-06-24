@@ -27,7 +27,6 @@
         "NLI_TIMEOUT_MS": "5000",
         "NLI_RETRY_COUNT": "1",
         "NLI_MIN_ANSWER_LEN": "100",
-        // P7 #5: LLM max_tokens safety net (防 LLM 跑飞 4K+ 答, 默认 2048)
         "LLM_MAX_TOKENS": "2048"
       }
     }
