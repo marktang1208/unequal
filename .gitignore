@@ -40,3 +40,9 @@ apps/admin/.tmp/
 # P6 v1 NLI model assets (downloaded from hf-mirror, ~80MB; NOT committed)
 # Re-download via: pnpm -F api download-nli-model
 apps/api/scripts/nli-assets/
+
+# Local-only scratch files (NOT committed)
+.reasonix/
+reasonix.toml
+apps/api/scripts/_tmp-gen-jwt.mjs
+apps/api/scripts/smoke-nli-once.ts
