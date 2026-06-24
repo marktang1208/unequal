@@ -328,7 +328,7 @@ App({
 | `apps/admin/src/pages/LoginPage.test.tsx` | CREATE | 4 jsdom 用例：mount / 提交 / 错误 token / 成功 navigate |
 | `apps/admin/src/App.tsx` | UPDATE | 加 /login 路由 + navigate guard（无 token → /login） |
 | `apps/admin/src/pages/ChatSim.tsx` | UPDATE | onMount 时 check token 缺 → navigate("/login") |
-| `docs/superpowers/state-m6-2.md` | CREATE | 收尾归档（仿 state-m6-1.md） |
+| `docs/archive/state/state-m6-2.md` | CREATE | 收尾归档（仿 state-m6-1.md） |
 | `README.md` | UPDATE | 加 M6.2 状态节 |
 | `docs/wechat-miniprogram-setup.md` | UPDATE | 加 wx.login + /auth/wx-login 端到端联调段 |
 | `packages/shared/src/chat-types.ts` | UPDATE | 加 AuthResponse / JwtPayload 类型（admin + miniprogram 共享） |

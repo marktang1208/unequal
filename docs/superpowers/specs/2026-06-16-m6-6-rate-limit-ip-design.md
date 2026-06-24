@@ -481,7 +481,7 @@ Task 1f: 加 migration 0008 → 不需新测试（migration 自身不逻辑）
 
 | # | 标准 |
 |---|---|
-| AC-12 | `docs/superpowers/state-m6-6.md` 收尾（含 8 偏差 + 7 遗留 + 7 dev 验证缺口 + 累计 251 + 下一步建议）|
+| AC-12 | `docs/archive/state/state-m6-6.md` 收尾（含 8 偏差 + 7 遗留 + 7 dev 验证缺口 + 累计 251 + 下一步建议）|
 | AC-13 | `README.md` 加 M6.6 节（per-IP 锁新行为 + 测试矩阵 + mock-first 限制）|
 
 ---
@@ -592,8 +592,8 @@ M6.6 真接 Cloudflare 0 新增资源：
 | 改测试 | `apps/api/test/lib/rate-limit.test.ts` | +120 / -7 |
 | 改测试 | `apps/api/test/routes/auth.test.ts` | +30 / -0 |
 | 新文档 | `docs/superpowers/specs/2026-06-16-m6-6-rate-limit-ip-design.md` | NEW（本文件）|
-| 新文档 | `docs/superpowers/plans/2026-06-16-m6-6-rate-limit-ip.md` | NEW（plan 阶段）|
-| 新文档 | `docs/superpowers/state-m6-6.md` | NEW（state 阶段）|
+| 新文档 | `docs/archive/plans/2026-06-16-m6-6-rate-limit-ip.md` | NEW（plan 阶段）|
+| 新文档 | `docs/archive/state/state-m6-6.md` | NEW（state 阶段）|
 | 改文档 | `README.md` | +50 / -0 |
 
 **共 6 个文件改动（4 代码 + 2 测试）+ 4 个文档（3 新 + 1 改）= 10 总**

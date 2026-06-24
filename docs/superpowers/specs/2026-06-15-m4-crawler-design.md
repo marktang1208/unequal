@@ -1,6 +1,6 @@
 # M4 设计：网页抓取（curl + cheerio → /ingest）
 
-> **For agentic workers:** 配套 plan: `docs/superpowers/plans/2026-06-15-m4-crawler-monorepo.md`（writing-plans 阶段产出）
+> **For agentic workers:** 配套 plan: `docs/archive/plans/2026-06-15-m4-crawler-monorepo.md`（writing-plans 阶段产出）
 > 上游：构想.md §九 M4 + §6 目录；spec 复用：M2 ask design §5 ask 编排 + M0+M1 /ingest endpoint。
 
 **Goal:** 落地 `apps/crawler/` monorepo 包（TypeScript + curl + cheerio）+ admin 抓取页，端到端抓取指定 URL → 提取正文 → 调 /ingest 入库。零浏览器依赖（无 Playwright），mock-first 全程不抓真网。

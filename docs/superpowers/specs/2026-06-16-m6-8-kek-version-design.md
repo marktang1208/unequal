@@ -545,7 +545,7 @@ Task 2: 加 5 envelope 新测试 + 3 user 新测试 + 1 auth 新测试
 
 | # | 标准 |
 |---|---|
-| AC-12 | `docs/superpowers/state-m6-8.md` 收尾 |
+| AC-12 | `docs/archive/state/state-m6-8.md` 收尾 |
 | AC-13 | `README.md` 加 M6.8 节 |
 
 ---
@@ -655,8 +655,8 @@ M6.8 真接 Cloudflare 1 关键迁移：
 | 改测试 | `apps/api/test/lib/user.test.ts` | +50 / -5 |
 | 改测试 | `apps/api/test/routes/auth.test.ts` | +20 / -5 |
 | 新文档 | `docs/superpowers/specs/2026-06-16-m6-8-kek-version-design.md` | NEW（本文件）|
-| 新文档 | `docs/superpowers/plans/2026-06-16-m6-8-kek-version.md` | NEW（plan 阶段）|
-| 新文档 | `docs/superpowers/state-m6-8.md` | NEW（state 阶段）|
+| 新文档 | `docs/archive/plans/2026-06-16-m6-8-kek-version.md` | NEW（plan 阶段）|
+| 新文档 | `docs/archive/state/state-m6-8.md` | NEW（state 阶段）|
 | 改文档 | `README.md` | +50 / -0 |
 
 **共 3 文件改动（1 代码 + 1 user + 1 types）+ 1 新 migration + 3 改测试 + 4 文档 = 12 总**

@@ -329,9 +329,9 @@ curl <your-worker-url>/health
 
 | # | 标准 |
 |---|---|
-| AC-12 | `docs/superpowers/state-cp5.md` 收尾（含 URL + smoke 输出 + commit hash + Admin IP 变更 SOP）|
+| AC-12 | `docs/archive/state/state-cp5.md` 收尾（含 URL + smoke 输出 + commit hash + Admin IP 变更 SOP）|
 | AC-13 | `README.md` 加 CP-5 节 |
-| AC-14 | `docs/superpowers/plans/2026-06-16-cp5-real-cloudflare.md`（plan 文件，本 spec 通过后由 writing-plans skill 生成）|
+| AC-14 | `docs/archive/plans/2026-06-16-cp5-real-cloudflare.md`（plan 文件，本 spec 通过后由 writing-plans skill 生成）|
 
 ### 11.4 Dev 验证 AC（CP-5 之外的下轮真接）
 

@@ -1,6 +1,6 @@
 # M5 设计：小红书 + 微信公众号批量 URL 抓取（mock-first 骨架）
 
-> **For agentic workers:** 配套 plan: `docs/superpowers/plans/2026-06-15-m5-platform-crawler-monorepo.md`（writing-plans 阶段产出）
+> **For agentic workers:** 配套 plan: `docs/archive/plans/2026-06-15-m5-platform-crawler-monorepo.md`（writing-plans 阶段产出）
 > 上游：`构想.md §九 M4-M5` + `2026-06-14-unequal-top-level-design.md §1 §6 §9`；spec 复用：M4 crawler design §3 pipeline + M0+M1 /ingest endpoint。
 > 关联：`docs/superpowers/specs/2026-06-15-agent-dispatch-protocol.md`（长任务子 agent 派发协议，subagent 心跳+abort+主线程 install）
 

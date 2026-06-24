@@ -95,7 +95,7 @@ DELETE FROM login_attempt WHERE created_at < (now - 24h)
 | `apps/api/test/lib/rate-limit.test.ts` | UPDATE | +2 用例（config 注入）|
 | `apps/api/test/routes/cron.test.ts` | CREATE | 3 用例（happy / 401 缺 token / 401 错 token）|
 | `docs/superpowers/specs/2026-06-16-m6-4-rate-limit-cron-inflight-design.md` | CREATE | 本文档 |
-| `docs/superpowers/state-m6-4.md` | CREATE | 收尾归档（主线程写）|
+| `docs/archive/state/state-m6-4.md` | CREATE | 收尾归档（主线程写）|
 
 **总计**：5 新建（0007 .sql + .down.sql + routes/cron.ts + test/routes/cron.test.ts + state-m6-4.md）+ 1 新建 spec + 7 修改 = 13 改动文件 + 1 spec 文档。
 
@@ -531,7 +531,7 @@ describe("cronRoute.CLEANUP_LOGIN_ATTEMPTS (M6.4)", () => {
 - [ ] **`pnpm -r build` 成功**（admin 静态资源不变）
 - [ ] **wrangler.jsonc vars** 加 3 个（LOGIN_MAX_ATTEMPTS / LOGIN_WINDOW_MS / CRON_SECRET）
 - [ ] **0 production console.log**（api / miniprogram）
-- [ ] **`docs/superpowers/state-m6-4.md`** 收尾归档
+- [ ] **`docs/archive/state/state-m6-4.md`** 收尾归档
 - [ ] **README M6.4 状态节**（仿 M6.3c 格式）
 - [ ] **merge to master --no-ff** + worktree 清理 + branch 删除
 

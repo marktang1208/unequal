@@ -258,7 +258,7 @@ it("1000 chunks mock 不 throw：handler 返回 topK=5", async () => {
 ## 10. References
 
 - P5 NLI spec：`docs/superpowers/specs/2026-06-23-p5-nli-entailment-design.md`
-- 架构事实：`docs/superpowers/state-arch-v2.3.md`
+- 架构事实：`docs/archive/state/state-arch-v2.3.md`
 - working pattern：`apps/api/src/handlers/api-chat.ts:139`
 - bug 位置：`apps/api/src/handlers/api-ask.ts:89` + `apps/api/src/handlers/api-search.ts:55`
 - 真接阻塞：`docs/superpowers/state-p5-nli-entailment.md` §6.1

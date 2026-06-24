@@ -178,7 +178,7 @@ fed4b1e feat(deploy): rotate-kek command - generate new KEK + Keychain + push (P
 
 **manual 验收**（rotate-kek 后必跑）：
 - `tcb db nosql query --env-id unequal-d4ggf7rwg82e0900b --direct '{"filter":{"action":"deploy"},"sort":{"timestamp":-1},"limit":10}' — 查 audit_log deploy records
-- 6 步 smoke (`docs/superpowers/state-cp6.md §4`) — 验证 KEK 轮换后旧数据仍可读
+- 6 步 smoke (`docs/archive/state/state-cp6.md §4`) — 验证 KEK 轮换后旧数据仍可读
 
 ## 6. 边界 / 限制
 

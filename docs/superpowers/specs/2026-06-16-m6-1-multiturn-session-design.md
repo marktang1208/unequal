@@ -508,7 +508,7 @@ M6.1 → M6.2 不需要重构的部分：
 ## 附录 B：配套文档
 
 - 顶层设计：`docs/superpowers/specs/2026-06-14-unequal-top-level-design.md` §2 / §3.3 / §5.3
-- 上一个里程碑：`docs/superpowers/state-m5.md`
+- 上一个里程碑：`docs/archive/state/state-m5.md`
 - wx.login 设计：M6.2 spec（本 spec 不含）
 - 微信小程序端：M3 spec `docs/superpowers/specs/2026-06-15-m3-miniprogram-design.md`
 - 微信小程序真机联调：`docs/wechat-miniprogram-setup.md`

@@ -367,9 +367,9 @@ CP-7 真接 PASS 后：
 
 ## H. References
 
-- **CP-7-B state**：`docs/superpowers/state-cp7-b.md`
-- **CP-7-A state**：`docs/superpowers/state-cp7-a.md`
-- **CP-6 state**：`docs/superpowers/state-cp6.md` §8 真接路径 + §9.1 账号链路
+- **CP-7-B state**：`docs/archive/state/state-cp7-b.md`
+- **CP-7-A state**：`docs/archive/state/state-cp7-a.md`
+- **CP-6 state**：`docs/archive/state/state-cp6.md` §8 真接路径 + §9.1 账号链路
 - **api-router 部署脚本**：`apps/api/scripts/deploy-functions.sh` + `deploy-build.ts`
 - **CloudBase 控制台**：https://console.cloud.tencent.com/tcb
 - **tcb CLI 文档**：https://docs.cloudbase.net/cli/intro

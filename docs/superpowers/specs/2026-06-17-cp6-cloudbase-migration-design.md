@@ -560,7 +560,7 @@ VITE_API_BASE_URL=https://unequal-api.yydsnews.workers.dev
 | 1 | `git tag v0-cf-archived f623f66` |
 | 2 | `git tag -m "CP-5 真接 Cloudflare 收尾版本；后续 cp-6 走 CloudBase 全量迁移"` |
 | 3 | README.md 加 "v0 封存" 段（链向 state-cp5.md + 部署 URL） |
-| 4 | `docs/superpowers/state-cp5.md` 加 "封存归档" 附录 |
+| 4 | `docs/archive/state/state-cp5.md` 加 "封存归档" 附录 |
 | 5 | CF 资源**保留**（不销毁）|
 | 6 | v0 commit + tag 推到 remote（如有）+ 问用户 |
 
@@ -613,10 +613,10 @@ VITE_API_BASE_URL=https://unequal-api.yydsnews.workers.dev
 
 ### 9.3 文档 AC
 
-- [ ] AC-13: `docs/superpowers/state-cp6.md` 收尾（含真实 CloudBase URL + smoke 输出 + 已知 issue）
+- [ ] AC-13: `docs/archive/state/state-cp6.md` 收尾（含真实 CloudBase URL + smoke 输出 + 已知 issue）
 - [ ] AC-14: README v1 段 + v0 封存段
 - [ ] AC-15: `state-cp5.md` 加 "封存归档" 附录
-- [ ] AC-16: `docs/superpowers/plans/2026-06-17-cp6-cloudbase-migration.md`（plan 文件，本 spec 通过后由 plan skill 生成）
+- [ ] AC-16: `docs/archive/plans/2026-06-17-cp6-cloudbase-migration.md`（plan 文件，本 spec 通过后由 plan skill 生成）
 
 ### 9.4 dev 验证 AC（cp-6 之外）
 
@@ -644,10 +644,10 @@ VITE_API_BASE_URL=https://unequal-api.yydsnews.workers.dev
 ## 11. References
 
 - **Spec 1**：`docs/superpowers/specs/2026-06-16-cp5-real-cloudflare-design.md` (commit `863014a`)
-- **Spec 2**：`docs/superpowers/state-cp5.md`（CP-5 收尾 + 封存附录待加）
-- **Plan**：`docs/superpowers/plans/2026-06-16-cp5-real-cloudflare.md` (commit `2ecdc14`)
+- **Spec 2**：`docs/archive/state/state-cp5.md`（CP-5 收尾 + 封存附录待加）
+- **Plan**：`docs/archive/plans/2026-06-16-cp5-real-cloudflare.md` (commit `2ecdc14`)
 - **M6.10 spec**：`docs/superpowers/specs/2026-06-16-m6-10-admin-allowlist-design.md`（ADMIN_IP_ALLOWLIST 来源）
-- **M6.3a state**：`docs/superpowers/state-m6-3a.md`（rate-limit / login_attempt 行为）
+- **M6.3a state**：`docs/archive/state/state-m6-3a.md`（rate-limit / login_attempt 行为）
 - **M6.8 spec**：`docs/superpowers/specs/2026-06-16-m6-9-token-mutex-design.md`（KEK fallback 行为）
 - **项目 README**：`README.md`（v1 / v0 状态段待加）
 - **Tencent CloudBase 文档**：https://docs.cloudbase.net/

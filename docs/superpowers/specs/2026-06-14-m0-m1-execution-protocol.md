@@ -5,7 +5,7 @@
 - **目的**：定义 unequal 项目 M0+M1 阶段的**执行规约**（不是设计，也不是实现计划）
 - **上层文档**：
   - 顶层设计 spec：`docs/superpowers/specs/2026-06-14-unequal-top-level-design.md`
-  - 详细实现 plan：`docs/superpowers/plans/2026-06-14-m0-m1-monorepo-knowledge-base.md`（12 tasks, TDD-driven）
+  - 详细实现 plan：`docs/archive/plans/2026-06-14-m0-m1-monorepo-knowledge-base.md`（12 tasks, TDD-driven）
 
 ---
 
@@ -226,7 +226,7 @@ CP-4 验收通过后，调用 `superpowers:finishing-a-development-branch`，给
 docs/superpowers/specs/
   └─ 2026-06-14-unequal-top-level-design.md    (架构 spec)
        └─ 上游 ↓
-docs/superpowers/plans/
+docs/archive/plans/
   └─ 2026-06-14-m0-m1-monorepo-knowledge-base.md  (实施 plan, 12 tasks)
        └─ 上游 ↓
 docs/superpowers/specs/

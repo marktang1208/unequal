@@ -349,7 +349,7 @@ Task 2: 5 admin-ip-allowlist tests + 2 auth tests + typecheck + build
 
 | # | 标准 |
 |---|---|
-| AC-9 | `docs/superpowers/state-m6-10.md` 收尾 |
+| AC-9 | `docs/archive/state/state-m6-10.md` 收尾 |
 | AC-10 | `README.md` 加 M6.10 节 |
 
 ---
@@ -431,8 +431,8 @@ M6.10 真接 Cloudflare 0 强制改：
 | 新测试 | `apps/api/test/lib/admin-ip-allowlist.test.ts` | +50 / -0 |
 | 改测试 | `apps/api/test/routes/auth.test.ts` | +40 / -0 |
 | 新文档 | `docs/superpowers/specs/2026-06-16-m6-10-admin-allowlist-design.md` | NEW（本文件）|
-| 新文档 | `docs/superpowers/plans/2026-06-16-m6-10-admin-allowlist.md` | NEW |
-| 新文档 | `docs/superpowers/state-m6-10.md` | NEW |
+| 新文档 | `docs/archive/plans/2026-06-16-m6-10-admin-allowlist.md` | NEW |
+| 新文档 | `docs/archive/state/state-m6-10.md` | NEW |
 | 改文档 | `README.md` | +30 / -0 |
 
 **共 1 lib 新 + 2 改代码 + 1 新测试 + 1 改测试 + 4 文档 = 9 总**

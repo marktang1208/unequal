@@ -644,7 +644,7 @@ Task 3: 加 migration 0009 → 不需新测试
 
 | # | 标准 |
 |---|---|
-| AC-15 | `docs/superpowers/state-m6-7.md` 收尾 |
+| AC-15 | `docs/archive/state/state-m6-7.md` 收尾 |
 | AC-16 | `README.md` 加 M6.7 节 |
 
 ---
@@ -764,8 +764,8 @@ M6.7 真接 Cloudflare 1 新增资源（secret）：
 | 改测试 | `apps/api/test/lib/user.test.ts` | +50 / -8 |
 | 新测试 | `apps/api/test/lib/envelope.test.ts` | +120 / -0 |
 | 新文档 | `docs/superpowers/specs/2026-06-16-m6-7-session-key-envelope-design.md` | NEW（本文件）|
-| 新文档 | `docs/superpowers/plans/2026-06-16-m6-7-session-key-envelope.md` | NEW（plan 阶段）|
-| 新文档 | `docs/superpowers/state-m6-7.md` | NEW（state 阶段）|
+| 新文档 | `docs/archive/plans/2026-06-16-m6-7-session-key-envelope.md` | NEW（plan 阶段）|
+| 新文档 | `docs/archive/state/state-m6-7.md` | NEW（state 阶段）|
 | 改文档 | `README.md` | +50 / -0 |
 
 **共 3 文件改动（1 代码 + 1 路由 + 1 types）+ 1 新 lib + 1 新 migration + 2 新测试 + 2 测试改动 + 4 文档 = 13 总**

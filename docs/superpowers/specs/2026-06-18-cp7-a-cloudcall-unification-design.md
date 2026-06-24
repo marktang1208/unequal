@@ -610,7 +610,7 @@ Task 3: 删 wxRequestAsFetch / fetchWithRefresh dead code → 跑全部测试
 |---|---|
 | AC-14 | `docs/cp7-cloud-call-setup.md` 完成（用法 + mock + 内部细节 + migration 路径）|
 | AC-15 | `README.md` 加 CP-7-A 节（与 M6.x 模式一致）|
-| AC-16 | `docs/superpowers/state-cp7-a.md` 收尾（commit 汇总 + 真接路径）|
+| AC-16 | `docs/archive/state/state-cp7-a.md` 收尾（commit 汇总 + 真接路径）|
 
 ### 11.4 Dev 验证 AC（CP-7 真接时补）
 
@@ -697,8 +697,8 @@ CP-7-A 真接 CloudBase 时验证：
 | 改测试 | `apps/miniprogram/test/api.test.ts` | 改 mock（200 → 180 行）|
 | 改测试 | `apps/miniprogram/test/auth.test.ts` | rename ensureJwt → __ensureJwtForTesting |
 | 新文档 | `docs/superpowers/specs/2026-06-18-cp7-a-cloudcall-unification-design.md` | NEW（本文件）|
-| 新文档 | `docs/superpowers/plans/2026-06-18-cp7-a-cloudcall-unification.md` | NEW |
-| 新文档 | `docs/superpowers/state-cp7-a.md` | NEW |
+| 新文档 | `docs/archive/plans/2026-06-18-cp7-a-cloudcall-unification.md` | NEW |
+| 新文档 | `docs/archive/state/state-cp7-a.md` | NEW |
 | 改文档 | `README.md` | +CP-7-A 节 |
 
 **共 1 新 lib + 2 新测试 + 1 新 setup doc + 2 改代码 + 2 改测试 + 4 文档 = 12 总**

@@ -339,7 +339,7 @@ try {
 
 ### 7B.5 真接 Cloudflare 后的端到端
 
-按 `docs/superpowers/state-m6-2.md` §"真接 Cloudflare 路径"8 步：
+按 `docs/archive/state/state-m6-2.md` §"真接 Cloudflare 路径"8 步：
 1. `pnpm wrangler secret put WX_APP_ID / WX_APP_SECRET / JWT_SECRET / ADMIN_TOKEN`
 2. 改 `apps/api/wrangler.jsonc` `vars.AUTH_MODE = "jwt"`
 3. 改 `apps/miniprogram/lib/api.ts` baseUrl 改 `https://unequal-api.xxx.workers.dev`
@@ -446,6 +446,6 @@ ChatSim 是小程序 chat 页的镜像（同样的 form、同样的 citation-car
 ## 关联文档
 
 - 设计稿：`docs/superpowers/specs/2026-06-14-unequal-top-level-design.md`
-- M0+M1 计划：`docs/superpowers/plans/2026-06-14-m0-m1-monorepo-knowledge-base.md`
-- M3 计划：`docs/superpowers/plans/2026-06-15-m3-miniprogram-monorepo.md`
+- M0+M1 计划：`docs/archive/plans/2026-06-14-m0-m1-monorepo-knowledge-base.md`
+- M3 计划：`docs/archive/plans/2026-06-15-m3-miniprogram-monorepo.md`
 - 总 README：`README.md`（M3 段）

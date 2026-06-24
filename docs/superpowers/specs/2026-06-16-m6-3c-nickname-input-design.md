@@ -82,7 +82,7 @@ setShownNicknameModal()  ← 标志置 true，下次不再弹
 | `apps/miniprogram/pages/chat/chat.ts` | UPDATE | onLoad 后追加 `if (!hasShownNicknameModal()) this.promptNickname()` + `promptNickname` method |
 | `apps/miniprogram/pages/chat/chat.test.ts`（如有）| UPDATE | +1 mock 用例（首次进入调 promptNickname / 已设不再调）|
 | `docs/superpowers/specs/2026-06-16-m6-3c-nickname-input-design.md` | CREATE | 本文档 |
-| `docs/superpowers/state-m6-3c.md` | CREATE | 收尾归档（main thread 写）|
+| `docs/archive/state/state-m6-3c.md` | CREATE | 收尾归档（main thread 写）|
 
 **总计**：2 新建 + 6 修改 + 1 spec。
 

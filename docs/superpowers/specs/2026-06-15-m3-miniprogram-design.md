@@ -1,6 +1,6 @@
 # M3 设计：微信小程序端单轮问答
 
-> **For agentic workers:** 配套 plan: `docs/superpowers/plans/2026-06-15-m3-miniprogram-monorepo.md`（writing-plans 阶段产出）
+> **For agentic workers:** 配套 plan: `docs/archive/plans/2026-06-15-m3-miniprogram-monorepo.md`（writing-plans 阶段产出）
 > 上游：构想.md §九 M3 + §6 目录；spec 复用：M2 ask design §3 双层引用验证 + §5 ask 编排。
 
 **Goal:** 微信小程序 + admin 内嵌 chat simulation 页双形态落地，端到端接 /ask 真接口，单轮问答 + 引用卡片可视化。零真人操作（无小程序注册、无 AppID、无真机调试）。

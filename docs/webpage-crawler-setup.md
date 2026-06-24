@@ -413,7 +413,7 @@ curl https://example.com/robots.txt
 ## 关联文档
 
 - 设计稿：`docs/superpowers/specs/2026-06-15-m4-crawler-design.md`
-- M4 计划：`docs/superpowers/plans/2026-06-15-m4-crawler-monorepo.md`
+- M4 计划：`docs/archive/plans/2026-06-15-m4-crawler-monorepo.md`
 - 总 README：`README.md`（M4 段）
 - M3 真机联调（同样 mock-first 模式）：`docs/wechat-miniprogram-setup.md`
 - /ingest endpoint 接收方（M0+M1）：`apps/api/src/routes/ingest.ts`

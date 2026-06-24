@@ -62,7 +62,7 @@ jscode2session → wxRes.session_key
 | `apps/api/src/routes/auth.test.ts` | UPDATE | +2 用例：成功路径触发 / 失败路径不触发 |
 | `apps/api/test/integration.test.ts`（或新文件）| UPDATE（可能）| +2 用例：migration 加载后字段存在 / 旧 user 字段为 NULL |
 | `docs/superpowers/specs/2026-06-16-m6-3b-session-key-design.md` | CREATE | 本文档 |
-| `docs/superpowers/state-m6-3b.md` | CREATE | 收尾归档（main thread 写）|
+| `docs/archive/state/state-m6-3b.md` | CREATE | 收尾归档（main thread 写）|
 
 **总计**：3 新建 + 4 修改 + 1 spec。
 

@@ -415,7 +415,7 @@ export async function rotateKek(opts: Record<string, unknown>): Promise<void> {
 
   // 4. 提示用户跑 6 步 smoke
   logger.info(`[rotate-kek] ✓ pushed new KEK to cloud function`);
-  logger.info(`[rotate-kek] ⚠️  NEXT: Run 6-step smoke (docs/superpowers/state-cp6.md §4)`);
+  logger.info(`[rotate-kek] ⚠️  NEXT: Run 6-step smoke (docs/archive/state/state-cp6.md §4)`);
   logger.info(`[rotate-kek] ⚠️  If existing data encrypted with old KEK is needed, run re-encrypt migration (P4 follow-up)`);
 }
 ```

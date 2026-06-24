@@ -295,7 +295,7 @@ admin 复制 "url1\nurl2\nurl3" 粘贴 → 解析每行 → 批量 POST /api/see
 
 - **P3-7 spec**：`docs/superpowers/specs/2026-06-22-cp7-p3-7-crawler-manual-push-design.md`（commit `c9211b4`）
 - **P3-7 真接 4 暴露**：`apps/crawler/src/trigger.ts` `resolveSeedUrls` v1 简化返空
-- **arch-v2.3**：`docs/superpowers/state-arch-v2.3.md`（admin 不 embed / API 自己 embed）
+- **arch-v2.3**：`docs/archive/state/state-arch-v2.3.md`（admin 不 embed / API 自己 embed）
 - **spec §5.3 信源评级**：所有来源平权入库，按 trust_level 做信源评级
 - **spec drift 修订**：`docs/superpowers/specs/2026-06-14-unequal-top-level-design.md` §14
 

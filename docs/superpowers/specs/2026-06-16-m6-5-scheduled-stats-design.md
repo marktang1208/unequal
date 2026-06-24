@@ -93,8 +93,8 @@ admin StatsPage: 4 数字卡 + by_type 表格 + 24/72/168h CSS bars（Asia/Shang
 | `apps/admin/src/pages/StatsPage.tsx` | ~180 | 4 数字卡 + by_type TypeRow + HourBars CSS bars |
 | `apps/admin/src/pages/StatsPage.test.tsx` | ~100 | 3 测试（渲染+数据 / 切换 hours / 错误态）|
 | `docs/superpowers/specs/2026-06-16-m6-5-scheduled-stats-design.md` | — | 本文档 |
-| `docs/superpowers/plans/2026-06-16-m6-5-scheduled-stats.md` | — | 实施计划（commit 拆分 + CP 节点）|
-| `docs/superpowers/state-m6-5.md` | — | 收尾归档（主线程写）|
+| `docs/archive/plans/2026-06-16-m6-5-scheduled-stats.md` | — | 实施计划（commit 拆分 + CP 节点）|
+| `docs/archive/state/state-m6-5.md` | — | 收尾归档（主线程写）|
 
 ### 修改（7 个）
 
@@ -783,8 +783,8 @@ git checkout master && git branch -D worktree-m6-5-scheduled-stats
 
 **文档 (3)**:
 - `docs/superpowers/specs/2026-06-16-m6-5-scheduled-stats-design.md` (本文档)
-- `docs/superpowers/plans/2026-06-16-m6-5-scheduled-stats.md`
-- `docs/superpowers/state-m6-5.md`
+- `docs/archive/plans/2026-06-16-m6-5-scheduled-stats.md`
+- `docs/archive/state/state-m6-5.md`
 
 **总计**：10 新建（7 代码 + 3 文档） + 7 修改 = 17 改动文件。
 

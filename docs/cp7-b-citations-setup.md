@@ -2,8 +2,8 @@
 
 **完成日期**：2026-06-18
 **Spec**：`docs/superpowers/specs/2026-06-18-cp7-b-handler-citations-design.md`
-**Plan**：`docs/superpowers/plans/2026-06-18-cp7-b-handler-citations.md`
-**State**：`docs/superpowers/state-cp7-b.md`
+**Plan**：`docs/archive/plans/2026-06-18-cp7-b-handler-citations.md`
+**State**：`docs/archive/state/state-cp7-b.md`
 
 ---
 
@@ -212,14 +212,14 @@ CP-7-B 完成后，CP-7 真接验证能跑通全 7 caller（之前 rename + nick
 7. 删除 session → /api-sessions-delete DELETE callFunction → 软删
 8. nickname-input → /api-user-nickname PATCH callFunction → 改 nickname
 
-详细真接路径见 `docs/superpowers/state-cp7-b.md` §8。
+详细真接路径见 `docs/archive/state/state-cp7-b.md` §8。
 
 ---
 
 ## 8. References
 
 - **Spec**：`docs/superpowers/specs/2026-06-18-cp7-b-handler-citations-design.md`
-- **Plan**：`docs/superpowers/plans/2026-06-18-cp7-b-handler-citations.md`
-- **State**：`docs/superpowers/state-cp7-b.md`
-- **CP-7-A**：`docs/superpowers/state-cp7-a.md`（cloudCall 统一化前置）
-- **CP-6**：`docs/superpowers/state-cp6.md`（api-router + HANDLER_MAP 基础）
+- **Plan**：`docs/archive/plans/2026-06-18-cp7-b-handler-citations.md`
+- **State**：`docs/archive/state/state-cp7-b.md`
+- **CP-7-A**：`docs/archive/state/state-cp7-a.md`（cloudCall 统一化前置）
+- **CP-6**：`docs/archive/state/state-cp6.md`（api-router + HANDLER_MAP 基础）
