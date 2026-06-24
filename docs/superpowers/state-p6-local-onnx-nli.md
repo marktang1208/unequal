@@ -210,9 +210,34 @@ pnpm -F api deploy:status  # NLI_PROVIDER=onnx + 5 NLI vars + 7 secrets + 9 stan
 | 2 | deploy pipeline 自动顺序 (`tcb fn deploy` + `pnpm deploy push` 一条命令) | ✅ **PASS** (commit `9872392`) — `pnpm -F api deploy:full` 三步串行 + 失败恢复矩阵 |
 | 3 | 真用户 + 真 chunks NLI 真接 (placeholder user 测不出 hypothesis 非空场景) | ⏸️ P1 |
 | 4 | clean up `@huggingface/transformers` 残留 (package.json) | ✅ **NO-OP** (P7 follow-up #2 验证: package.json 从未加此 dep, pnpm-lock 也无, state doc 误判已修正 §3.2/§6.4) |
-| 5 | auto-sync miniprogram path cloudbaserc.json from `apps/api/cloudbaserc.json` + Keychain secrets | ⏸️ P1 |
-| 6 | chat 总耗时从 21s 缩短 (主要 LLM 20s, 但可能 query 优化 / 缓存) | ⏸️ P1 |
+| 5 | auto-sync miniprogram path cloudbaserc.json from `apps/api/cloudbaserc.json` + Keychain secrets | ✅ **PASS** (commit `328d497`) — `deploy-build.ts` 末尾自动调 `syncCloudbasrcFromTemplate()` (template 14 + 9 Keychain secrets = 23 vars, mode 0o600, 已在 .gitignore) |
+| 6 | chat 总耗时从 21s 缩短 (主要 LLM 20s, 但可能 query 优化 / 缓存) | ✅ **PARTIAL** (P7 follow-up #5 加 `LLM_MAX_TOKENS=2048` safety net — commit 见本节底部 — 防 LLM 跑飞 4K+ 答; **真要省 21s → LLM streaming (大工程) 或本地推理 (P8)**, 见 §7.1 详细 ROI) |
 | 7 | P5 v1.4 跨轮 NLI (chat 多轮累计 entailment) | ⏸️ P2 |
+
+### 7.1 P7 #5 详细 ROI 评估 (chat 加速)
+
+**耗时拆解 (实测 P6 真接)**:
+| 步骤 | cold | warm | 性质 |
+|---|---|---|---|
+| embed query | ~1s | ~1s | 第三方 API (MiniMax embo-01), 不可压缩 |
+| retrieval | ~0.5s | ~0.5s | 暴力 cosine, topK=5, 已最小 |
+| LLM chat | **~20s** | **~20s** | **MiniMax Qwen2.5-7B, LLM API 推理性质, 不可压缩** |
+| NLI forward | 1.9s | < 500ms | 本地 onnx, 已最优 (P6) |
+| **总** | **23.4s** | **22s** | |
+
+**理论方案 ROI 评估**:
+
+| 方案 | 预期节省 | 实施成本 | 风险 | 决定 |
+|---|---|---|---|---|
+| **max_tokens safety net (默认 2048)** | 0-2s (防跑飞) | **低** (1 file + 1 env) | **低** (不 truncate 真实答) | ✅ **P7 #5 实施** |
+| NLI 后置 (不阻塞 response) | 1.9s cold / 0.5s warm | **中** (改 minipgm 接收 warning 异步 + audit) | **中** (warning UX 难, 需 SSE / polling) | ⏸️ 等真实用户 NLI reject 数据 |
+| LLM streaming (SSE) | first token 2-3s (UX 大幅提升) | **高** (handler 流式 + minipgm SSE 接收 + NLI 协同) | **高** (前后端大改) | ⏸️ **P8+**, 真要省 21s 主路径 |
+| topK 5→3 | 1-2s | 低 (1 行改) | **中** (影响 NLI 召回) | ❌ 风险大于收益 |
+| contextLines 200→100 | 1-3s | 低 (1 行改) | **中** (LLM 看不到完整 context 瞎编) | ❌ 风险大于收益 |
+| embed 缓存 (per query hash) | ~1s 重复问 | 中 (cache 层) | 低 | ⏸️ 等 chat 重复率数据 |
+| 本地推理 (P8: OMLX Qwen3-4B 接 API) | LLM 20s → 5-10s (本地) | **高** (新 LLM 接入层 + CloudBase 函数连 Mac 网络) | **高** (架构改动) | ⏸️ **P8 candidate**, 长期方案 |
+
+**P7 #5 决定**: 实施 `max_tokens=2048` safety net (P7 #5 commit), 承认 21s 主体 (LLM 20s) 不可压缩, 完整加速等 P8 streaming 或本地推理。state doc §7 #6 状态从 ⏸️ P1 → ✅ PARTIAL (safety net 实施, 全加速等 P8)。
 
 ## 8. ⚠️ 副发现 (P4 #3 + P6 集成教训)
 

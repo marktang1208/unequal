@@ -39,6 +39,8 @@ export interface AppEnv {
   /** CP-7-D #1: 抽到 env；未来切换 model 不用改代码 */
   LLM_MODEL: string;
   EMBED_MODEL: string;
+  /** P7 #5: LLM max_tokens safety net (默认 2048) */
+  LLM_MAX_TOKENS: number;
 
   // CloudBase specific (auto-injected by runtime)
   TCB_ENV?: string;
@@ -109,6 +111,10 @@ function validateEnvObject(source: NodeJS.ProcessEnv | Record<string, string | u
     // CP-7-D #1: defaults 防 drift；user 改 LLM_MODEL / EMBED_MODEL env 不需改代码
     LLM_MODEL: source.LLM_MODEL ?? LLM_MODEL_DEFAULT,
     EMBED_MODEL: source.EMBED_MODEL ?? EMBED_MODEL_DEFAULT,
+
+    // P7 #5: chat 加速 — LLM max_tokens safety net (防 LLM 跑飞 4K+ 答)
+    // 默认 2048 覆盖绝大多数 chat 长答, 极端长答可由 handler 显式 maxTokens override
+    LLM_MAX_TOKENS: parseInt(source.LLM_MAX_TOKENS ?? "2048", 10),
 
     TCB_ENV: source.TCB_ENV,
 

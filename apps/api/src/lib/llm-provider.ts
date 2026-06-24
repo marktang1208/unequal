@@ -27,6 +27,8 @@ export interface ChatRequest {
   temperature?: number;
   /** 可选 override；默认走 env.LLM_MODEL */
   model?: string;
+  /** P7 #5: LLM max_tokens (默认 env.LLM_MAX_TOKENS=2048) */
+  maxTokens?: number;
 }
 
 export interface ChatResponse {
@@ -58,16 +60,23 @@ export function getChatProvider(): ChatProvider {
   const apiKey = env.MINIMAX_API_KEY;
   _chat = {
     async chat(req: ChatRequest): Promise<ChatResponse> {
-      const res = await fetch(`${baseUrl}/chat/completions`, {
+      // P7 #5: max_tokens safety net — 每次 chat() 调 getEnv() 取最新 LLM_MAX_TOKENS
+      // 避免单例闭包锁住 test 或 hot-reload 改 env 后的旧值
+      const envNow = getEnv();
+      // fallback 2048: 防止 env.LLM_MAX_TOKENS 未设 (legacy deploy) 或 mock test
+      const defaultMaxTokens = envNow.LLM_MAX_TOKENS ?? 2048;
+      const model = req.model ?? envNow.LLM_MODEL;
+      const res = await fetch(`${envNow.MINIMAX_BASE_URL}/chat/completions`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          authorization: `Bearer ${apiKey}`,
+          authorization: `Bearer ${envNow.MINIMAX_API_KEY}`,
         },
         body: JSON.stringify({
-          model: req.model ?? env.LLM_MODEL,
+          model,
           messages: req.messages,
           temperature: req.temperature ?? 0.3,
+          max_tokens: req.maxTokens ?? defaultMaxTokens,
         }),
       });
       if (!res.ok) {
