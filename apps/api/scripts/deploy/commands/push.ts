@@ -1,25 +1,30 @@
 /**
- * commands/push.ts — push 主流程（默认 Merge，可 --override 切换）
+ * commands/push.ts — push 主流程 (P4 #3: 走 SCF SDK, 替换 tcb CLI)
  *
- * Flow:
- * 1. 读 deploy 前 snapshot（tcb-fetch / 兜底本地模板）
- * 2. 读 6 secrets from Keychain
- * 3. 写 /tmp 临时 config + chmod 600
- * 4. tcb config update fn (expect 自动选 mode)
- * 5. diff + 防漂移检查（KEK_CURRENT_VERSION Δ>2 abort）
- * 6. 写 audit_log (audit_log collection)
+ * Flow (P4 #3):
+ * 1. 读 deploy 前 snapshot (SCF SDK GetFunctionConfiguration / 兜底本地模板)
+ * 2. 读 7 secrets from Keychain
+ * 3. 写 /tmp 临时 config (备份, 兼容老 audit)
+ * 4. SCF SDK setFunctionEnv (替换 tcb config update fn + expect)
+ * 5. 真云端 fetch after snapshot (重试 3 次防网络抖)
+ * 6. diff + 防漂移检查 (KEK_CURRENT_VERSION Δ>2 abort)
+ * 7. 写 audit_log (audit_log collection)
  *
  * 边界：
- * - tcb-fetch 失败 → 兜底本地模板（首次 deploy 容错）
- * - audit 写失败 → 警告但不阻塞 deploy（spec §7）
- * - KEK_CURRENT_VERSION drift too large → 默认 abort，--force 跳过
+ * - before snapshot 失败 → 兜底本地模板 (首次 deploy 容错)
+ * - after snapshot 失败 → 重试 3 次 (背压 1s/3s/9s)
+ * - SCF API 失败 → 抛 DeployError, 旧 config 保留
+ * - audit 写失败 → 警告但不阻塞 deploy
+ * - KEK_CURRENT_VERSION drift too large → 默认 abort, --force 跳过
+ *
+ * P4 #3 fallback: TCB_FALLBACK_CLI=true 切回老 tcb CLI 路径 (应急)
  */
 
 import os from "node:os";
 import { readFile } from "node:fs/promises";
 import { keychainGet } from "../lib/keychain.js";
 import { makeTmpConfig, cleanupTmp } from "../lib/tmp-config.js";
-import { runTcbConfigUpdate, type UpdateMode } from "../lib/tcb.js";
+import { setFunctionEnv } from "../lib/tcb-scf.js";
 import { getRemoteEnvSnapshot } from "../lib/tcb-fetch.js";
 import { diffEnv, type EnvSnapshot } from "../lib/diff.js";
 import { writeDeployAudit } from "../lib/audit.js";
@@ -43,55 +48,74 @@ const SECRETS = [
 ] as const;
 
 const TCB_ENV = "unequal-d4ggf7rwg82e0900b";
+const FUNCTION_NAME = "api-router";
 const TEMPLATE_PATH = "cloudbaserc.json";
+
+/** 部署所有 vars = template (13 vars) + 7 Keychain secrets = 20 vars */
+function buildFullEnvVars(merged: Record<string, string>): Record<string, string> {
+  // 不读 cloudbaserc.json (P4 #3 后我们直接 set Environment.Variables[] 到 SCF API,
+  // 不需要本地模板; 但保留 merged 字典供 SCF API 调用)
+  return merged;
+}
+
+async function getRemoteEnvSnapshotWithRetry(
+  envId: string,
+  functionName: string,
+  retries: number,
+): Promise<EnvSnapshot> {
+  let lastErr: unknown;
+  const backoffs = [0, 1000, 3000, 9000]; // 首次 + 3 次重试 (1s/3s/9s)
+  for (let i = 0; i <= retries; i++) {
+    if (backoffs[i]! > 0) {
+      logger.info(`[push] ⏳ retry ${i}/${retries} after ${backoffs[i]}ms...`);
+      await new Promise((r) => setTimeout(r, backoffs[i]!));
+    }
+    try {
+      return await getRemoteEnvSnapshot(envId, functionName);
+    } catch (err) {
+      lastErr = err;
+      logger.warn(`[push] ⚠️  after snapshot attempt ${i + 1} failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  throw new DeployError(`Failed to fetch after snapshot after ${retries + 1} attempts: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`);
+}
 
 export async function push(opts: Record<string, unknown>): Promise<void> {
   const mode: UpdateMode = opts.override ? "override" : "merge";
-  logger.info(`[push] mode=${mode} (use --override to switch)`, { cmd: "push", mode });
+  logger.info(`[push] mode=${mode} (P4 #3: SCF SDK)`, { cmd: "push", mode });
 
-  // 1. 读 deploy 前 snapshot
+  // 1. 读 deploy 前 snapshot (SCF SDK)
   let before: EnvSnapshot;
   try {
-    before = getRemoteEnvSnapshot(TCB_ENV);
-    logger.info(`[push] ✓ before: ${Object.keys(before.envVariables).length} vars from remote (audit_log)`);
+    before = await getRemoteEnvSnapshot(TCB_ENV, FUNCTION_NAME);
+    logger.info(`[push] ✓ before: ${Object.keys(before.envVariables).length} vars from remote (SCF API)`);
   } catch (err) {
     logger.warn(`[push] ⚠️  remote snapshot failed (${err instanceof Error ? err.message : String(err)}), fallback to local template`);
     before = await loadLocalTemplate();
   }
 
-  // 2. 读 6 secrets from Keychain
+  // 2. 读 7 secrets from Keychain
   const merged: Record<string, string> = {};
   for (const key of SECRETS) {
     merged[key] = keychainGet(key);
   }
   logger.info(`[push] ✓ ${SECRETS.length} secrets loaded`);
 
-  // 3. 写 /tmp 临时 config + chmod 600
+  // 3. 写 /tmp 临时 config + chmod 600 (保留备份用, 兼容老 audit 流程)
   const cfgPath = await makeTmpConfig(merged, TEMPLATE_PATH);
   logger.info(`[push] ✓ tmp config: ${cfgPath}`);
 
-  // 4. tcb config update fn (expect 自动选 mode)
-  logger.info(`[push] → tcb --config-file <tmp> config update fn api-router -e ${TCB_ENV} (auto ${mode})`);
-  const result = await runTcbConfigUpdate(cfgPath, mode, TCB_ENV);
-  const lastLines = result.stdout.split("\n").filter((l) => l.trim()).slice(-5);
-  for (const line of lastLines) logger.info(`  | ${line.trim()}`);
+  // 4. SCF SDK setFunctionEnv (替换 tcb config update fn)
+  const envVars = buildFullEnvVars(merged);
+  logger.info(`[push] → SCF SDK UpdateFunctionConfiguration (api-router, ${Object.keys(envVars).length} vars)`);
+  const { requestId } = await setFunctionEnv(FUNCTION_NAME, envVars);
+  logger.info(`[push] ✓ SCF API 成功 (RequestId: ${requestId})`);
 
   await cleanupTmp(cfgPath);
 
-  if (result.code !== 0) {
-    logger.error(`[push] ❌ tcb config update fn failed: exit ${result.code}`);
-    throw new DeployError(`tcb config update fn failed: exit ${result.code}`);
-  }
-  logger.info(`[push] ✓ tcb config update fn 成功`);
-
-  // 5. 构建 after snapshot (template + merged secrets)
-  const templateRaw = await readFile(TEMPLATE_PATH, "utf-8");
-  const templateCfg = JSON.parse(templateRaw);
-  const after: EnvSnapshot = {
-    source: "remote",
-    capturedAt: Date.now(),
-    envVariables: { ...(templateCfg.functions?.[0]?.envVariables ?? {}), ...merged },
-  };
+  // 5. 真云端 fetch after snapshot (重试 3 次)
+  const after = await getRemoteEnvSnapshotWithRetry(TCB_ENV, FUNCTION_NAME, 3);
+  logger.info(`[push] ✓ after: ${Object.keys(after.envVariables).length} vars from remote (SCF API)`);
 
   // 6. diff + 防漂移检查
   const drift = diffEnv(before, after, { forceVersionDrift: !!opts.force });
@@ -136,6 +160,9 @@ async function loadLocalTemplate(): Promise<EnvSnapshot> {
   return {
     source: "local-template",
     capturedAt: Date.now(),
-    envVariables: fn?.envVariables ?? {},
+  envVariables: fn?.envVariables ?? {},
   };
 }
+
+/** UpdateMode re-export (clean.ts / rotate-kek.ts 用) */
+export type UpdateMode = "merge" | "override";

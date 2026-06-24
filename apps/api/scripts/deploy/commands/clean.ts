@@ -8,13 +8,14 @@
 import os from "node:os";
 import { readFile } from "node:fs/promises";
 import { makeTmpConfig, cleanupTmp } from "../lib/tmp-config.js";
-import { runTcbConfigUpdate } from "../lib/tcb.js";
+import { setFunctionEnv } from "../lib/tcb-scf.js";
 import { writeDeployAudit } from "../lib/audit.js";
 import { logger } from "../lib/logger.js";
 import { DeployError } from "../lib/errors.js";
 import type { EnvSnapshot } from "../lib/diff.js";
 
 const TCB_ENV = "unequal-d4ggf7rwg82e0900b";
+const FUNCTION_NAME = "api-router";
 const TEMPLATE_PATH = "cloudbaserc.json";
 
 export async function clean(opts: Record<string, unknown>): Promise<void> {
@@ -33,19 +34,13 @@ export async function clean(opts: Record<string, unknown>): Promise<void> {
   const cfgPath = await makeTmpConfig({}, TEMPLATE_PATH);
   logger.info(`[clean] ✓ tmp config: ${cfgPath} (7 vars)`);
 
-  // clean 必须 Override（Merge 会保留 secrets）
-  logger.info(`[clean] → tcb --config-file <tmp> config update fn api-router -e ${TCB_ENV} (auto override)`);
-  const result = await runTcbConfigUpdate(cfgPath, "override", TCB_ENV);
-  const lastLines = result.stdout.split("\n").filter((l) => l.trim()).slice(-5);
-  for (const line of lastLines) logger.info(`  | ${line.trim()}`);
+  // clean 必须 Override (Merge 会保留 secrets) — 但 SCF API 是 set 操作 (atomic), 直接传 7 vars
+  const cleanVars: Record<string, string> = before.envVariables;
+  logger.info(`[clean] → SCF SDK UpdateFunctionConfiguration (api-router, ${Object.keys(cleanVars).length} vars)`);
+  const { requestId } = await setFunctionEnv(FUNCTION_NAME, cleanVars);
+  logger.info(`[clean] ✓ SCF API 成功 (RequestId: ${requestId})`);
 
   await cleanupTmp(cfgPath);
-
-  if (result.code !== 0) {
-    logger.error(`[clean] ❌ tcb config update fn failed: exit ${result.code}`);
-    throw new DeployError(`tcb config update fn failed: exit ${result.code}`);
-  }
-  logger.info(`[clean] ✓ secrets cleared`);
 
   // 写 audit_log
   if (!opts["skip-audit"]) {
