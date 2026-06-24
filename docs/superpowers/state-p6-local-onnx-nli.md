@@ -138,7 +138,7 @@ pnpm deploy push (SCF SDK) → 23 vars atomic set, audit_log 写入
 | `apps/api/src/lib/nli/get-provider.ts` | import OnnxNliProvider + createNliCosDownloader; onnx 路由块; 自动从 env 创建 downloader (opts.onnxDownloadFromCos 未注入时); 5min cache + 10-timeout 永久降级 (不变) |
 | `apps/api/scripts/deploy-build.ts` | esbuild external 加 onnxruntime-node / sharp / pdf-parse / mammoth (native binary); FUNC_DIR 同步 nli-assets/; package.json 加 onnxruntime-node@^1.27.0 |
 | `apps/api/scripts/deploy/commands/push.ts` | SECRETS 列表 7 → 9 (新增 CLOUDBASE_SECRET_ID/KEY); 注释 14 + 9 = 23 vars |
-| `apps/api/package.json` | onnxruntime-node@^1.27.0 + @huggingface/transformers (unused, 真接没用, 待清理) |
+| `apps/api/package.json` | onnxruntime-node@^1.27.0 (仅此一个 P6 新增 dep; `@huggingface/transformers` 从未加 — 是 transitive from onnx 工具链, 在 node_modules/.pnpm 存在但 package.json 无 direct dep) |
 | `apps/api/src/lib/nli/__tests__/get-provider.test.ts` | 8 新 case (onnx 路由 + 缺 env vars + 5min cache + backward compat + COS downloader 注入) |
 
 ### 3.3 删除 (3 files, P5 → P6 过渡)
@@ -197,7 +197,7 @@ pnpm -F api deploy:status  # NLI_PROVIDER=onnx + 5 NLI vars + 7 secrets + 9 stan
 1. **CloudBase COS upload**: tcb CLI 3.5.7 用 `tcb fn deploy` 部署 code 时会 wipe secrets (P4 #3 已知), 必须 deploy → push 顺序
 2. **Cold start 延迟**: 第一次 verify 需下载 79MB 模型 + ort session init, 总 ~1.9s (CloudBase 函数内存 256MB 限制下, download 是主要耗时)
 3. **CLOUDBASE_* env vars 暴露**: 现在云端 env vars 含 CLOUDBASE_SECRET_ID/KEY (Keychain 注入), 但 admin 端点 IP allowlist ***REMOVED***.0/24 已锁, 风险可接受
-4. **@huggingface/transformers 残留**: package.json 加了但 P6 改用 onnxruntime-node 不再需要, 待 v2 follow-up 清理
+4. **`@huggingface/transformers` 残留 = 误判**: state-p6 v1 (写时) 错误声称 package.json 加了此依赖, 实际 P6 全程只用 onnxruntime-node。P7 follow-up #2 验证时确认: `apps/api/package.json` 11 个 deps 无 huggingface, pnpm-lock.yaml 无 huggingface/xenova direct dep。node_modules/.pnpm 下有 `@huggingface+jinja` 和 `@xenova+transformers` 仅为 transitive (通过 onnx 工具链拉的, 跟代码无 import 关系)。**结论**: 无需清理, 已修正 state doc + memory。
 5. **placeholder user 测不出 NLI 真接**: DEFAULT_USER_ID=01H0000000000000000000000 不存在, retrieve chunks 失败 → NLI hypothesis 空 → score=0 → runtime_error (failOpen 兜底 OK)
 6. **真接 NLI 完整闭环需真用户**: admin token login 用 DEFAULT_USER_ID, 无 wx code 创不了真用户 (需要 mini program 端真接测试)
 7. **manual sync cloudbaserc.json → miniprogram path**: tcb fn deploy 用 `--dir` 指向 miniprogram path, 但读 cloudbaserc.json (不带 dot 那个) 拿 env vars. P6 真接手动同步 (template + 9 Keychain secrets → 23 vars). **v2 follow-up**: deploy-build.ts 自动同步
@@ -206,10 +206,10 @@ pnpm -F api deploy:status  # NLI_PROVIDER=onnx + 5 NLI vars + 7 secrets + 9 stan
 
 | # | 任务 | 状态 |
 |---|---|---|
-| 1 | **P6 本地 ONNX NLI** | ✅ **PASS** (commit `?`) — 14 commits + 307 tests + 真接 6 步 |
-| 2 | deploy pipeline 自动顺序 (`tcb fn deploy` + `pnpm deploy push` 一条命令) | ⏸️ P1 |
+| 1 | **P6 本地 ONNX NLI** | ✅ **PASS** (`f252367` + `a9d67b2` + `8b4863b` + `8832d3a` + `6ac7030` = 5 commits) — 307 tests + 真接 6 步 |
+| 2 | deploy pipeline 自动顺序 (`tcb fn deploy` + `pnpm deploy push` 一条命令) | ✅ **PASS** (commit `9872392`) — `pnpm -F api deploy:full` 三步串行 + 失败恢复矩阵 |
 | 3 | 真用户 + 真 chunks NLI 真接 (placeholder user 测不出 hypothesis 非空场景) | ⏸️ P1 |
-| 4 | clean up `@huggingface/transformers` 残留 (package.json) | ⏸️ P1 |
+| 4 | clean up `@huggingface/transformers` 残留 (package.json) | ✅ **NO-OP** (P7 follow-up #2 验证: package.json 从未加此 dep, pnpm-lock 也无, state doc 误判已修正 §3.2/§6.4) |
 | 5 | auto-sync miniprogram path cloudbaserc.json from `apps/api/cloudbaserc.json` + Keychain secrets | ⏸️ P1 |
 | 6 | chat 总耗时从 21s 缩短 (主要 LLM 20s, 但可能 query 优化 / 缓存) | ⏸️ P1 |
 | 7 | P5 v1.4 跨轮 NLI (chat 多轮累计 entailment) | ⏸️ P2 |
