@@ -24,7 +24,8 @@
         "SILICONFLOW_BASE_URL": "https://api.siliconflow.cn/v1",
         "NLI_MODEL": "Qwen/Qwen2.5-7B-Instruct",
         "NLI_TIMEOUT_MS": "15000",
-        "NLI_RETRY_COUNT": "1"
+        "NLI_RETRY_COUNT": "1",
+        "NLI_MIN_ANSWER_LEN": "100"
       }
     }
   ]

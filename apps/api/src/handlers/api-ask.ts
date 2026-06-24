@@ -29,6 +29,7 @@ import type { Chunk, Document } from "@unequal/shared/types";
 // P5 NLI 后置验证（spec §3.1 step 9-11）
 import { getProvider as getNliProvider, recordNliFailure, recordNliSuccess } from "../lib/nli/get-provider.js";
 import { applyWarning } from "../lib/nli/apply-warning.js";
+import { shouldSkipNli, getNliMinAnswerLen } from "../lib/nli/should-skip-nli.js";
 import { NliRuntimeError, NliTimeoutError } from "../lib/nli/errors.js";
 import type { NliVerdict } from "../lib/nli/types.js";
 // P5 NLI: audit 写入
@@ -184,6 +185,20 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
     .filter((c): c is CitationOut => c !== null);
 
   // 7. P5 NLI 后置验证：LLM 答案是否被 retrieved chunks 蕴含
+  // P5 v1.2 (spec §2): 短答案 (< NLI_MIN_ANSWER_LEN) 跳过 NLI,无空间塞幻觉
+  const nliMinLen = getNliMinAnswerLen();
+  if (shouldSkipNli(cleaned, nliMinLen)) {
+    // eslint-disable-next-line no-console
+    console.log(`[nli] skipped: answer too short (${cleaned.length} < ${nliMinLen})`);
+    // 不调 NLI,verdict 视同 entailed,无 warning prefix,无 audit
+    const response: AskResponse = {
+      answer,
+      citations,
+      disclaimer: DISCLAIMER_TEXT,
+    };
+    return jsonResponse(response);
+  }
+
   const nliHypothesis = topChunks
     .map((t) => findChunk(t.chunkId)?.content ?? "")
     .filter((s) => s.length > 0)
