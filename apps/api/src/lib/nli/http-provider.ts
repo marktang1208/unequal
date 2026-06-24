@@ -24,22 +24,27 @@ const DEFAULT_RETRY_COUNT = 1;
 const SYSTEM_PROMPT = `你是自然语言推理 (NLI) 专家。任务：判断 hypothesis 的事实内容是否被 premise 蕴含。
 
 返回严格的 JSON object，不要任何其他文字：
-{"entailment": <0-1>, "neutral": <0-1>, "contradiction": <0-1>}
+{"label": "entailment" | "neutral" | "contradiction", "score": <0-1>}
 
-三个分数和必须为 1.0（允许 ±0.01 浮点误差）。
-- entailment: premise 的所有事实细节都被 hypothesis 支持
-- neutral: premise 含 hypothesis 未提及的细节（可能是常识幻觉）
-- contradiction: premise 与 hypothesis 冲突
+判定规则：
+- "entailment": premise 的所有事实细节都被 hypothesis 支持（score 越高越强）
+- "neutral": premise 含 hypothesis 未提及的细节（可能是常识幻觉，score 表示 neutral 置信度）
+- "contradiction": premise 与 hypothesis 冲突（score 越高越强）
 
 示例 1：
 premise: "发烧 38.5 吃 0.4ml/kg 美林"
 hypothesis: "美林剂量标准 0.4ml/kg"
-→ {"entailment": 0.95, "neutral": 0.03, "contradiction": 0.02}
+→ {"label": "entailment", "score": 0.95}
 
 示例 2：
-premise: "X 星人住在仙女座星系"
-hypothesis: "X 星人是 2025 年发现的外星文明"
-→ {"entailment": 0.05, "neutral": 0.15, "contradiction": 0.80}`;
+premise: "发烧 38.5 吃 0.4ml/kg 美林"
+hypothesis: "美林剂量 1.0ml/kg 也安全"
+→ {"label": "contradiction", "score": 0.85}
+
+示例 3：
+premise: "5个月宝宝发烧38.5要观察精神状态"
+hypothesis: "5个月宝宝发烧38.5要观察精神状态。另外可以用温水擦拭物理降温。"
+→ {"label": "neutral", "score": 0.70}`;
 
 interface RawScore {
   entailment: number;
@@ -193,17 +198,76 @@ export class HttpNliProvider implements NliProvider {
     }
 
     const obj = parsed as Record<string, unknown>;
+
+    // 模式 1：{label, score} 格式（Qwen2.5-7B-Instruct 真接表现最稳定）
+    if (typeof obj.label === "string" && typeof obj.score === "number") {
+      return this.labelToScores(obj.label, obj.score);
+    }
+
+    // 模式 2：{entailment, neutral, contradiction} 三 score 格式（spec 设计目标，向后兼容）
     const e = Number(obj.entailment);
     const n = Number(obj.neutral);
     const c = Number(obj.contradiction);
-
-    if (!Number.isFinite(e) || !Number.isFinite(n) || !Number.isFinite(c)) {
-      throw new NliRuntimeError(
-        `HttpNliProvider: invalid scores (e=${e}, n=${n}, c=${c})`,
-      );
+    if (Number.isFinite(e) || Number.isFinite(n) || Number.isFinite(c)) {
+      if (!Number.isFinite(e) || !Number.isFinite(n) || !Number.isFinite(c)) {
+        throw new NliRuntimeError(
+          `HttpNliProvider: invalid three-score (e=${e}, n=${n}, c=${c})`,
+        );
+      }
+      return { entailment: e, neutral: n, contradiction: c };
     }
 
-    return { entailment: e, neutral: n, contradiction: c };
+    // 模式 3：label 字符串但 score 缺失（Qwen 偶发格式 bug，如 `{"label":"contradiction","," ,"score":...}`）
+    //          尝试用 label 字符串做 unit-score 归一化
+    if (typeof obj.label === "string") {
+      return this.labelToScores(obj.label, 0.8);
+    }
+
+    throw new NliRuntimeError(
+      `HttpNliProvider: unrecognized schema (keys=${Object.keys(obj).join(",")})`,
+    );
+  }
+
+  /**
+   * 把 {label, score} 单值映射到三 score 形式。
+   * - label = entailment → e=score, n=(1-score)*0.5, c=(1-score)*0.5
+   * - label = neutral    → n=score, e=(1-score)*0.5, c=(1-score)*0.5
+   * - label = contradiction → c=score, e=(1-score)*0.5, n=(1-score)*0.5
+   * 剩余的两个 label 各分 (1-score)/2，避免 strict sum=1.0 检查失败。
+   */
+  private labelToScores(
+    label: string,
+    score: number,
+  ): { entailment: number; neutral: number; contradiction: number } {
+    const s = Math.max(0, Math.min(1, score));
+    const rest = (1 - s) / 2;
+    const norm = (s: string) => s.toLowerCase().trim();
+    // P5 v1.1 真接发现：Qwen 有时会返缩写 ("ent" / "neu" / "con")，
+    // 以及拼写变体 ("entailments" 等)。最宽容地映射。
+    const l = norm(label);
+    if (
+      l === "entailment" ||
+      l === "entail" ||
+      l === "ent" ||
+      l.startsWith("entail")
+    ) {
+      return { entailment: s, neutral: rest, contradiction: rest };
+    }
+    if (l === "neutral" || l === "neu" || l.startsWith("neutr")) {
+      return { entailment: rest, neutral: s, contradiction: rest };
+    }
+    if (
+      l === "contradiction" ||
+      l === "contra" ||
+      l === "con" ||
+      l === "contradict" ||
+      l.startsWith("contrad")
+    ) {
+      return { entailment: rest, neutral: rest, contradiction: s };
+    }
+    throw new NliRuntimeError(
+      `HttpNliProvider: unknown label "${label}" (expected entailment/neutral/contradiction or short forms ent/neu/con)`,
+    );
   }
 
   private parseAndNormalize(raw: RawScore): NliVerdict["scores"] {

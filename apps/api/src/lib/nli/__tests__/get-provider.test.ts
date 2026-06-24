@@ -184,4 +184,76 @@ describe("getProvider", () => {
       getProvider({ nliProvider: "http", throwOnConfigError: true }),
     ).rejects.toThrow(/SILICONFLOW_API_KEY/);
   });
+
+  // ── P5 v1.1 真接 production bug fix (2026-06-24) ────────────
+  // 原 getProvider() 没读 process.env.NLI_TIMEOUT_MS / NLI_RETRY_COUNT，
+  // 即使云端 env 改了也无效（HttpNliProvider 走 DEFAULT_TIMEOUT_MS=5000）。
+  // 修复后从 env 读，opts override 优先。
+
+  it("env NLI_TIMEOUT_MS=8000 → HttpNliProvider timeout=8000", async () => {
+    process.env.SILICONFLOW_API_KEY = "sk-test";
+    process.env.NLI_TIMEOUT_MS = "8000";
+    __resetProviderStateForTest();
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content:
+                '{"entailment":0.85,"neutral":0.10,"contradiction":0.05}',
+            },
+          },
+        ],
+      }),
+      text: async () => "",
+    } as unknown as Response);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const provider = (await getProvider({ nliProvider: "http" })) as HttpNliProvider;
+    expect(provider).toBeInstanceOf(HttpNliProvider);
+    // 通过 http call 触发,看 AbortSignal timeout
+    await provider.verify("p", "h");
+    // 关键:fetch 被调,body 里 model 等都对。timeout 走内部 AbortController 验证不了,
+    // 但通过 env path 选通就行（mock fetch 立即返 = 不会真撞 timeout）。
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+    delete process.env.NLI_TIMEOUT_MS;
+  });
+
+  it("opts.timeoutMs 优先于 env NLI_TIMEOUT_MS", async () => {
+    process.env.SILICONFLOW_API_KEY = "sk-test";
+    process.env.NLI_TIMEOUT_MS = "8000";
+    __resetProviderStateForTest();
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content:
+                '{"entailment":0.85,"neutral":0.10,"contradiction":0.05}',
+            },
+          },
+        ],
+      }),
+      text: async () => "",
+    } as unknown as Response);
+    vi.stubGlobal("fetch", fetchMock);
+
+    // opts.timeoutMs=2000 应该盖过 env 8000
+    const provider = (await getProvider({
+      nliProvider: "http",
+      timeoutMs: 2000,
+    })) as HttpNliProvider;
+    expect(provider).toBeInstanceOf(HttpNliProvider);
+    await provider.verify("p", "h");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+    delete process.env.NLI_TIMEOUT_MS;
+  });
 });

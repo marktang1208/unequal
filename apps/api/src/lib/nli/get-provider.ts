@@ -55,6 +55,8 @@ export interface GetProviderOptions {
   model?: string;
   /** HttpNliProvider 的 timeout override */
   timeoutMs?: number;
+  /** HttpNliProvider 的 retry count override */
+  retryCount?: number;
 }
 
 /**
@@ -104,11 +106,19 @@ export async function getProvider(opts: GetProviderOptions = {}): Promise<NliPro
     }
 
     try {
+      // P5 v1.1 真接 bug fix (2026-06-24): opts.timeoutMs 默认 undefined 时
+      // HttpNliProvider 走 DEFAULT_TIMEOUT_MS=5000 hardcode，云端 NLI_TIMEOUT_MS=8000 不生效。
+      // 修复：从 env 读 NLI_TIMEOUT_MS / NLI_RETRY_COUNT，opts override 优先。
+      const timeoutMs =
+        opts.timeoutMs ?? parseInt(process.env.NLI_TIMEOUT_MS ?? "5000", 10);
+      const retryCount =
+        opts.retryCount ?? parseInt(process.env.NLI_RETRY_COUNT ?? "1", 10);
       state.provider = new HttpNliProvider(
         apiKey,
         opts.baseUrl,
         opts.model,
-        opts.timeoutMs,
+        timeoutMs,
+        retryCount,
       );
       return state.provider;
     } catch (err) {
