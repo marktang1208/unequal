@@ -21,7 +21,9 @@
  */
 
 import os from "node:os";
-import { readFile } from "node:fs/promises";
+import { readFile, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { keychainGet } from "../lib/keychain.js";
 import { makeTmpConfig, cleanupTmp } from "../lib/tmp-config.js";
 import { setFunctionEnv } from "../lib/tcb-scf.js";
@@ -51,11 +53,28 @@ const TCB_ENV = "unequal-d4ggf7rwg82e0900b";
 const FUNCTION_NAME = "api-router";
 const TEMPLATE_PATH = "cloudbaserc.json";
 
-/** 部署所有 vars = template (13 vars) + 7 Keychain secrets = 20 vars */
-function buildFullEnvVars(merged: Record<string, string>): Record<string, string> {
-  // 不读 cloudbaserc.json (P4 #3 后我们直接 set Environment.Variables[] 到 SCF API,
-  // 不需要本地模板; 但保留 merged 字典供 SCF API 调用)
-  return merged;
+/** 部署所有 vars = template (13 vars) + 7 Keychain secrets = 20 vars
+ *  P4 #3: SCF API set 全 set, 不能再依赖 "Merge 模式保留云端 vars"
+ *  → 必须显式构造 20 vars 字典
+ */
+function buildFullEnvVars(merged: Record<string, string>, templateEnvVars: Record<string, string>): Record<string, string> {
+  return { ...templateEnvVars, ...merged };
+}
+
+function loadTemplateEnvVars(): Record<string, string> {
+  // tsx 跑时 cwd 是 apps/api, cloudbaserc.json 在 repo root
+  const candidates = [
+    TEMPLATE_PATH,
+    join(process.cwd(), "..", "..", TEMPLATE_PATH),
+    join(process.cwd(), "..", TEMPLATE_PATH),
+  ];
+  for (const p of candidates) {
+    if (existsSync(p)) {
+      const cfg = JSON.parse(readFileSync(p, "utf-8"));
+      return cfg.functions?.[0]?.envVariables ?? {};
+    }
+  }
+  return {};
 }
 
 async function getRemoteEnvSnapshotWithRetry(
@@ -106,8 +125,9 @@ export async function push(opts: Record<string, unknown>): Promise<void> {
   logger.info(`[push] ✓ tmp config: ${cfgPath}`);
 
   // 4. SCF SDK setFunctionEnv (替换 tcb config update fn)
-  const envVars = buildFullEnvVars(merged);
-  logger.info(`[push] → SCF SDK UpdateFunctionConfiguration (api-router, ${Object.keys(envVars).length} vars)`);
+  const templateVars = loadTemplateEnvVars();
+  const envVars = buildFullEnvVars(merged, templateVars);
+  logger.info(`[push] → SCF SDK UpdateFunctionConfiguration (api-router, ${Object.keys(envVars).length} vars = ${Object.keys(templateVars).length} template + ${Object.keys(merged).length} secrets)`);
   const { requestId } = await setFunctionEnv(FUNCTION_NAME, envVars);
   logger.info(`[push] ✓ SCF API 成功 (RequestId: ${requestId})`);
 

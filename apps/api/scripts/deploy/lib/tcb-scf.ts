@@ -13,14 +13,19 @@
  * atomic: Tencent API 保证全 set 或全不 set (不会出现部分成功)
  */
 
-import { Client } from "tencentcloud-sdk-nodejs-scf";
+// SCF SDK 4.1.168 导出路径 (CommonJS, ESM 嵌套 default.v20180416.Client)
+// @ts-expect-error - SDK 子路径类型, 但运行时存在
+import ScfModule from "tencentcloud-sdk-nodejs-scf/tencentcloud/services/scf/v20180416/index.js";
 // @ts-expect-error - @types/tencentcloud-sdk-nodejs-common 缺失, 但 SDK 自带类型
-import { Credential } from "tencentcloud-sdk-nodejs-common";
+import { BasicCredential } from "tencentcloud-sdk-nodejs-common";
+
+const { Client } = ScfModule.default?.v20180416 ?? ScfModule.v20180416;
 import { keychainGet } from "./keychain.js";
 import { DeployError } from "./errors.js";
 
 const TCB_REGION = "ap-shanghai";
-const TCB_NAMESPACE = "default";
+// tcb CLI 内部用 envId 当 Namespace (CloudBase 的隔离机制), 不是 SCF 标准 "default"
+const TCB_NAMESPACE = "unequal-d4ggf7rwg82e0900b";
 
 export class ScfAuthError extends DeployError {
   constructor(msg: string) {
@@ -48,14 +53,16 @@ export function initScfClient(): Client {
   if (!secretKey || !secretKey.trim()) {
     throw new ScfAuthError("TCB_SECRET_KEY not found in keychain; run `tcb login` and add via `security add-generic-password -s unequal:api-router:KEY -a TCB_SECRET_KEY -w <key>`");
   }
-  const cred = new Credential(secretId, secretKey);
-  return new Client(cred, TCB_REGION);
+  const credential = new BasicCredential(secretId, secretKey);
+  return new Client({ credential, region: TCB_REGION });
 }
 
-/** 真云端 fetch（替换 tcb config pull fn 解析） */
+/** 真云端 fetch（替换 tcb config pull fn 解析）
+ *  SDK 4.1.168 方法名是 GetFunction (不是 GetFunctionConfiguration)
+ */
 export async function getFunctionEnv(functionName: string): Promise<EnvVars> {
   const client = initScfClient();
-  const resp = await client.GetFunctionConfiguration({
+  const resp = await client.GetFunction({
     FunctionName: functionName,
     Namespace: TCB_NAMESPACE,
   });

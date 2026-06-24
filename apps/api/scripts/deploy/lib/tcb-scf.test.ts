@@ -13,27 +13,29 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // vi.hoisted 让 mock 在 vi.mock factory 中可用（避免 TDZ）
-const { mockClientCtor, mockGetFunctionConfiguration, mockUpdateFunctionConfiguration } = vi.hoisted(() => {
-  const mockGetFunctionConfiguration = vi.fn();
+const { mockClientCtor, mockGetFunction, mockUpdateFunctionConfiguration } = vi.hoisted(() => {
+  const mockGetFunction = vi.fn();
   const mockUpdateFunctionConfiguration = vi.fn();
   const mockClientInstance = {
-    GetFunctionConfiguration: mockGetFunctionConfiguration,
+    GetFunction: mockGetFunction,
     UpdateFunctionConfiguration: mockUpdateFunctionConfiguration,
   };
   const mockClientCtor = vi.fn().mockImplementation(() => mockClientInstance);
   return {
     mockClientCtor,
-    mockGetFunctionConfiguration,
+    mockGetFunction,
     mockUpdateFunctionConfiguration,
   };
 });
 
-vi.mock("tencentcloud-sdk-nodejs-scf", () => ({
-  Client: mockClientCtor,
+vi.mock("tencentcloud-sdk-nodejs-scf/tencentcloud/services/scf/v20180416/index.js", () => ({
+  default: { v20180416: { Client: mockClientCtor } },
+  v20180416: { Client: mockClientCtor },  // 兼容命名导入
 }));
 
 vi.mock("tencentcloud-sdk-nodejs-common", () => ({
-  Credential: vi.fn().mockImplementation((id, key) => ({ id, key })),
+  BasicCredential: vi.fn().mockImplementation((id, key) => ({ id, key })),
+  Credential: vi.fn().mockImplementation((id, key) => ({ id, key })),  // 兼容老命名
 }));
 
 const { keychainGet: mockKeychainGet } = vi.hoisted(() => ({
@@ -50,7 +52,7 @@ import { DeployError } from "./errors.js";
 describe("tcb-scf", () => {
   beforeEach(() => {
     mockClientCtor.mockClear();
-    mockGetFunctionConfiguration.mockReset();
+    mockGetFunction.mockReset();
     mockUpdateFunctionConfiguration.mockReset();
     mockKeychainGet.mockReset();
   });
@@ -68,20 +70,24 @@ describe("tcb-scf", () => {
       expect(() => initScfClient()).toThrow(/TCB_SECRET_KEY.*not found/);
     });
 
-    it("3. 凭证齐 → 返回 Client 实例, Credential(id, key) 注入", () => {
+    it("3. 凭证齐 → 返回 Client 实例, Client({credential, region}) 注入", () => {
       mockKeychainGet.mockImplementation((k) => (k === "TCB_SECRET_ID" ? "AKID-test" : "secret-test"));
       const client = initScfClient();
       expect(client).toBeDefined();
       expect(mockClientCtor).toHaveBeenCalledTimes(1);
-      const credArg = mockClientCtor.mock.calls[0]?.[0];
-      expect(credArg).toMatchObject({ id: "AKID-test", key: "secret-test" });
+      const cfgArg = mockClientCtor.mock.calls[0]?.[0];
+      // SDK 4.1.168 用 Client({credential, region}) 单参数, 不是 (cred, region)
+      expect(cfgArg).toMatchObject({
+        credential: { id: "AKID-test", key: "secret-test" },
+        region: "ap-shanghai",
+      });
     });
   });
 
   describe("getFunctionEnv", () => {
     it("4. SDK 返 Environment.Variables[] → 解析为 Record<string,string>", async () => {
       mockKeychainGet.mockImplementation((k) => (k === "TCB_SECRET_ID" ? "id" : "key"));
-      mockGetFunctionConfiguration.mockResolvedValueOnce({
+      mockGetFunction.mockResolvedValueOnce({
         Environment: {
           Variables: [
             { Key: "ADMIN_TOKEN", Value: "tok-123" },
@@ -96,29 +102,29 @@ describe("tcb-scf", () => {
         JWT_SECRET: "jwt-456",
         NLI_PROVIDER: "http",
       });
-      expect(mockGetFunctionConfiguration).toHaveBeenCalledWith({
+      expect(mockGetFunction).toHaveBeenCalledWith({
         FunctionName: "api-router",
-        Namespace: "default",
+        Namespace: "unequal-d4ggf7rwg82e0900b",
       });
     });
 
     it("5. SDK 抛错 → 透传 (不 wrap)", async () => {
       mockKeychainGet.mockImplementation((k) => (k === "TCB_SECRET_ID" ? "id" : "key"));
       const sdkError = new Error("SDK network error");
-      mockGetFunctionConfiguration.mockRejectedValueOnce(sdkError);
+      mockGetFunction.mockRejectedValueOnce(sdkError);
       await expect(getFunctionEnv("api-router")).rejects.toThrow("SDK network error");
     });
 
     it("6. Environment.Variables 缺 → 返空对象 (不抛)", async () => {
       mockKeychainGet.mockImplementation((k) => (k === "TCB_SECRET_ID" ? "id" : "key"));
-      mockGetFunctionConfiguration.mockResolvedValueOnce({ Environment: undefined });
+      mockGetFunction.mockResolvedValueOnce({ Environment: undefined });
       const result = await getFunctionEnv("api-router");
       expect(result).toEqual({});
     });
 
     it("7. Variable.Value 缺 → 视为空字符串", async () => {
       mockKeychainGet.mockImplementation((k) => (k === "TCB_SECRET_ID" ? "id" : "key"));
-      mockGetFunctionConfiguration.mockResolvedValueOnce({
+      mockGetFunction.mockResolvedValueOnce({
         Environment: { Variables: [{ Key: "FOO" }] },
       });
       const result = await getFunctionEnv("api-router");
@@ -135,7 +141,7 @@ describe("tcb-scf", () => {
       expect(result.requestId).toBe("req-abc-123");
       expect(mockUpdateFunctionConfiguration).toHaveBeenCalledWith({
         FunctionName: "api-router",
-        Namespace: "default",
+        Namespace: "unequal-d4ggf7rwg82e0900b",
         Environment: {
           Variables: [
             { Key: "ADMIN_TOKEN", Value: "tok" },
