@@ -26,7 +26,11 @@ import { writeDeployAudit } from "../lib/audit.js";
 import { logger } from "../lib/logger.js";
 import { DeployError, DiffError } from "../lib/errors.js";
 
-/** 7 个 secrets（顺序敏感，IP allowlist 是 config 不是 key） */
+/** 7 个 secrets（顺序敏感，IP allowlist 是 config 不是 key）
+ *  ADMIN_IP_ALLOWLIST 推荐 CIDR 格式（如 ***REMOVED***.0/24），
+ *  避免 IP 漂移时反复更新。CloudBase 支持多 CIDR 逗号分隔。
+ *  实际 CIDR 解析在 src/lib/admin-ip-allowlist.ts (P0-#1)。
+ */
 const SECRETS = [
   "ADMIN_TOKEN",
   "JWT_SECRET",
