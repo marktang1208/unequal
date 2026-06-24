@@ -11,10 +11,16 @@
  *   - 模型文件 (nli-MiniLM2-L6-H768-quint8_avx2.onnx) 79MB → CloudBase 50MB 上传限制 → 走 COS
  *   - 但本地 fallback (dev/CI) 也支持 → bundle 里也带一份
  *   - onnx-provider.ts 在 dirname(localModelPath) 找 vocab.json / merges.txt / special_tokens_map.json
+ *
+ * P7 follow-up: 同步 cloudbaserc.json (template + 9 Keychain secrets → minipgm path)
+ *   - 改 apps/api/cloudbaserc.json 一处生效, 不再 manual sync
+ *   - Keychain secrets 永远最新 (部署时读 Keychain)
+ *   - minipgm path cloudbaserc.json 已在 .gitignore (含明文 secrets, 不入库)
  */
 import { build } from "esbuild";
 import { writeFileSync, mkdirSync, readFileSync, existsSync, rmSync, cpSync } from "node:fs";
 import { join, dirname } from "node:path";
+import { syncCloudbasrcFromTemplate } from "./deploy/lib/sync-cloudbasrc.js";
 
 const APP_ROOT = join(process.cwd(), "../..");
 const FUNC_DIR = join(APP_ROOT, "apps/miniprogram/cloudfunctions/api-router");
@@ -106,3 +112,16 @@ if (existsSync(NLI_ASSETS_SRC)) {
 } else {
   console.warn(`⚠️  scripts/nli-assets/ 不存在,跳过 (跑 pnpm -F api download-nli-model 下载)`);
 }
+
+// ── P7 follow-up: 同步 cloudbaserc.json (template + 9 Keychain secrets → minipgm path) ───
+// 解决 P6 真接时的 manual sync 问题: 改 apps/api/cloudbaserc.json 一处生效
+//   - template: apps/api/cloudbaserc.json (含 14 vars, source of truth)
+//   - secrets: 9 Keychain secrets (跟 push.ts SECRETS 一致, 见 lib/sync-cloudbasrc.ts)
+//   - target: apps/miniprogram/cloudfunctions/api-router/cloudbaserc.json (已 .gitignore)
+const CLOUDBASERC_TEMPLATE = join(process.cwd(), "cloudbaserc.json");
+const CLOUDBASERC_TARGET = join(FUNC_DIR, "cloudbaserc.json");
+await syncCloudbasrcFromTemplate({
+  templatePath: CLOUDBASERC_TEMPLATE,
+  targetPath: CLOUDBASERC_TARGET,
+});
+console.log(`✅ cloudbaserc.json synced → ${CLOUDBASERC_TARGET}`);
