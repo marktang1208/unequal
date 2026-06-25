@@ -26,6 +26,8 @@ import { COLLECTIONS } from "../lib/collections.js";
 import { whereQuery } from "../lib/db.js";
 import { parseAnswerSegments } from "./api-chat.js";
 import type { Chunk, Document } from "@unequal/shared/types";
+// P8: pgvector retrieval (HNSW 索引 topK*10=50 candidates, failOpen → nosql 暴力 cosine)
+import { getPgVectorStore } from "../lib/retrieval/pg-vector-store.js";
 // P5 NLI 后置验证（spec §3.1 step 9-11）
 import { getProvider as getNliProvider, recordNliFailure, recordNliSuccess } from "../lib/nli/get-provider.js";
 import { applyWarning } from "../lib/nli/apply-warning.js";
@@ -90,24 +92,76 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
   // CloudBase 单次回包 1MB 上限；chunk 平均 87KB（1536 floats + content），1MB / 87KB ≈ 12 chunks 安全上限。
   // 留 1.5x buffer → limit=8（覆盖 topK=5 + 部分候选）。
   // WARN：production 1963 chunks 时，仅 8 个被检索，准确度低；v2 需上向量数据库（spec §6 留路）
-  const chunks = await whereQuery<Chunk>(COLLECTIONS.chunk, { userId: env.DEFAULT_USER_ID }, { limit: 8 });
-  if (chunks.length === 8) {
-    // eslint-disable-next-line no-console
-    console.warn(`[api-ask] chunk retrieval hit 8 limit; user ${env.DEFAULT_USER_ID} has more chunks (production 1963) - retrieval 准确度受限; v2 需上向量 DB`);
+  // P8: VECTOR_STORE=pg → PG vector store (topK*10=50 candidates + scoreThreshold 推到 SQL); nosql → 暴力 cosine (P7 行为)
+  let chunksWithEmb: ChunkWithEmbedding[];
+  if (env.VECTOR_STORE === "pg") {
+    try {
+      const pgStore = await getPgVectorStore();
+      const cands = await pgStore.queryTopK({
+        userId: env.DEFAULT_USER_ID,
+        queryVector: queryVec,
+        topK: 5,
+        scoreThreshold: 0.3,
+        ...(sourceTypes ? { sourceTypes } : {}),
+        ...(excludeSourceIds ? { excludeSourceIds } : {}),
+      });
+      chunksWithEmb = cands.map((c) => ({
+        id: (c as any).id ?? "",
+        _id: (c as any).id,
+        documentId: c.documentId,
+        sourceId: c.sourceId,
+        userId: c.userId,
+        idx: c.idx,
+        content: c.content,
+        embedding: c.embedding,
+        tokenCount: 0,
+        trustLevel: c.trustLevel,
+        createdAt: c.createdAt,
+      }));
+    } catch (err) {
+      // failOpen: PG 失败 → 落回暴力 cosine (跟 P7 行为一致)
+      // eslint-disable-next-line no-console
+      console.warn(`[api-ask] PG retrieval failOpen: ${err instanceof Error ? err.message : String(err)}`);
+      const chunks = await whereQuery<Chunk>(COLLECTIONS.chunk, { userId: env.DEFAULT_USER_ID }, { limit: 8 });
+      if (chunks.length === 8) {
+        // eslint-disable-next-line no-console
+        console.warn(`[api-ask] chunk retrieval hit 8 limit; user ${env.DEFAULT_USER_ID} has more chunks (production 1963) - retrieval 准确度受限; v2 需上向量 DB`);
+      }
+      chunksWithEmb = chunks.map((c) => ({
+        id: c.id,
+        _id: c._id,
+        documentId: c.documentId,
+        sourceId: c.sourceId,
+        userId: c.userId,
+        idx: c.idx,
+        content: c.content,
+        embedding: c.embedding,
+        tokenCount: c.tokenCount,
+        trustLevel: c.trustLevel,
+        createdAt: c.createdAt,
+      }));
+    }
+  } else {
+    // VECTOR_STORE=nosql (P7 现状)
+    const chunks = await whereQuery<Chunk>(COLLECTIONS.chunk, { userId: env.DEFAULT_USER_ID }, { limit: 8 });
+    if (chunks.length === 8) {
+      // eslint-disable-next-line no-console
+      console.warn(`[api-ask] chunk retrieval hit 8 limit; user ${env.DEFAULT_USER_ID} has more chunks (production 1963) - retrieval 准确度受限; v2 需上向量 DB`);
+    }
+    chunksWithEmb = chunks.map((c) => ({
+      id: c.id,
+      _id: c._id,
+      documentId: c.documentId,
+      sourceId: c.sourceId,
+      userId: c.userId,
+      idx: c.idx,
+      content: c.content,
+      embedding: c.embedding,
+      tokenCount: c.tokenCount,
+      trustLevel: c.trustLevel,
+      createdAt: c.createdAt,
+    }));
   }
-  const chunksWithEmb: ChunkWithEmbedding[] = chunks.map((c) => ({
-    id: c.id,
-    _id: c._id,
-    documentId: c.documentId,
-    sourceId: c.sourceId,
-    userId: c.userId,
-    idx: c.idx,
-    content: c.content,
-    embedding: c.embedding,
-    tokenCount: c.tokenCount,
-    trustLevel: c.trustLevel,
-    createdAt: c.createdAt,
-  }));
 
   const top = await searchChunks({
     fetchChunksByUser: async () => chunksWithEmb,
