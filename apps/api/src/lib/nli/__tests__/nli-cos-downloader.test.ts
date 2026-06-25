@@ -228,4 +228,31 @@ describe("createNliCosDownloader (runtime)", () => {
       }
     }
   });
+
+  // P9 真接 follow-up #10: Cold start race condition retry
+  it("downloadFromCos: getTempFileURL 前 2 次 no tempFileURL → 第 3 次 success (retry 生效)", async () => {
+    const localPath = join(tmpDir, "model-retry.onnx");
+    let attempt = 0;
+    const mockApp = {
+      getTempFileURL: vi.fn().mockImplementation(async () => {
+        attempt++;
+        if (attempt < 3) {
+          // 前 2 次: 模拟 cold start race condition
+          return [{ fileID: "test", error: { code: "STORAGE_INIT", message: "no tempFileURL" } }];
+        }
+        // 第 3 次: SDK init 完, 返真 tempFileURL
+        return [{ fileID: "test", tempFileURL: "data:text/plain;base64,dGVzdA==" }];
+      }),
+    };
+    const dl = createNliCosDownloader({
+      localPath,
+      cosKey: "nli-model/test.onnx",
+      envId: "test-env",
+      testApp: mockApp as never,
+      skipSdk: true,
+    });
+    await dl.downloadFromCos();
+    expect(attempt).toBe(3);
+    expect(existsSync(localPath)).toBe(true);
+  });
 });

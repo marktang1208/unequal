@@ -137,6 +137,26 @@ async function main(): Promise<void> {
   const results = await uploadNliModel({ app });
   const totalSize = results.reduce((sum, r) => sum + r.sizeBytes, 0);
   console.log(`\n✅ Done — ${results.length} files, ${(totalSize / 1024 / 1024).toFixed(1)}MB total`);
+
+  // P8 真接 follow-up #8: 写 NLI_MODEL_COS_KEY = 完整 fileID 到 cloudbaserc.json
+  // 根因: SDK uploadFile 返 fileID = cloud://<envId>.<bucket-suffix>/<path>
+  // 旧 NLI downloader 拼 cloud://<envId>/<cosKey> 找不到 (少 bucket suffix)
+  // 修法: cloudbaserc.json 存完整 fileID, downloader 检测 cloud:// 前缀直接用
+  const onnxResult = results.find((r) => r.fileName === "nli-MiniLM2-L6-H768-quint8_avx2.onnx");
+  if (onnxResult) {
+    const cloudbasrcPath = join(__dirname, "..", "cloudbaserc.json");
+    const cfg = JSON.parse(require("node:fs").readFileSync(cloudbasrcPath, "utf8"));
+    const fn = cfg.functions?.[0];
+    if (fn?.envVariables) {
+      const oldVal = fn.envVariables.NLI_MODEL_COS_KEY;
+      fn.envVariables.NLI_MODEL_COS_KEY = onnxResult.fileID;
+      require("node:fs").writeFileSync(cloudbasrcPath, JSON.stringify(cfg, null, 2) + "\n");
+      console.log(`\n✓ cloudbaserc.json NLI_MODEL_COS_KEY updated:`);
+      console.log(`  old: ${oldVal}`);
+      console.log(`  new: ${onnxResult.fileID}`);
+    }
+  }
+
   console.log(`\nNext: pnpm -F api deploy:push  # deploy with NLI_PROVIDER=onnx + NLI env vars`);
 }
 

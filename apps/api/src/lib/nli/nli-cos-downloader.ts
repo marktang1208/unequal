@@ -68,7 +68,10 @@ export function createNliCosDownloader(opts: NliCosDownloaderOptions = {}): NliC
   const envId = opts.envId ?? DEFAULT_ENV_ID;
   const cosKey = opts.cosKey ?? DEFAULT_COS_KEY;
   const localPath = opts.localPath ?? DEFAULT_LOCAL_PATH;
-  const cloudPath = `cloud://${envId}/${cosKey}`;
+  // P8 真接 follow-up #8: 如果 cosKey 是完整 cloud:// path (cloudbaserc.json 写真实 fileID),
+  // 直接用; 否则按旧约定拼 cloud://${envId}/${cosKey}
+  // 根因: SDK uploadFile 返 fileID = cloud://<envId>.<bucket-suffix>/<path>, 旧约定少 bucket suffix
+  const cloudPath = cosKey.startsWith("cloud://") ? cosKey : `cloud://${envId}/${cosKey}`;
 
   const fetchFromCos = async (): Promise<Buffer> => {
     if (opts.customDownload) {
@@ -100,9 +103,34 @@ export function createNliCosDownloader(opts: NliCosDownloaderOptions = {}): NliC
   return {
     async downloadFromCos(): Promise<void> {
       if (existsSync(localPath)) return; // idempotent
-      const content = await fetchFromCos();
-      mkdirSync(dirname(localPath), { recursive: true });
-      await writeFile(localPath, content);
+      // P9 真接 follow-up #10: Cold start race condition
+      // 根因: CloudBase 函数 cold start 时, cloudbase SDK 内部 token 还没 ready
+      //       → getTempFileURL 返 no tempFileURL → download 失败
+      // 修: 重试 5 次 (间隔 1s, 2s, 3s, 4s 指数退避), 给 SDK 时间完成 init
+      // state-p6 已知 race condition, P8 真接时浮出 (audit_log 记录 failure)
+      // 真接观察: 3 次 retry × 500ms 仍 fail, T2 warm 立即 success → cold init > 1.5s
+      const MAX_RETRY = 5;
+      const RETRY_DELAYS_MS = [1000, 2000, 3000, 4000, 5000];
+      let lastErr: unknown = null;
+      for (let attempt = 1; attempt <= MAX_RETRY; attempt++) {
+        try {
+          const content = await fetchFromCos();
+          mkdirSync(dirname(localPath), { recursive: true });
+          await writeFile(localPath, content);
+          if (attempt > 1) {
+            console.log(`[NliCosDownloader] download succeeded on attempt ${attempt}/${MAX_RETRY}`);
+          }
+          return;
+        } catch (err) {
+          lastErr = err;
+          if (attempt < MAX_RETRY) {
+            const delay = RETRY_DELAYS_MS[attempt - 1] ?? 5000;
+            console.warn(`[NliCosDownloader] download attempt ${attempt}/${MAX_RETRY} failed: ${err instanceof Error ? err.message : String(err)}; retrying in ${delay}ms`);
+            await new Promise((r) => setTimeout(r, delay));
+          }
+        }
+      }
+      throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
     },
     async getRemoteUrl(): Promise<string> {
       if (opts.customDownload) return cloudPath;

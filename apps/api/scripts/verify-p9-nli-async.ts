@@ -103,18 +103,25 @@ async function pollNliResult(
   jwt: string,
   turnId: string,
   label: string,
+  coldStart: boolean = false,
 ): Promise<NliResultResponse | null> {
   const url = `${GATEWAY}/api-nli-result?turnId=${encodeURIComponent(turnId)}`;
-  // 3-2-5 节奏: attempt 1 sleep 3s, attempt 2-5 sleep 2s → 13s 总
-  for (let attempt = 1; attempt <= 5; attempt++) {
-    await new Promise((r) => setTimeout(r, attempt === 1 ? 3000 : 2000));
+  // P9 真接 follow-up #9: T1 cold start NLI 1.9s + audit_log 写入 + NoSQL 索引 ~7s 总
+  // 之前 3-2-5 (13s) 撞 T1 cold start → 还没写完轮询结束返 null
+  // 修: cold start 用 5-3-3-3-3 (17s 总), warm 用 3-2-2-2-2 (11s 总)
+  // P9 节奏 3-2-5 是给 client mini program 用的, 真接脚本应更长 (无 production SLA 限制)
+  const intervals = coldStart ? [5000, 3000, 3000, 3000, 3000] : [3000, 2000, 2000, 2000, 2000];
+  const totalMs = intervals.reduce((a, b) => a + b, 0);
+  console.error(`[verify-p9] [${label}] poll ${intervals.length} attempts over ${totalMs / 1000}s (coldStart=${coldStart})`);
+  for (let attempt = 0; attempt < intervals.length; attempt++) {
+    await new Promise((r) => setTimeout(r, intervals[attempt]));
     const res = await fetch(url, {
       method: "GET",
       headers: { Authorization: `Bearer ${jwt}` },
     });
     const body = (await res.json().catch(() => ({}))) as NliResultResponse;
     console.error(
-      `[verify-p9] [${label}] poll attempt=${attempt} found=${body.found} verdict=${body.verdict ?? "(none)"} score=${body.score?.toFixed(3) ?? "(none)"} isWarning=${body.isWarning ?? "(none)"}`,
+      `[verify-p9] [${label}] poll attempt=${attempt + 1} found=${body.found} verdict=${body.verdict ?? "(none)"} score=${body.score?.toFixed(3) ?? "(none)"} isWarning=${body.isWarning ?? "(none)"}`,
     );
     if (body.found) return body;
   }
@@ -129,6 +136,21 @@ async function main(): Promise<void> {
   const secret = keychainGet("JWT_SECRET");
   const jwt = await signJwt({ sub: userId, scope: "user", secret, ttl: "1h" });
 
+  // P9 真接 follow-up #11: prewarm CloudBase 函数 (避免 cold start race condition 撞 T1 NLI)
+  // 根因: 函数实例 cold start 时, cloudbase SDK 内部 token 还没 ready → getTempFileURL 返 no tempFileURL
+  // 修: 先发 1 个 prewarm chat 请求让函数 init 完, T1/T2 走 warm path
+  console.error(`[verify-p9] prewarm: 调 /api-chat 让 CloudBase 函数实例 init 完...`);
+  const prewarm = await chatTurn(
+    jwt,
+    { q: "prewarm" },
+    "prewarm (cold start 预热)",
+  );
+  if (prewarm.status !== 200) {
+    console.error(`[verify-p9] ❌ prewarm chat 失败 (status=${prewarm.status})`);
+    process.exit(1);
+  }
+  console.error(`[verify-p9] prewarm OK (${prewarm.latencyMs}ms), 函数实例已 init, NLI 推理可用`);
+
   // T1: 创 session
   const t1 = await chatTurn(
     jwt,
@@ -140,9 +162,10 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // 等 1s (session 持久化)
-  console.error(`[verify-p9] 等待 1s (session 持久化)...`);
-  await new Promise((r) => setTimeout(r, 1000));
+  // P9 真接 follow-up #11: 删 1s 等待, 让 T1+T2 连续调保持函数实例 warm
+  // 根因: 1s idle 期间函数实例可能回收 → T2 撞新 cold start → 撞 NLI race condition
+  // 修: 直接发 T2, 函数实例保持 warm
+  console.error(`[verify-p9] T1 完成, 立即发 T2 (保持函数实例 warm, 避免 idle 回收)...`);
 
   // T2: 同 session 短问题 (P5 v1.4 跨轮 hypothesis)
   const t2 = await chatTurn(
@@ -158,17 +181,20 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // Polling T1 + T2 nliTurnId
+  // Polling T1 + T2 nliTurnId (P9 真接 follow-up #9: T1 cold start NLI 1.9s + audit 写入 ~7s 总)
   const nliResults: Array<{ turn: string; result: NliResultResponse | null }> = [];
   if (t1.nliTurnId) {
-    const r1 = await pollNliResult(jwt, t1.nliTurnId, "T1");
+    // T1 cold start: NLI 模型第一次 load + 推理 + audit_log 写入 + 索引
+    const r1 = await pollNliResult(jwt, t1.nliTurnId, "T1", true);
     nliResults.push({ turn: "T1", result: r1 });
   } else {
     nliResults.push({ turn: "T1", result: null });
     console.error(`[verify-p9] T1 无 nliTurnId (NLI_ASYNC=0 sync 路径, 不轮询)`);
   }
   if (t2.nliTurnId) {
-    const r2 = await pollNliResult(jwt, t2.nliTurnId, "T2");
+    // T2 撞 cold start: 即使 prewarm + T1 让函数 warm, T2 仍可能撞新 cold start (function instance idle 回收)
+    // 用 5-3-3-3-3 (17s) 给 NLI 5 次 retry (1+2+3+4+5=15s) + audit_log 写入 + 索引时间
+    const r2 = await pollNliResult(jwt, t2.nliTurnId, "T2", true);
     nliResults.push({ turn: "T2", result: r2 });
   } else {
     nliResults.push({ turn: "T2", result: null });

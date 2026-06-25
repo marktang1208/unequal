@@ -22,7 +22,7 @@
         "KEK_CURRENT_VERSION": "1",
         "NLI_PROVIDER": "onnx",
         "NLI_MODEL_LOCAL_PATH": "/tmp/nli-model.onnx",
-        "NLI_MODEL_COS_KEY": "nli-model/nli-MiniLM2-L6-H768-quint8_avx2.onnx",
+        "NLI_MODEL_COS_KEY": "cloud://unequal-d4ggf7rwg82e0900b.756e-unequal-d4ggf7rwg82e0900b-1444590671/nli-model/nli-MiniLM2-L6-H768-quint8_avx2.onnx",
         "NLI_LOCAL_TMP_DIR": "/tmp",
         "NLI_TIMEOUT_MS": "5000",
         "NLI_RETRY_COUNT": "1",
