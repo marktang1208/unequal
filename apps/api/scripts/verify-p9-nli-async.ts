@@ -139,10 +139,11 @@ async function main(): Promise<void> {
   // P9 真接 follow-up #11: prewarm CloudBase 函数 (避免 cold start race condition 撞 T1 NLI)
   // 根因: 函数实例 cold start 时, cloudbase SDK 内部 token 还没 ready → getTempFileURL 返 no tempFileURL
   // 修: 先发 1 个 prewarm chat 请求让函数 init 完, T1/T2 走 warm path
+  // 注: prewarm 用合理长度问题 (避免 400 INVALID_REQUEST 太短 query 拒收)
   console.error(`[verify-p9] prewarm: 调 /api-chat 让 CloudBase 函数实例 init 完...`);
   const prewarm = await chatTurn(
     jwt,
-    { q: "prewarm" },
+    { q: "宝宝几个月可以开始吃辅食" },
     "prewarm (cold start 预热)",
   );
   if (prewarm.status !== 200) {

@@ -87,4 +87,7 @@ export const REQUIRED_INDEXES: Array<{
   { collection: COLLECTIONS.crawlJob, field: "status" },
   { collection: COLLECTIONS.auditLog, field: "timestamp" },
   { collection: COLLECTIONS.auditLog, field: "actor.via" },
+  // P9 真接 follow-up #12: action 索引, 加速 whereQuery({action}) 查询
+  // 修 P9 verify 17s polling 找不到 audit_log chat_nli_async record (全表 scan 慢)
+  { collection: COLLECTIONS.auditLog, field: "action" },
 ];
