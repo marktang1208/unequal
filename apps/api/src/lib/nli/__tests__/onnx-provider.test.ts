@@ -45,7 +45,7 @@ const mocks = vi.hoisted(() => {
         static fromData(type: string, data: ArrayLike<number>, dims: readonly number[]): MockTensor {
           let arr: BigInt64Array | Int32Array | Float32Array;
           if (type === "int64") {
-            arr = BigInt64Array.from(data as ArrayLike<bigint>);
+            arr = BigInt64Array.from(data as unknown as ArrayLike<bigint>);
           } else if (type === "int32") {
             arr = Int32Array.from(data as ArrayLike<number>);
           } else {
@@ -310,8 +310,8 @@ describe("OnnxNliProvider", () => {
       const feeds = mocks.session.run.mock.calls[0]![0] as Record<string, { type: string; dims: readonly number[] }>;
       expect(feeds.input_ids).toBeDefined();
       expect(feeds.attention_mask).toBeDefined();
-      expect(feeds.input_ids.dims[0]).toBe(1); // batch=1
-      expect(feeds.attention_mask.dims[0]).toBe(1);
+      expect(feeds.input_ids!.dims[0]).toBe(1); // batch=1
+      expect(feeds.attention_mask!.dims[0]).toBe(1);
     });
   });
 

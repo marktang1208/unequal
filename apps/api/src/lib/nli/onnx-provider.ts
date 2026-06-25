@@ -471,7 +471,7 @@ export class OnnxNliProvider implements NliProvider {
       const outputs = await Promise.race([session.run(feeds), timeoutPromise]);
       const logitsTensor = outputs.logits;
       // logits.data 是 Float32Array of shape [1, 3]
-      return logitsTensor.data as Float32Array;
+      return logitsTensor!.data as Float32Array;
     } catch (err) {
       // 透传 NliTimeoutError
       if (err instanceof NliTimeoutError) throw err;
