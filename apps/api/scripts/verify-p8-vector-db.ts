@@ -38,7 +38,7 @@ const GATEWAY = "https://unequal-d4ggf7rwg82e0900b-1444590671.ap-shanghai.app.tc
 const TCB_ENV = "unequal-d4ggf7rwg82e0900b";
 const FUNCTION_NAME = "api-router";
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
-const EXPECTED_VARS_COUNT = 25; // 14 template + 9 secrets + VECTOR_STORE + PG_CONNECTION_STRING + LLM_MAX_TOKENS
+const EXPECTED_VARS_COUNT = 27; // 14 template + 10 secrets (含 PG_CONNECTION_STRING) + VECTOR_STORE + LLM_MAX_TOKENS + NLI_ASYNC
 
 // P8 success criteria (state-p8 spec §0)
 const P8_REJECT_RATE_TARGET = 0.10;  // 7d reject rate < 10% (vs P7 baseline 30%+)
@@ -213,9 +213,11 @@ async function step3_checkNliRejectTrend(): Promise<StepResult> {
 
   const rejectRate = total > 0 ? reject / total : 0;
   // 7 天样本 < 50 时, rate 不稳定, 标 PARTIAL 但不 fail (P9 follow-up: 加 sample size guard)
+  // P8 真接 follow-up #5: 修正 passed 逻辑 — 小 sample 应 pass + warn, 大 sample 才检查 rate
   const sampleSizeOk = total >= 50;
   const rateOk = rejectRate < P8_REJECT_RATE_TARGET;
-  const passed = sampleSizeOk && rateOk;
+  // passed: 小 sample (无统计意义) → pass; 大 sample → 检查 rate
+  const passed = !sampleSizeOk || rateOk;
 
   return {
     passed,
