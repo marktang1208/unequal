@@ -51,7 +51,12 @@ const SECRETS = [
   // env vars 是 cloud function 唯一来源, deploy 阶段 Keychain 注入)
   "CLOUDBASE_SECRET_ID",
   "CLOUDBASE_SECRET_KEY",
+  // P8 Phase 1: pgvector connection string (跟 sync-cloudbasrc.ts SECRETS 对齐)
+  "PG_CONNECTION_STRING",
 ] as const;
+
+/** 导出 SECRETS 让 unit test 校验 (防 P6 Phase 5 漂移 bug 重现, state-p8 follow-up #5) */
+export const PUSH_SECRETS = SECRETS;
 
 const TCB_ENV = "unequal-d4ggf7rwg82e0900b";
 const FUNCTION_NAME = "api-router";

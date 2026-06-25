@@ -103,4 +103,13 @@ describe("deployFull (P7: deploy pipeline 自动顺序)", () => {
     // 关键: 错误信息应提示重跑 push 恢复 secrets
     await expect(deployFull({})).rejects.toThrow(/secrets.*wiped|重跑|push/i);
   });
+
+  // P8 真接 follow-up #5: 两个 SECRETS 数组 (push.ts + sync-cloudbasrc.ts) 漂移
+  // 之前 bug: 2026-06-25 deploy:full 只推 9 secrets, PG_CONNECTION_STRING 漏
+  // 修法: 直接对比两个 SECRETS, 不一致 → 抛错
+  it("P8 regression: PUSH_SECRETS 跟 sync-cloudbasrc SECRETS 一致 (防漂移)", async () => {
+    const { PUSH_SECRETS } = await import("./push.js");
+    const { SECRETS: SYNC_SECRETS } = await import("../lib/sync-cloudbasrc.js");
+    expect([...PUSH_SECRETS].sort()).toEqual([...SYNC_SECRETS].sort());
+  });
 });
