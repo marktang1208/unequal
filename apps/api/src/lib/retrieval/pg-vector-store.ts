@@ -37,9 +37,23 @@ export interface QueryTopKOptions {
   excludeSourceIds?: string[];
 }
 
+export interface InsertChunkInput {
+  id: string;
+  documentId: string;
+  sourceId?: string;
+  userId: string;
+  idx: number;
+  content: string;
+  embedding: number[];
+  trustLevel: TrustLevel;
+  sourceType?: string;
+  createdAt: number;
+}
+
 export interface PgVectorStore {
   fetchChunksByUser: (userId: string) => Promise<ChunkWithEmbedding[]>;
   queryTopK: (opts: QueryTopKOptions) => Promise<ChunkWithEmbedding[]>;
+  insertChunk: (chunk: InsertChunkInput) => Promise<void>;
   testConnection: () => Promise<boolean>;
   close: () => Promise<void>;
 }
@@ -126,6 +140,25 @@ export function createPgVectorStore(opts: PgVectorStoreOptions): PgVectorStore {
     return [];
   }
 
+  async function insertChunk(chunk: InsertChunkInput): Promise<void> {
+    // P8 Task 3: ingest dual-write PG chunks (idempotent, ON CONFLICT skip)
+    const client = await pool.connect();
+    try {
+      await client.query(
+        `INSERT INTO chunks (id, document_id, source_id, user_id, idx, content, embedding, trust_level, source_type, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::vector, $8, $9, $10)
+         ON CONFLICT (id) DO NOTHING`,
+        [
+          chunk.id, chunk.documentId, chunk.sourceId ?? "", chunk.userId,
+          chunk.idx, chunk.content, `[${chunk.embedding.join(",")}]`,
+          chunk.trustLevel, chunk.sourceType ?? "", chunk.createdAt,
+        ],
+      );
+    } finally {
+      client.release();
+    }
+  }
+
   async function testConnection(): Promise<boolean> {
     try {
       const client = await pool.connect();
@@ -136,7 +169,7 @@ export function createPgVectorStore(opts: PgVectorStoreOptions): PgVectorStore {
 
   async function close(): Promise<void> { await pool.end(); }
 
-  return { fetchChunksByUser, queryTopK, testConnection, close };
+  return { fetchChunksByUser, queryTopK, insertChunk, testConnection, close };
 }
 
 let _store: ReturnType<typeof createPgVectorStore> | null = null;

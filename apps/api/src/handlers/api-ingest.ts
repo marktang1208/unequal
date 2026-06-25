@@ -33,6 +33,8 @@ import { chunkText } from "@unequal/shared/chunking";
 import { COLLECTIONS, type CollectionName } from "../lib/collections.js";
 import { add } from "../lib/db.js";
 import { recordAudit, type AuditEntry } from "../lib/audit.js";
+// P8 Task 3: dual-write PG chunks (failOpen, 不阻塞 ingest)
+import { getPgVectorStore } from "../lib/retrieval/pg-vector-store.js";
 import type { Source, Document, Chunk } from "@unequal/shared/types";
 
 interface IngestRequest {
@@ -223,7 +225,28 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
             trustLevel,
             createdAt: Date.now(),
           };
-          await add<Chunk>(COLLECTIONS.chunk as CollectionName, chunk);
+          // P8 Task 3: 捕获 _id 作 PG 主键 (与 ETL 一致)
+          const chunkId = await add<Chunk>(COLLECTIONS.chunk as CollectionName, chunk);
+          // P8: dual-write PG chunks (failOpen, 不阻塞 ingest)
+          if (env.VECTOR_STORE !== "nosql" || env.PG_CONNECTION_STRING) {
+            try {
+              const pgStore = await getPgVectorStore();
+              await pgStore.insertChunk({
+                id: chunkId,
+                documentId: chunk.documentId,
+                sourceId: chunk.sourceId,
+                userId: chunk.userId,
+                idx: chunk.idx,
+                content: chunk.content,
+                embedding: chunk.embedding,
+                trustLevel: chunk.trustLevel,
+                createdAt: chunk.createdAt,
+              });
+            } catch (pgErr) {
+              // failOpen: PG 写失败不阻塞 ingest, audit 后续可加
+              console.warn(`[ingest] PG dual-write skip chunk ${chunkId}: ${pgErr instanceof Error ? pgErr.message : String(pgErr)}`);
+            }
+          }
           inserted++;
         } catch (err) {
           errors.push(`chunk ${i}: ${err instanceof Error ? err.message : String(err)}`);
@@ -258,7 +281,28 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
           trustLevel,
           createdAt: Date.now(),
         };
-        await add<Chunk>(COLLECTIONS.chunk as CollectionName, chunk);
+        // P8 Task 3: 捕获 _id 作 PG 主键 (与 ETL 一致)
+        const chunkId = await add<Chunk>(COLLECTIONS.chunk as CollectionName, chunk);
+        // P8: dual-write PG chunks (failOpen, 不阻塞 ingest)
+        if (env.VECTOR_STORE !== "nosql" || env.PG_CONNECTION_STRING) {
+          try {
+            const pgStore = await getPgVectorStore();
+            await pgStore.insertChunk({
+              id: chunkId,
+              documentId: chunk.documentId,
+              sourceId: chunk.sourceId,
+              userId: chunk.userId,
+              idx: chunk.idx,
+              content: chunk.content,
+              embedding: chunk.embedding,
+              trustLevel: chunk.trustLevel,
+              createdAt: chunk.createdAt,
+            });
+          } catch (pgErr) {
+            // failOpen: PG 写失败不阻塞 ingest, audit 后续可加
+            console.warn(`[ingest] PG dual-write skip chunk ${chunkId}: ${pgErr instanceof Error ? pgErr.message : String(pgErr)}`);
+          }
+        }
         inserted++;
       } catch (err) {
         errors.push(`chunk ${i}: ${err instanceof Error ? err.message : String(err)}`);
