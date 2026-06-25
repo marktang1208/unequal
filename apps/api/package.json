@@ -25,7 +25,8 @@
     "setup:keychain-secrets": "bash scripts/setup-keychain-secrets.sh",
     "migrate:schema-ids": "tsx scripts/migrate-schema-ids.ts",
     "download-nli-model": "tsx scripts/download-nli-model-local.ts",
-    "upload-nli-model": "tsx scripts/upload-nli-model-to-cos.ts"
+    "upload-nli-model": "tsx scripts/upload-nli-model-to-cos.ts",
+    "migrate:no-sql-to-pg": "tsx scripts/migrate-no-sql-to-pg.ts"
   },
   "dependencies": {
     "@cloudbase/node-sdk": "^3.18.1",
