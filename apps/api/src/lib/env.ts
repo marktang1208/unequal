@@ -60,6 +60,12 @@ export interface AppEnv {
   NLI_MODEL_COS_KEY?: string;
   /** 本地临时目录 (默认 /tmp) */
   NLI_LOCAL_TMP_DIR?: string;
+
+  // P8: vector DB 选型
+  /** "pg" = pgvector (HNSW), "nosql" = 暴力 cosine fallback (P7 现状) */
+  VECTOR_STORE: "pg" | "nosql";
+  /** P8: pgvector connection string (Keychain, secret 类别) */
+  PG_CONNECTION_STRING?: string;
 }
 
 let _env: AppEnv | null = null;
@@ -131,7 +137,19 @@ function validateEnvObject(source: NodeJS.ProcessEnv | Record<string, string | u
     NLI_MODEL_LOCAL_PATH: source.NLI_MODEL_LOCAL_PATH || undefined,
     NLI_MODEL_COS_KEY: source.NLI_MODEL_COS_KEY || "nli-model/nli-MiniLM2-L6-H768-quint8_avx2.onnx",
     NLI_LOCAL_TMP_DIR: source.NLI_LOCAL_TMP_DIR || "/tmp",
+
+    // P8: vector DB 选型 — 默认 nosql 保 P7 现状, Phase 4 灰度改 pg
+    VECTOR_STORE: parseVectorStore(source.VECTOR_STORE),
+    PG_CONNECTION_STRING: source.PG_CONNECTION_STRING || undefined,
   };
+}
+
+/** 解析 VECTOR_STORE env — 支持 pg / nosql */
+function parseVectorStore(raw: string | undefined): "pg" | "nosql" {
+  if (!raw) return "nosql"; // 默认 nosql (P7 现状)
+  const v = raw.toLowerCase();
+  if (v === "pg") return "pg";
+  return "nosql";
 }
 
 /** 解析 NLI_PROVIDER env — 支持 http / noop / onnx，大小写不敏感 */

@@ -22,7 +22,8 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { keychainGet as defaultKeychainGet } from "./keychain.js";
 
-/** 9 个 Keychain secrets — 必须跟 commands/push.ts SECRETS 完全一致 */
+/** 9 个 Keychain secrets — 必须跟 commands/push.ts SECRETS 完全一致
+ *  P8: 新增 PG_CONNECTION_STRING (10th) */
 export const SECRETS = [
   "ADMIN_TOKEN",
   "JWT_SECRET",
@@ -34,6 +35,8 @@ export const SECRETS = [
   // P6 Phase 5: runtime onnx COS downloader 需要 (cloudbaserc.json env vars 是 cloud function 唯一来源)
   "CLOUDBASE_SECRET_ID",
   "CLOUDBASE_SECRET_KEY",
+  // P8 Phase 1: pgvector connection string
+  "PG_CONNECTION_STRING",
 ] as const;
 
 export interface SyncCloudbasrcOptions {

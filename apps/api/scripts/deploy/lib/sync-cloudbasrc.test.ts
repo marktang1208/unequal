@@ -152,10 +152,11 @@ describe("syncCloudbasrcFromTemplate", () => {
     expect(written.functions[0].installDependency).toBe(true);
   });
 
-  it("env vars 数量: 14 template + 9 secrets = 23 (SECRETS 数组硬编码 9 项)", async () => {
+  it("env vars 数量: 14 template + 10 secrets = 24 (SECRETS 数组硬编码 10 项, P8 新增 PG_CONNECTION_STRING)", async () => {
     // SECRETS 数组应该跟 push.ts SECRETS 保持一致 (P6 Phase 5)
     // 防止以后误删 (e.g. 漏掉 CLOUDBASE_SECRET_*), 触发 runtime 缺失
-    expect(SECRETS.length).toBe(9);
+    // P8 Phase 1: 新增 PG_CONNECTION_STRING → 10 项
+    expect(SECRETS.length).toBe(10);
     expect(SECRETS).toContain("ADMIN_TOKEN");
     expect(SECRETS).toContain("JWT_SECRET");
     expect(SECRETS).toContain("MINIMAX_API_KEY");
@@ -165,6 +166,7 @@ describe("syncCloudbasrcFromTemplate", () => {
     expect(SECRETS).toContain("SILICONFLOW_API_KEY");
     expect(SECRETS).toContain("CLOUDBASE_SECRET_ID");
     expect(SECRETS).toContain("CLOUDBASE_SECRET_KEY");
+    expect(SECRETS).toContain("PG_CONNECTION_STRING");
   });
 
   it("写入 idempotent: 跑两次 target 内容一致 (覆盖式)", async () => {
