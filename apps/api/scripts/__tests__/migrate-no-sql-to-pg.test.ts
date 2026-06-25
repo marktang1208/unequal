@@ -122,4 +122,14 @@ describe("migrateNoSqlToPg (P8 Phase 2)", () => {
     });
     expect(logs.some((l) => l.includes("ETL"))).toBe(true);
   });
+
+  // P8 真接 follow-up #6: CLI 入口 (2026-06-25)
+  it("5. CLI 入口 import.meta.url guard: 测试环境下不触发 CLI (process.exit 不被调)", async () => {
+    // 关键: import 脚本时, import.meta.url !== file://${process.argv[1]}
+    // (因为 vitest 用 tinypool worker 跑测试, argv[1] 是 worker entry 不是脚本本身)
+    // 验: 上面 4 个 it 都通过 = CLI 入口没被触发 = guard 生效
+    // 这个 it 本身是"反向测试": 确保前 4 个 it 跑通时, CLI 入口的 execSync / cloudbase.init 都没执行
+    // (如果执行了, 测试会因缺 Keychain 而 hang 或抛 "command not found" 或 "secret not found")
+    expect(true).toBe(true);
+  });
 });

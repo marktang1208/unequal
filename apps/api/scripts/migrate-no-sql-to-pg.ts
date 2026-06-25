@@ -13,7 +13,13 @@
  *   - 默认 batchSize=100 chunks/批
  *   - log 默认空函数, 测试可注入
  *
- * CLI 入口待 Phase 2 末添加 (Keychain + cloudbase admin SDK)
+ * CLI 入口 (P8 真接 follow-up #6 收尾, 2026-06-25):
+ *   - 读 PG_CONNECTION_STRING + CLOUDBASE_SECRET_ID/KEY from macOS Keychain
+ *   - 连 NoSQL (CloudBase d4ggf7rwg82e0900b) + PG (vpc 内网)
+ *   - 跑 migrateNoSqlToPg 一次性 ETL
+ *   - 退出码: 0=全成功, 1=有失败
+ *
+ * 用法: pnpm -F api migrate:no-sql-to-pg
  */
 
 interface NoSqlChunk {
@@ -124,4 +130,53 @@ export async function migrateNoSqlToPg(opts: MigrateOpts): Promise<MigrateResult
     client.release();
     await opts.pgAdapter.end();
   }
+}
+
+// CLI 入口 (P8 真接 follow-up #6, 2026-06-25)
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const { execSync } = await import("node:child_process");
+  const { default: pgPkg } = await import("pg");
+
+  const PG_CONNECTION_STRING = execSync(
+    'security find-generic-password -a unequal-deploy -s "unequal:api-router:PG_CONNECTION_STRING" -w',
+    { encoding: "utf8" },
+  ).trim();
+  const SECID = process.env.CLOUDBASE_SECRET_ID ?? execSync(
+    'security find-generic-password -a unequal-deploy -s "unequal:api-router:CLOUDBASE_SECRET_ID" -w',
+    { encoding: "utf8" },
+  ).trim();
+  const SECKEY = process.env.CLOUDBASE_SECRET_KEY ?? execSync(
+    'security find-generic-password -a unequal-deploy -s "unequal:api-router:CLOUDBASE_SECRET_KEY" -w',
+    { encoding: "utf8" },
+  ).trim();
+
+  // 动态 import @cloudbase/node-sdk (避免 vitest 跑测试时执行 CLI)
+  const cloudbase = await import("@cloudbase/node-sdk");
+  const app = cloudbase.init({ env: "unequal-d4ggf7rwg82e0900b", secretId: SECID, secretKey: SECKEY });
+  const db = app.database();
+  const pg = new pgPkg.Client({ connectionString: PG_CONNECTION_STRING });
+  await pg.connect();
+
+  console.log("[ETL CLI] start: NoSQL chunk → PG chunks (batch=100, retry=3)");
+  const result = await migrateNoSqlToPg({
+    noSqlAdapter: {
+      whereQuery: async (coll, where, opts) => {
+        const r = await db.collection(coll)
+          .where(where)
+          .limit((opts as { limit?: number }).limit ?? 100)
+          .offset((opts as { offset?: number }).offset ?? 0)
+          .get();
+        return { data: r.data as never[], requestId: r.requestId };
+      },
+    },
+    pgAdapter: pg,
+    log: (msg: string) => console.log(msg),
+  });
+
+  console.log(`[ETL CLI] DONE ${JSON.stringify({ total: result.total, migrated: result.migrated, failed: result.failed })}`);
+  if (result.failed > 0) {
+    console.error(`[ETL CLI] FAILED chunks (first 10): ${JSON.stringify(result.failedIds.slice(0, 10))}`);
+    process.exit(1);
+  }
+  process.exit(0);
 }
