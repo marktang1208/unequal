@@ -61,6 +61,8 @@ export interface ChatResponse {
   is_new_session: boolean;
   cached: boolean;
   degraded: boolean;
+  /** P9: NLI async turnId, 客户端拿此轮询 /api-nli-result; sync 路径返 null */
+  nliTurnId?: string;
 }
 
 export interface ChatSessionRow {

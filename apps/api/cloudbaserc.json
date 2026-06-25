@@ -29,7 +29,7 @@
         "NLI_MIN_ANSWER_LEN": "100",
         "LLM_MAX_TOKENS": "2048",
         "VECTOR_STORE": "nosql",
-        "NLI_ASYNC": "0"
+        "NLI_ASYNC": "1"
       }
     }
   ]

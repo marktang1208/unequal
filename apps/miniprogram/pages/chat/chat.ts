@@ -1,5 +1,6 @@
 // @ts-nocheck wx 全局类型 mock-first 缺失（miniprogram-api-typings 未安装，按 CP-1 决策容忍）
 import { chat, updateNickname, getSession } from "../../lib/api.js";
+import { getJwtToken } from "../../lib/auth.js";
 import { __setStorageImpl } from "../../lib/storage.js";
 import { __setSessionStorageImpl, loadCurrentSessionId, saveCurrentSessionId, hasShownNicknameModal, setShownNicknameModal, __setNicknameModalStorageImpl } from "../../lib/chat-storage.js";
 import { parseAnswerSegments } from "../../lib/citation-parser.js";
@@ -61,10 +62,48 @@ interface MessageItem {
   citations: AskResponse["citations"];
   /** CP-7-B 新增：富文本 segments（解析 [N] 后的 text/cite 数组） */
   segments?: ReturnType<typeof parseAnswerSegments>;
+  /** P9: 该 assistant 轮的 NLI 异步 verdict (命中轮询后填) */
+  nliVerdict?: "entailed" | "neutral" | "contradiction";
 }
 
 interface AppWithGlobals {
   globalData: { apiBaseUrl: string };
+}
+
+interface NliResultResponse {
+  found: boolean;
+  verdict?: "entailed" | "neutral" | "contradiction";
+  score?: number;
+  latencyMs?: number;
+  isWarning?: boolean;
+}
+
+/**
+ * P9: 轮询 GET /api-nli-result?turnId=<id> 拿 NLI async verdict
+ * 3s 起始 + 2s × 5 间隔 (13s 总), 命中即停
+ * @param baseUrl api base URL (跟 chat 用同一)
+ * @param turnId chat response.nliTurnId
+ * @returns NLI result or null (5 次后 fallback 不返)
+ */
+async function pollNliResult(baseUrl: string, turnId: string): Promise<NliResultResponse | null> {
+  const url = `${baseUrl}/api-nli-result?turnId=${encodeURIComponent(turnId)}`;
+  const token = getJwtToken();
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    await new Promise((r) => setTimeout(r, attempt === 1 ? 3000 : 2000));
+    try {
+      // @ts-nocheck wx 全局类型 mock-first 缺失
+      const res = await wx.cloud.callFunction({
+        name: "api-router",
+        data: { route: "/api-nli-result", method: "GET", query: { turnId } },
+        header: { Authorization: `Bearer ${token}` },
+      });
+      const body = (res?.result ?? {}) as NliResultResponse;
+      if (body.found) return body;
+    } catch {
+      // 轮询失败继续下一次
+    }
+  }
+  return null;
 }
 
 Page({
@@ -85,6 +124,12 @@ Page({
       { value: "xiaohongshu", label: "小红书" },
       { value: "wechat-mp", label: "公众号" },
     ],
+    /** P9: NLI async polling 进行中 (spinner UI) */
+    nliPending: false,
+    /** P9: NLI 异步 verdict 警告 (轮询命中后显示) */
+    showWarning: false,
+    /** P9: NLI 警告文本 */
+    warningText: "" as string,
   },
 
   onLoad(): void {
@@ -239,7 +284,21 @@ Page({
       this.setData({
         messages: [...this.data.messages, botMsg],
         submitting: false,
+        nliPending: !!resp.nliTurnId,
       });
+      // P9: NLI async polling 3-2-5 节奏 (3s 起始 + 2s × 5, 13s 总)
+      if (resp.nliTurnId) {
+        const nli = await pollNliResult(baseUrl, resp.nliTurnId);
+        if (nli?.isWarning) {
+          this.setData({
+            showWarning: true,
+            warningText: "该回答可能与文档不符，请参考引用核实",
+            nliPending: false,
+          });
+        } else {
+          this.setData({ nliPending: false });
+        }
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "未知错误";
       this.setData({
