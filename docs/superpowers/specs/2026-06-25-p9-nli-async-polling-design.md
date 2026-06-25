@@ -45,7 +45,7 @@ P5 v1.3 NLI 同步在 chat 响应路径上, **阻塞 response 1.9s cold / < 500m
 | **chat response 字段** | 新增 `nliTurnId` (string \| null) | client 拿 turnId 轮询; null 表示 P5 v1.3 sync 路径走 (P5 backward compat) |
 | **sync/async 切换** | env var `NLI_ASYNC=1\|0` (default 0) | 灰度 1 行 env; 默认 sync 走 P5 v1.3 行为不变 |
 | **NLI 失败处理** | 写 audit_log (action=chat_nli_async, reason=runtime_error/timeout) + 不返 warning | async 路径, warning UX 已移到轮询 verdict |
-| **chat warning prefix** | 删 (P5 v1.3 sync 路径也返 null) | warning 移到轮询 verdict 阶段, 避免 answer 文本加 prefix |
+| **chat warning prefix** | **保留 (sync 路径)** + **删 (async 路径)** | sync 路径走 P5 v1.3 老行为 (返 answer + warning prefix), async 路径不返 prefix (warning 移到轮询 verdict) |
 | **P5 v1.4 跨轮 NLI** | 保留 (在后台 setImmediate 内走跨轮) | 跨轮 hypothesis union 不动, 仅同步/异步切 |
 | **P8 PG HNSW** | 不动 (走 queryTopK 50 candidates) | 检索路径不变, 仅 NLI 调用时序改 |
 | **回滚** | env var `NLI_ASYNC=0` (默认) | 1 行 env 回滚, P5 v1.3 sync 行为恢复 |
