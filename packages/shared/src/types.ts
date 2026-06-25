@@ -103,6 +103,8 @@ export interface ChatMessage {
    * - 不存 chunk content (避免 schema 膨胀; 读时按 ID 从 chunks collection 拉)
    */
   retrievedChunkIds?: string[];
+  /** P9: 该 assistant 轮的 NLI async turnId (轮询 GET /api-nli-result 用); sync 路径无 */
+  nliTurnId?: string;
   createdAt: number;
 }
 

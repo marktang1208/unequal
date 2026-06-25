@@ -16,14 +16,19 @@ export interface AuditEntry {
   timestamp: number;
   /** P4 #2 deploy pipeline: 加 "deploy" 枚举 */
   /** P5 NLI: 加 "ask_nli_reject" — LLM 答案不被 retrieved chunks 蕴含 */
-  action: "ingest" | "session_rename" | "session_delete" | "nickname_update" | "deploy" | "ask_nli_reject";
+  /** P9: 加 "chat_nli_async" — setImmediate 异步 NLI verdict (action 跟 P5 v1.3 sync reject 隔离) */
+  action: "ingest" | "session_rename" | "session_delete" | "nickname_update" | "deploy" | "ask_nli_reject" | "chat_nli_reject" | "chat_nli_async";
   actor: {
     /** P4 #2 deploy pipeline: 加 "deploy_script"（本地 deploy CLI） */
-    via: "admin_token" | "admin_jwt" | "ingest_proxy" | "jwt_user" | "deploy_script";
+    /** P5 v1.3 chat NLI reject: 加 "jwt" (跟 ask 的 admin_token 区别) */
+    /** P9: 加 "jwt_user" (P5 v1.3 chat 旧值 "jwt" 别名, 兼容老 record) */
+    via: "admin_token" | "admin_jwt" | "ingest_proxy" | "jwt" | "jwt_user" | "deploy_script";
     clientIp: string;
     tokenFingerprint?: string;
     /** M7-C: 越权 / 非 admin 路径需记当前 userId */
     userId?: string;
+    /** P5 v1.3 chat NLI: 加 sessionId (chat 路径专属,区分 ask 路径) */
+    sessionId?: string;
   };
   target: {
     userId: string;
@@ -55,14 +60,21 @@ export interface AuditEntry {
   /** P4 #2 deploy pipeline: deploy action 专用 — 操作者 OS username (os.userInfo().username) */
   operator?: string;
   /** P5 NLI: ask_nli_reject action 专用 — 记录 NLI 验证结果 */
+  /** P9: 加 turnId (轮询 key) + reason "async" (chat_nli_async 专用) */
   nliSnapshot?: {
-    queryHash: string;        // SHA-256(q).slice(0, 16) — 避免 PII 落库
-    chunksHash: string;       // SHA-256(chunkIds.join(",")).slice(0, 16)
+    /** P5 v1.3 sync: SHA-256(q).slice(0, 16) — 避免 PII 落库 */
+    queryHash?: string;
+    /** P5 v1.3 sync: SHA-256(chunkIds.join(",")).slice(0, 16) */
+    chunksHash?: string;
+    /** P9: `${session_id}:${turn_seq}`, 客户端轮询 /api-nli-result 用 */
+    turnId?: string;
     verdict: "entailed" | "neutral" | "contradiction";
     score: number;
-    scores: { entailment: number; neutral: number; contradiction: number };
+    /** P5 v1.3 sync: 三档分数明细 */
+    scores?: { entailment: number; neutral: number; contradiction: number };
     latencyMs: number;
-    reason: "rejected" | "timeout" | "runtime_error";
+    /** P5 v1.3 sync: "rejected" | "timeout" | "runtime_error"; P9: 加 "async" (chat_nli_async 成功时) */
+    reason: "rejected" | "timeout" | "runtime_error" | "async";
   };
 }
 

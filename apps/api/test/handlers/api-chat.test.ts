@@ -422,3 +422,261 @@ describe("api-chat handler NLI (P5 v1.3)", () => {
     expect(auditEntry.actor.via).toBe("jwt");
   });
 });
+
+// ==================== P9: NLI_ASYNC 灰度分支 ====================
+//
+// P9 把 P5 v1.3 同步 NLI 改成 setImmediate 异步 + chat response 返 nliTurnId 字段。
+// 灰度开关 env.NLI_ASYNC ("1" = async, 其他 = P5 v1.3 sync backward compat)。
+//
+// 4 个 case:
+//  1. NLI_ASYNC=1 + chat 200 → response.nliTurnId 非空 (turnId 格式 `${session_id}:${turn_seq}`)
+//  2. NLI_ASYNC=1 + setImmediate 内 NLI runtime_error → audit_log 写 chat_nli_async failure, chat 不抛
+//  3. NLI_ASYNC=undefined (默认) → 走 P5 v1.3 sync 路径, response.nliTurnId 为 undefined (backward compat)
+//  4. NLI_ASYNC=1 + turnSeq 计数正确 (创 session turnSeq=0, 第 2 轮 turnSeq=1)
+
+describe("api-chat handler NLI_ASYNC (P9)", () => {
+  let auditSpy: ReturnType<typeof vi.fn>;
+  let fetchMock: ReturnType<typeof vi.fn>;
+  let userToken: string;
+
+  beforeEach(async () => {
+    resetEnv();
+    resetProviders();
+    userToken = await makeUserToken();
+
+    mockProviderVerify = (globalThis as any).__mockNliVerify;
+    mockRecordNliSuccess = (globalThis as any).__mockNliSuccess;
+    mockRecordNliFailure = (globalThis as any).__mockNliFailure;
+
+    // P9 测试用 loadEnvForTest; 每个 case 自行覆盖 NLI_ASYNC / NLI_PROVIDER
+
+    vi.mocked(db.whereQuery).mockImplementation(async (coll: string) => {
+      if (coll === "chunk") return [MOCK_CHUNK_1, MOCK_CHUNK_2] as any;
+      return [];
+    });
+    vi.mocked(db.getById).mockImplementation(async (coll: string, id: string) => {
+      if (coll === "document" && id === "01K_DOC_1") return MOCK_DOC_1 as any;
+      if (coll === "chatSession") return null;  // 默认模拟新 session
+      return null;
+    });
+
+    auditSpy = vi.fn().mockResolvedValue(undefined);
+    __setAuditImpl(auditSpy);
+
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    mockProviderVerify.mockReset();
+    mockRecordNliSuccess.mockReset();
+    mockRecordNliFailure.mockReset();
+  });
+
+  function loadEnvWithAsyncFlag(nliAsync: "0" | "1" | undefined) {
+    loadEnvForTest({
+      ADMIN_TOKEN: "x",
+      JWT_SECRET,
+      MINIMAX_API_KEY: "sk-test",
+      KEK_SECRET_V1: "kek-secret-32-bytes-min-aaaaaaaaa",
+      ENVIRONMENT: "production",
+      ALLOWED_ORIGIN: "*",
+      ADMIN_IP_ALLOWLIST: "127.0.0.1,::1",
+      MINIMAX_BASE_URL: "https://api.test/v1",
+      DEFAULT_USER_ID: MOCK_USER,
+      KEK_CURRENT_VERSION: "1",
+      SILICONFLOW_API_KEY: "sk-siliconflow-test",
+      SILICONFLOW_BASE_URL: "https://api.siliconflow.test/v1",
+      NLI_MODEL: "Qwen/Qwen2.5-7B-Instruct",
+      NLI_PROVIDER: "noop",  // 默认 noop,各 case 覆盖
+      ...(nliAsync === undefined ? {} : { NLI_ASYNC: nliAsync }),
+    });
+  }
+
+  // helper: 默认 fetch mock（embed + chat 都返）
+  function mockEmbedAndChat(chatContent: string) {
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ vectors: [new Array(1536).fill(0.99)] }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: chatContent } }] }),
+      } as Response);
+  }
+
+  // 等 setImmediate 内 promise 跑完 (chat response 返后, NLI async 任务仍在跑)
+  async function flushSetImmediate() {
+    // 多次 flush 保证 setImmediate + 后续 microtasks (provider.verify + recordAudit) 都跑完
+    for (let i = 0; i < 5; i++) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+  }
+
+  // -------- 1. NLI_ASYNC=1 + chat 200 → response.nliTurnId 非空 --------
+  it("P9-1: NLI_ASYNC=1 + chat 200 → response.nliTurnId 非空 (turnId 格式 `${session_id}:${turn_seq}`)", async () => {
+    loadEnvWithAsyncFlag("1");
+    const longAnswer = "长答案 " + "x".repeat(200) + " [1]";
+    mockEmbedAndChat(longAnswer);
+    mockProviderVerify.mockResolvedValue({
+      verdict: "entailed",
+      score: 0.95,
+      scores: { entailment: 0.95, neutral: 0.04, contradiction: 0.01 },
+      latencyMs: 800,
+    });
+
+    const ev = makeEvent({ q: "长问" }, userToken);
+    const res = await chatMain(ev);
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+
+    // 关键 P9 断言: response.nliTurnId 非空且格式正确
+    expect(body.nliTurnId).toBeDefined();
+    expect(body.nliTurnId).not.toBeNull();
+    expect(body.nliTurnId).toMatch(/^01K_SESSION_TEST:0$/);
+    // 新 session 没 assistant msg, turnSeq=0
+
+    // 异步 NLI 任务跑完后, audit 写 1 次 chat_nli_async success
+    await flushSetImmediate();
+    expect(auditSpy).toHaveBeenCalledTimes(1);
+    const auditEntry = auditSpy.mock.calls[0]?.[0] as any;
+    expect(auditEntry.action).toBe("chat_nli_async");
+    expect(auditEntry.result).toBe("success");
+    expect(auditEntry.nliSnapshot.turnId).toBe(body.nliTurnId);
+    expect(auditEntry.nliSnapshot.reason).toBe("async");
+    expect(auditEntry.nliSnapshot.verdict).toBe("entailed");
+  });
+
+  // -------- 2. NLI_ASYNC=1 + setImmediate 内 NLI runtime_error → audit_log 写 failure, chat 不抛 --------
+  it("P9-2: NLI_ASYNC=1 + setImmediate 内 NLI runtime_error → audit_log 写 chat_nli_async failure, chat 不抛", async () => {
+    loadEnvWithAsyncFlag("1");
+    const longAnswer = "长答案 " + "x".repeat(200) + " [1]";
+    mockEmbedAndChat(longAnswer);
+    mockProviderVerify.mockRejectedValue(new NliRuntimeError("network fail"));
+
+    const ev = makeEvent({ q: "长问" }, userToken);
+    const res = await chatMain(ev);
+
+    // chat 仍 200, 不抛 (setImmediate 不影响主路径)
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.nliTurnId).toMatch(/^01K_SESSION_TEST:0$/);
+    // answer 不含 ⚠️ (warning 移到轮询 verdict, async 路径不 apply prefix)
+    expect(body.answer).not.toContain("⚠️");
+    expect(body.answer).toBe(longAnswer);
+
+    // 等 setImmediate 内 catch 跑完, audit 写 1 次 chat_nli_async failure
+    await flushSetImmediate();
+    expect(auditSpy).toHaveBeenCalledTimes(1);
+    const auditEntry = auditSpy.mock.calls[0]?.[0] as any;
+    expect(auditEntry.action).toBe("chat_nli_async");
+    expect(auditEntry.result).toBe("failure");
+    expect(auditEntry.error).toBeDefined();
+    expect(auditEntry.nliSnapshot.turnId).toBe(body.nliTurnId);
+    expect(auditEntry.nliSnapshot.reason).toBe("runtime_error");
+    expect(auditEntry.nliSnapshot.verdict).toBe("neutral");
+    expect(auditEntry.nliSnapshot.score).toBe(0);
+  });
+
+  // -------- 3. NLI_ASYNC=undefined (默认) → 走 P5 v1.3 sync 路径, response.nliTurnId 为 undefined (backward compat) --------
+  it("P9-3: NLI_ASYNC=undefined (默认) → 走 P5 v1.3 sync 路径, response.nliTurnId 为 undefined (backward compat)", async () => {
+    loadEnvWithAsyncFlag(undefined);  // default
+    const longAnswer = "长答案 " + "x".repeat(200) + " [1]";
+    mockEmbedAndChat(longAnswer);
+    mockProviderVerify.mockResolvedValue({
+      verdict: "neutral",
+      score: 0.7,
+      scores: { entailment: 0.2, neutral: 0.7, contradiction: 0.1 },
+      latencyMs: 1000,
+    });
+
+    const ev = makeEvent({ q: "长问" }, userToken);
+    const res = await chatMain(ev);
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+
+    // 关键 P9 断言: sync 路径不返 nliTurnId (backward compat)
+    expect(body.nliTurnId).toBeUndefined();
+
+    // sync 路径仍按 P5 v1.3 行为: reject → 写 audit chat_nli_reject + answer 含 ⚠️
+    expect(auditSpy).toHaveBeenCalledTimes(1);
+    const auditEntry = auditSpy.mock.calls[0]?.[0] as any;
+    expect(auditEntry.action).toBe("chat_nli_reject");  // sync 旧 action
+    expect(auditEntry.result).toBe("success");
+    expect(body.answer).toContain("⚠️");
+  });
+
+  // -------- 4. NLI_ASYNC=1 + turnSeq 计数正确 (创 session turnSeq=0, 第 2 轮 turnSeq=1) --------
+  it("P9-4: NLI_ASYNC=1 + turnSeq 计数正确 (创 session turnSeq=0, 第 2 轮 turnSeq=1)", async () => {
+    loadEnvWithAsyncFlag("1");
+
+    // 第 1 轮: 新 session, getById(chatSession) → null → 创 session
+    const longAnswer1 = "第一轮长答案 " + "x".repeat(200) + " [1]";
+    mockEmbedAndChat(longAnswer1);
+    mockProviderVerify.mockResolvedValue({
+      verdict: "entailed",
+      score: 0.95,
+      scores: { entailment: 0.95, neutral: 0.04, contradiction: 0.01 },
+      latencyMs: 800,
+    });
+
+    const ev1 = makeEvent({ q: "第一轮" }, userToken);
+    const res1 = await chatMain(ev1);
+    expect(res1.statusCode).toBe(200);
+    const body1 = JSON.parse(res1.body);
+    expect(body1.nliTurnId).toBe("01K_SESSION_TEST:0");
+
+    // 等第 1 轮 async audit 写完
+    await flushSetImmediate();
+    const auditCountAfterFirst = auditSpy.mock.calls.length;
+
+    // 第 2 轮: 同 session (session.id 已被 newId mock 固定为 01K_SESSION_TEST)
+    // 让 db.getById(chatSession) 返第 1 轮持久化的 session (含 1 条 assistant msg)
+    const persistedSession = {
+      _id: MOCK_SESSION_ID,
+      id: MOCK_SESSION_ID,
+      userId: MOCK_USER,
+      title: "第一轮",
+      messages: [
+        { role: "user", content: "第一轮", createdAt: 1000 },
+        {
+          role: "assistant",
+          content: longAnswer1,
+          retrievedChunkIds: [MOCK_CHUNK_1._id],
+          nliTurnId: "01K_SESSION_TEST:0",
+          createdAt: 1000,
+        },
+      ],
+      createdAt: 1000,
+      updatedAt: 1000,
+    };
+    vi.mocked(db.getById).mockImplementation(async (coll: string, id: string) => {
+      if (coll === "document" && id === "01K_DOC_1") return MOCK_DOC_1 as any;
+      // CloudBase collection 名是 "chat_session" (snake_case), not "chatSession"
+      if (coll === "chat_session" && id === MOCK_SESSION_ID) return persistedSession as any;
+      return null;
+    });
+
+    const longAnswer2 = "第二轮长答案 " + "x".repeat(200) + " [1]";
+    mockEmbedAndChat(longAnswer2);
+    mockProviderVerify.mockResolvedValue({
+      verdict: "entailed",
+      score: 0.95,
+      scores: { entailment: 0.95, neutral: 0.04, contradiction: 0.01 },
+      latencyMs: 800,
+    });
+
+    const ev2 = makeEvent({ q: "第二轮", session_id: MOCK_SESSION_ID }, userToken);
+    const res2 = await chatMain(ev2);
+    expect(res2.statusCode).toBe(200);
+    const body2 = JSON.parse(res2.body);
+
+    // 关键 P9 断言: 第 2 轮 turnId = `${session_id}:1` (因为 session 已有 1 条 assistant msg, turnSeq=1)
+    expect(body2.nliTurnId).toBe("01K_SESSION_TEST:1");
+
+    // 等第 2 轮 async audit 写完, 验 audit 又 +1 次
+    await flushSetImmediate();
+    expect(auditSpy.mock.calls.length).toBe(auditCountAfterFirst + 1);
+    const audit2 = auditSpy.mock.calls[auditSpy.mock.calls.length - 1]?.[0] as any;
+    expect(audit2.nliSnapshot.turnId).toBe("01K_SESSION_TEST:1");
+  });
+});

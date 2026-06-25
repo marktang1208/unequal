@@ -53,6 +53,8 @@ interface ChatResponse {
   session_id: string;
   session_title: string | null;
   is_new_session: boolean;
+  /** P9: NLI async turnId, 客户端拿此轮询 GET /api-nli-result; sync 路径 (env.NLI_ASYNC != "1") 返 undefined */
+  nliTurnId?: string;
 }
 
 const MAX_HISTORY = 10;  // 最多带 10 条历史消息（控制 token）
@@ -315,11 +317,101 @@ ${contextLines || "(无)"}`;
   // 8. P5 v1.3 NLI 后置验证（spec §2.2 / 复用 v1.1.1 + v1.2）
   // 短答案(< NLI_MIN_ANSWER_LEN=100)跳过 NLI,无空间塞幻觉
   // P5 v1.4: NLI hypothesis 跨轮 union (当前 top-5 + session 历史 retrievedChunkIds, cap 5)
+  // P9: NLI_ASYNC="1" 灰度 — 跳过 sync NLI 块, setImmediate 后台 fire-and-forget 写 audit_log chat_nli_async
+  //     客户端拿 nliTurnId 轮询 GET /api-nli-result; sync 路径 (NLI_ASYNC != "1") 行为不变 (P5 v1.3 backward compat)
   const clientIp = getClientIp(event);
   const nliMinLen = getNliMinAnswerLen();
   let finalAnswer = answer;  // 默认原 answer(NLI pass / fail-open / skip)
+  let nliTurnId: string | undefined;  // P9: async 路径下生成, sync 路径 undefined
 
-  if (shouldSkipNli(cleaned, nliMinLen)) {
+  if (env.NLI_ASYNC === "1") {
+    // P9: 灰度分支 — 跳过同步 NLI 块 (warning prefix 移到轮询 verdict), setImmediate 后台 fire-and-forget
+    // turnSeq 计数: 当前 session 中已有的 assistant message 数 (新建 session 为 0)
+    const turnSeq = session.messages.filter((m) => m.role === "assistant").length;
+    const turnId = `${session.id}:${turnSeq}`;
+    nliTurnId = turnId;
+    // 跨轮 hypothesis 跟 sync 路径共用 (P5 v1.4 跨轮 union)
+    const crossTurn = getCrossTurnHypothesis({
+      currentChunkIds: topChunks.map((t) => t.chunkId),
+      sessionMessages: session.messages,
+      findChunkById: (chunkId) => findChunk(chunkId)?.content ?? null,
+    });
+    const nliHypothesis = crossTurn.hypothesis;
+    const nliStart = Date.now();
+    const skipNli = shouldSkipNli(cleaned, nliMinLen);
+    // setImmediate: 立即 defer 到 event loop 下一 tick, 不 await, 立即返回 chat response
+    setImmediate(() => {
+      // 内部 async 异常必须 catch, 避免 unhandled rejection (CloudBase 会 log noise)
+      (async () => {
+        try {
+          if (skipNli) {
+            // 短答案跳过 verify, 不写 audit (跟 sync 路径行为一致)
+            // eslint-disable-next-line no-console
+            console.log(`[nli-async] skipped: answer too short (${cleaned.length} < ${nliMinLen})`);
+            return;
+          }
+          const provider = await getNliProvider();
+          const verdict = await provider.verify(cleaned, nliHypothesis);
+          recordNliSuccess();
+          try {
+            await recordAudit({
+              action: "chat_nli_async",
+              actor: { via: "jwt", userId, clientIp, sessionId: session.id },
+              target: { userId, resourceType: "chunk" },
+              request: { contentLen: q.length, trustLevel: 0, title: q.slice(0, 100) },
+              result: "success",
+              requestId: `chat_nli_async_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+              nliSnapshot: {
+                turnId,
+                verdict: verdict.verdict,
+                score: verdict.score,
+                latencyMs: Date.now() - nliStart,
+                reason: "async",
+              },
+            });
+          } catch (auditErr) {
+            // 审计失败不抛 (P5 v1.3 fail-open 风格)
+            // eslint-disable-next-line no-console
+            console.warn(`[audit] chat_nli_async write failed: ${auditErr instanceof Error ? auditErr.message : String(auditErr)}`);
+          }
+        } catch (err) {
+          // verify 抛错 (runtime_error / timeout) → 写 audit failure, 不抛 (async 路径不阻塞 chat)
+          recordNliFailure(err instanceof Error ? err : new Error(String(err)));
+          const reason = err instanceof NliTimeoutError ? "timeout" : "runtime_error";
+          // eslint-disable-next-line no-console
+          console.warn(`[nli-async] verify failed (${reason}): ${err instanceof Error ? err.message : String(err)}`);
+          try {
+            await recordAudit({
+              action: "chat_nli_async",
+              actor: { via: "jwt", userId, clientIp, sessionId: session.id },
+              target: { userId, resourceType: "chunk" },
+              request: { contentLen: q.length, trustLevel: 0, title: q.slice(0, 100) },
+              result: "failure",
+              error: err instanceof Error ? err.message : String(err),
+              requestId: `chat_nli_async_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+              nliSnapshot: {
+                turnId,
+                verdict: "neutral",
+                score: 0,
+                latencyMs: 0,
+                reason,
+              },
+            });
+          } catch (auditErr) {
+            // eslint-disable-next-line no-console
+            console.warn(`[audit] chat_nli_async (failure) write failed: ${auditErr instanceof Error ? auditErr.message : String(auditErr)}`);
+          }
+        }
+      })().catch((unexpected) => {
+        // 兜底: setImmediate 内 async 任何未 catch 都吞 (P5 v1.3 fail-open)
+        // eslint-disable-next-line no-console
+        console.warn(`[nli-async] unexpected error: ${unexpected instanceof Error ? unexpected.message : String(unexpected)}`);
+      });
+    });
+    // async 路径: finalAnswer 保持 answer (无 ⚠️, warning 移到轮询 verdict)
+    // nliTurnId 已设, 持久化和响应会带上
+  } else if (shouldSkipNli(cleaned, nliMinLen)) {
+    // P5 v1.3 sync: 短答案 skip NLI 块
     // eslint-disable-next-line no-console
     console.log(`[nli] skipped: answer too short (${cleaned.length} < ${nliMinLen})`);
     // 跳过 NLI,继续走 session 持久化(用 raw answer)— 短问题用户刷新不丢历史
@@ -428,6 +520,7 @@ ${contextLines || "(无)"}`;
   const now = Date.now();
   // P5 v1.4: 把当前轮 retrieve 的 top chunkIds 写进 assistant message
   // 下一轮 chat 时, getCrossTurnHypothesis 会 union 历史这些 chunkIds
+  // P9: 异步 NLI 路径下, 加 nliTurnId 字段 (轮询 key, sync 路径 undefined 不写)
   const newMessages: ChatMessage[] = [
     ...session.messages,
     { role: "user", content: q, createdAt: now },
@@ -435,6 +528,7 @@ ${contextLines || "(无)"}`;
       role: "assistant",
       content: finalAnswer,
       retrievedChunkIds: topChunks.map((t) => t.chunkId),
+      ...(nliTurnId !== undefined ? { nliTurnId } : {}),
       createdAt: now,
     },
   ];
@@ -465,6 +559,7 @@ ${contextLines || "(无)"}`;
     session_id: session.id,
     session_title: title,
     is_new_session: isNewSession,
+    ...(nliTurnId !== undefined ? { nliTurnId } : {}),  // P9: async 路径返, sync 路径 undefined
   };
   return jsonResponse(response);
 }
