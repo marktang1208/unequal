@@ -151,25 +151,49 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   ).trim();
 
   // 动态 import @cloudbase/node-sdk (避免 vitest 跑测试时执行 CLI)
-  const cloudbase = await import("@cloudbase/node-sdk");
+  // 注: dynamic import 返 namespace object, 需 .default 取 default export
+  const cloudbaseMod = await import("@cloudbase/node-sdk");
+  const cloudbase = (cloudbaseMod as { default: typeof import("@cloudbase/node-sdk").default }).default;
   const app = cloudbase.init({ env: "unequal-d4ggf7rwg82e0900b", secretId: SECID, secretKey: SECKEY });
   const db = app.database();
+  // 注: 不要预 connect — migrateNoSqlToPg 内部会调 pgAdapter.connect()
+  // 重复 connect 会抛 "Client has already been connected"
+  // 注2: pg.Client 没有 .release() (那是 Pool 用的), 加 shim 让 migrateNoSqlToPg finally 块能调
   const pg = new pgPkg.Client({ connectionString: PG_CONNECTION_STRING });
-  await pg.connect();
 
   console.log("[ETL CLI] start: NoSQL chunk → PG chunks (batch=100, retry=3)");
   const result = await migrateNoSqlToPg({
     noSqlAdapter: {
       whereQuery: async (coll, where, opts) => {
+        // CloudBase NoSQL SDK query builder 用 .skip() 不用 .offset() (plan 漏)
+        // 实际 db.ts 项目内代码也用 .skip() (见 src/lib/db.ts:line)
         const r = await db.collection(coll)
           .where(where)
           .limit((opts as { limit?: number }).limit ?? 100)
-          .offset((opts as { offset?: number }).offset ?? 0)
+          .skip((opts as { offset?: number }).offset ?? 0)
           .get();
         return { data: r.data as never[], requestId: r.requestId };
       },
     },
-    pgAdapter: pg,
+    // 给 pg.Client 套一层适配 migrateNoSqlToPg 期望的 adapter 形状:
+    //   - connect() 返 { query, release }
+    //   - end() 关连接
+    // pg.Client.connect() 返 client (无 .release), 加 shim
+    pgAdapter: {
+      connect: async () => {
+        await pg.connect();
+        return {
+          query: (sql: string, params?: unknown[]) => pg.query(sql, params),
+          release: () => {
+            // pg.Client 无 release, 用 end() 代替
+            return pg.end().catch(() => {});
+          },
+        };
+      },
+      end: async () => {
+        try { await pg.end(); } catch { /* already ended */ }
+      },
+    } as any,
     log: (msg: string) => console.log(msg),
   });
 
