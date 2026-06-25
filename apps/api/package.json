@@ -27,7 +27,8 @@
     "download-nli-model": "tsx scripts/download-nli-model-local.ts",
     "upload-nli-model": "tsx scripts/upload-nli-model-to-cos.ts",
     "migrate:no-sql-to-pg": "tsx scripts/migrate-no-sql-to-pg.ts",
-    "verify:p8-vector-db": "tsx scripts/verify-p8-vector-db.ts"
+    "verify:p8-vector-db": "tsx scripts/verify-p8-vector-db.ts",
+    "verify:p9-nli-async": "tsx scripts/verify-p9-nli-async.ts"
   },
   "dependencies": {
     "@cloudbase/node-sdk": "^3.18.1",
