@@ -66,6 +66,10 @@ export interface AppEnv {
   VECTOR_STORE: "pg" | "nosql";
   /** P8: pgvector connection string (Keychain, secret 类别) */
   PG_CONNECTION_STRING?: string;
+
+  // P9: NLI 异步化灰度
+  /** "0" = sync 走 P5 v1.3 (default, 老客户端 backward compat), "1" = async fire-and-forget + polling */
+  NLI_ASYNC?: "0" | "1";
 }
 
 let _env: AppEnv | null = null;
@@ -141,6 +145,9 @@ function validateEnvObject(source: NodeJS.ProcessEnv | Record<string, string | u
     // P8: vector DB 选型 — 默认 nosql 保 P7 现状, Phase 4 灰度改 pg
     VECTOR_STORE: parseVectorStore(source.VECTOR_STORE),
     PG_CONNECTION_STRING: source.PG_CONNECTION_STRING || undefined,
+
+    // P9: NLI 异步化灰度, 默认 "0" = sync 走 P5 v1.3 行为 (backward compat 老客户端)
+    NLI_ASYNC: parseNliAsync(source.NLI_ASYNC),
   };
 }
 
@@ -159,6 +166,13 @@ function parseNliProvider(raw: string | undefined): "http" | "noop" | "onnx" {
   if (v === "noop") return "noop";
   if (v === "onnx") return "onnx";
   return "http";
+}
+
+/** 解析 NLI_ASYNC env — P9: "0" = sync (default, P5 v1.3 行为), "1" = async (setImmediate + polling) */
+function parseNliAsync(raw: string | undefined): "0" | "1" | undefined {
+  if (raw === undefined || raw === "") return undefined; // 留给 handler 走 default sync
+  if (raw === "1") return "1";
+  return "0";
 }
 
 /** 测试用：直接传 env 对象（不读 process.env） */
