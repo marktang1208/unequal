@@ -12,7 +12,12 @@
 export interface HttpTriggerEvent {
   httpMethod: string;
   path: string;
-  headers: Record<string, string>;
+  /**
+   * 真接 P10+ 发现：cloud function 转发时 headers 偶尔是 undefined（CloudBase gateway bug，
+   * 不是每次都重现）。类型改可选，getClientIp 内部守门。
+   * 详见 test/lib/handler-utils.test.ts 三个 case。
+   */
+  headers?: Record<string, string>;
   /** queryString 实际可能 undefined（CloudBase HTTP gateway 时有时无） */
   queryString?: Record<string, string | string[]>;
   body: string | null;
@@ -87,13 +92,20 @@ export function getQuery(event: HttpTriggerEvent, key: string): string | undefin
   return Array.isArray(v) ? v[0] : v;
 }
 
-/** 取 client IP（CloudBase 透传 header，按需 smoke 验证实际 header 名） */
+/**
+ * 取 client IP（CloudBase 透传 header，按需 smoke 验证实际 header 名）
+ *
+ * 真接 P10+ bugfix：headers 偶尔是 undefined（CloudBase gateway bug），必须守门
+ * 否则 event.headers["x-real-ip"] 抛 TypeError，整 cloud function crash。
+ * 3 个 case 单测：headers=undefined / {} / 正常。
+ */
 export function getClientIp(event: HttpTriggerEvent): string {
+  const headers = event.headers ?? {};
   return (
-    event.headers["x-real-ip"] ||
-    event.headers["X-Real-IP"] ||
-    event.headers["x-forwarded-for"] ||
-    event.headers["X-Forwarded-For"] ||
+    headers["x-real-ip"] ||
+    headers["X-Real-IP"] ||
+    headers["x-forwarded-for"] ||
+    headers["X-Forwarded-For"] ||
     "unknown"
   );
 }
