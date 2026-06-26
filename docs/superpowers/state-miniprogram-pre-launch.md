@@ -2,16 +2,27 @@
 
 > 日期: 2026-06-26
 > 项目: unequal 微信小程序 (AppID: wxf5b8ce05a977f0c6, 个人主体)
-> 后端: api-router 27 vars on cloud (P8 + P9 真接 PASS, 跟 state-p9-real-deploy.md)
-> 状态: 🟡 **后端就绪, 前端待真机测试 + 提审**
+> 后端: api-router 27 vars on cloud (P8 + P9 + P10 fix 真接 PASS)
+> 状态: 🟢 **5 路径真机测试全 PASS**, 剩 2 阻塞 (#2 提审物料 + #3 上传审核)
 
 ## 0. TL;DR
 
-**后端 100% 就绪** (P8 vector DB + P9 NLI polling + retrieval follow-up #13, 累计 3 commits + 378/378 tests + 5 次 deploy)。**前端 project.config.json 已就位** (AppID + 云开发 envId + 描述更新), 等待微信开发者工具真机扫码 + 提审物料准备 + 提交审核。
+**后端 100% 就绪** (P8 vector DB + P9 NLI polling + retrieval follow-up #13 + **P10 getClientIp crash fix** (commit `61a01e6`), 累计 4 commits + 384/384 tests + 6 次 deploy)。**前端 project.config.json + app.json 已就位 + chat UI 改进** (commit `a05ff19` 删提问按钮 + 加新会话入口)。
 
-**真机测试发现问题** → P9 follow-up #13 (commit `ff195b6`) 5 个 retrieval bug 修复, 修后真 user chat 返有内容 (citations 0-5 + LLM 兜底)。
+**5 路径真机测试全 PASS** (2026-06-26 深夜):
+- ✅ #1 冷启动: wx.cloud.init ok
+- ✅ #2 chat 短问: 「月龄」+「添加辅食」+「测试」全返内容
+- ✅ #3 + 号新会话: modal 弹 + messages 清空
+- ✅ #4 历史 sessions tab: 50+ sessions 渲染, list 200
+- ✅ #5 settings 页: user_id 01KVCZ2JRBAGF3MY75D7KEY4RZ + 126 sessions + 252 msgs
+
+**P10 真接发现 2 bug**:
+- ✅ `getClientIp` undefined crash (CloudBase gateway bug): 已修, 6/6 单测 + 真接 deploy
+- ⚠️ chat 跨轮 session 复用: 不阻塞上线, P11+ 排查
 
 **Corpus 限制**: 1966 chunks 实际只有 ~3 条真育儿内容 (其余是测试/CS 论文/小说), 这是 corpus 内容问题, 上线后并行 ingest 真育儿资料。
+
+**详情**: [`state-p10-miniprogram-real-deploy.md`](./state-p10-miniprogram-real-deploy.md) (P10 真接完整 evidence)
 
 ## 1. 项目基本信息
 
@@ -212,9 +223,11 @@ ADMIN_IP_ALLOWLIST, SILICONFLOW_API_KEY, CLOUDBASE_SECRET_ID, CLOUDBASE_SECRET_K
 |---|---|---|---|
 | 项目准备 | 2026-06-26 上午 | AppID 确认, project.config.json + app.json 更新 | ✅ done |
 | 后端修复 | 2026-06-26 下午 | P9 follow-up #13 (5 bug 修复 + 4 deploy) | ✅ done |
-| 真机测试 | 2026-06-26 下午-明天 | 微信开发者工具 + 真机扫码 5 路径 | 🟡 待执行 |
-| 提审物料 | 2026-06-26 晚上 | 写简介/关键词 + 截图 + 协议 URL | 🟡 待执行 |
-| 提交审核 | 2026-06-27 | 上传代码 + 提交审核 | 🟡 待执行 |
+| 真机测试 | 2026-06-26 深夜 | 微信开发者工具 + 真机扫码 5 路径 | ✅ **PASS** (commit `61a01e6` + `a05ff19`) |
+| P10 fix | 2026-06-26 深夜 | getClientIp undefined crash + 6 单测 + 真接 deploy | ✅ done (commit `61a01e6`) |
+| UI 改进 | 2026-06-26 深夜 | 删提问按钮 + 加 + 号新会话入口 | ✅ done (commit `a05ff19`) |
+| 提审物料 | 2026-06-27 上午 | 写简介/关键词 + 截图 + 协议 URL | 🟡 待执行 |
+| 提交审核 | 2026-06-27 上午 | 上传代码 + 提交审核 | 🟡 待执行 |
 | 审核等待 | 2026-06-27 ~ 06-29 | 等审核 1-3 天 | 🟡 等 |
 | 审核通过 + 发布 | 2026-06-29 | 发布上线 | 🟡 等 |
 | 7 天监控 | 上线后 7 天 | 监控 audit_log + 真 user 体验 | 🟡 等 |
@@ -227,7 +240,7 @@ ADMIN_IP_ALLOWLIST, SILICONFLOW_API_KEY, CLOUDBASE_SECRET_ID, CLOUDBASE_SECRET_K
 
 | # | 任务 | 时间 | 阻塞? |
 |---|---|---|---|
-| 1 | 真机扫码测试 5 路径 | 1-2 小时 | 🟡 是 |
+| 1 | 真机扫码测试 5 路径 | 1-2 小时 | ✅ **done (2026-06-26 night, 5/5 PASS)** |
 | 2 | 提审物料 (简介/截图/协议) | 30 分钟 | 🟡 是 |
 | 3 | 微信开发者工具上传 + 提交审核 | 30 分钟 | 🟡 是 |
 
