@@ -8,17 +8,17 @@
 
 ## 1. TL;DR
 
-M7-D 真机端到端 verify 时发现：用户家庭 IP `***REMOVED***.46`（深圳电信 AS4134 CHINANET）不在 `ADMIN_IP_ALLOWLIST` 内，**admin 真接 100% 失败（IP_NOT_ALLOWED）**。minipgm 真机走 user jwt 走通，不受影响；但任何 admin 端真接（CP-7 真接 step 1-6 / P5 NLI step 2-6 / 后续 ARCH-V2.4 / M3-D 真接）都被同一道墙挡住。
+M7-D 真机端到端 verify 时发现：用户家庭 IP `192.0.2.46`（深圳电信 AS4134 CHINANET）不在 `ADMIN_IP_ALLOWLIST` 内，**admin 真接 100% 失败（IP_NOT_ALLOWED）**。minipgm 真机走 user jwt 走通，不受影响；但任何 admin 端真接（CP-7 真接 step 1-6 / P5 NLI step 2-6 / 后续 ARCH-V2.4 / M3-D 真接）都被同一道墙挡住。
 
 **修复**: 两层改动 —
 1. **代码层**: `apps/api/src/lib/admin-ip-allowlist.ts` 加 CIDR 范围匹配 (detect `/` → mask & 比较)
-2. **数据层**: `ADMIN_IP_ALLOWLIST` 从单 IP 列表改为 CIDR `***REMOVED***.0/24`
+2. **数据层**: `ADMIN_IP_ALLOWLIST` 从单 IP 列表改为 CIDR `192.0.2.0/24`
 
 一次性覆盖家庭同 ISP 同子网内漂移范围，删两个半年前失效的老单 IP。
 
 | 维度 | 现状 | 修后 |
 |---|---|---|
-| allowlist 值 | `240e:3b4:38ed:4100:10a1:f77f:f362:d8b0,113.116.119.197` | `***REMOVED***.0/24` |
+| allowlist 值 | `240e:3b4:38ed:4100:10a1:f77f:f362:d8b0,113.116.119.197` | `192.0.2.0/24` |
 | IP 校验 | `isAdminIpAllowed` string equality | 加 CIDR 范围匹配 |
 | 覆盖 IP 数 | 2 | 254 |
 | 鉴权机制 | 不变 (IP 鉴权 + ADMIN_TOKEN) | 不变 |
@@ -28,7 +28,7 @@ M7-D 真机端到端 verify 时发现：用户家庭 IP `***REMOVED***.46`（深
 
 ## 2. 根因
 
-**IP 漂移是 ISP 网络层常态，不是异常**。M7-D 真接时的家庭 IP `***REMOVED***.46` 是中国电信家庭宽带 C 段地址，与 allowlist 中两个老 entry 完全不同：
+**IP 漂移是 ISP 网络层常态，不是异常**。M7-D 真接时的家庭 IP `192.0.2.46` 是中国电信家庭宽带 C 段地址，与 allowlist 中两个老 entry 完全不同：
 - `240e:3b4:...:d8b0` (IPv6，半年前 entry) — 用户 IP 不再是 IPv6 或地址变了
 - `113.116.119.197` (IPv4) — 应该是早期公司 IP 或异地家宽 IP
 
@@ -53,7 +53,7 @@ export function isAdminIpAllowed(clientIp: string, allowlist: string[]): boolean
   return false;
 }
 
-/** IPv4 CIDR 匹配: ***REMOVED***.46 in ***REMOVED***.0/24 = true */
+/** IPv4 CIDR 匹配: 192.0.2.46 in 192.0.2.0/24 = true */
 export function isCidrMatch(ip: string, cidr: string): boolean {
   const [range, bitsStr] = cidr.split("/");
   const bits = parseInt(bitsStr, 10);
@@ -109,7 +109,7 @@ function ipToNumber(ip: string): number | null {
 
 ```typescript
 /** 7 个 secrets（顺序敏感，IP allowlist 是 config 不是 key）
- *  ADMIN_IP_ALLOWLIST 推荐 CIDR 格式（如 ***REMOVED***.0/24），
+ *  ADMIN_IP_ALLOWLIST 推荐 CIDR 格式（如 192.0.2.0/24），
  *  避免 IP 漂移时反复更新。CloudBase 支持多 CIDR 逗号分隔。
  */
 const SECRETS = [
@@ -131,7 +131,7 @@ const SECRETS = [
 security update-generic-password \
   -s "unequal:api-router:ADMIN_IP_ALLOWLIST" \
   -a "unequal-deploy" \
-  -w "***REMOVED***.0/24"
+  -w "192.0.2.0/24"
 ```
 
 ### 3.5 `docs/superpowers/state-m7-d.md`（~15 行）
@@ -162,7 +162,7 @@ pnpm -F api deploy:push
 ```bash
 # Step 1: 确认云端值已更新
 pnpm -F api deploy:status
-# 预期: ADMIN_IP_ALLOWLIST = "***REMOVED***.0/24"
+# 预期: ADMIN_IP_ALLOWLIST = "192.0.2.0/24"
 
 # Step 2: 拿 admin JWT
 ADMIN_JWT=$(curl -s -X POST \
@@ -205,7 +205,7 @@ pnpm -F api deploy:push
 ```markdown
 ### 6.1.1 修订 (2026-06-24): ADMIN_IP_ALLOWLIST 修 CIDR ✅
 
-**问题**: M7-D 真机端到端 verify 时发现 admin 真接 100% 失败，user IP `***REMOVED***.46`
+**问题**: M7-D 真机端到端 verify 时发现 admin 真接 100% 失败，user IP `192.0.2.46`
 （深圳电信 AS4134 CHINANET）不在 allowlist 内。minipgm 真机走 user jwt 走通不受影响，
 但 admin 端任何真接（CP-7 / P5 NLI / ARCH-V2.4 / M3-D）都失败。
 
@@ -214,7 +214,7 @@ pnpm -F api deploy:push
 不会"自动过期"，结果就是"假安全"。
 
 **修复**:
-- `ADMIN_IP_ALLOWLIST` 改 CIDR `***REMOVED***.0/24`（深圳电信家庭 C 段，254 个 IP）
+- `ADMIN_IP_ALLOWLIST` 改 CIDR `192.0.2.0/24`（深圳电信家庭 C 段，254 个 IP）
 - 删两个老单 IP
 - 走 `pnpm -F api deploy push`（P4 pipeline），保留 audit log
 

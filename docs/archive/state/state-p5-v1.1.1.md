@@ -70,7 +70,7 @@ P5 v1.1 真接 production 发现 3 个 bug,全部修通:
 
 | 步 | 命令 | 结果 | 状态 |
 |---|---|---|---|
-| [1/6] | deploy push(含 NLI 配置 + IP allowlist 5 IP) | ✅ PASS | 用户 IP ***REMOVED***.46 加到 ADMIN_IP_ALLOWLIST |
+| [1/6] | deploy push(含 NLI 配置 + IP allowlist 5 IP) | ✅ PASS | 用户 IP 192.0.2.46 加到 ADMIN_IP_ALLOWLIST |
 | [2/6] | ask「5月宝宝发烧38.5度怎么办」| ✅ PASS | 完美匹配知识库,3 citations,无 warning |
 | [3/6] | ask「5月宝宝发烧怎么办?另外可以用哪些物理降温方法?」| ⚠️ partial | 应该有 warning,实际无(NLI 100% timeout 走降级) |
 | [4/6] | audit_log 查 ask_nli_reject | ✅ PASS | 12 条 reject 记录(11 failure timeout + 1 success 真 reject) |

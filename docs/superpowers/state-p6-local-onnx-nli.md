@@ -196,7 +196,7 @@ pnpm -F api deploy:status  # NLI_PROVIDER=onnx + 5 NLI vars + 7 secrets + 9 stan
 
 1. **CloudBase COS upload**: tcb CLI 3.5.7 用 `tcb fn deploy` 部署 code 时会 wipe secrets (P4 #3 已知), 必须 deploy → push 顺序
 2. **Cold start 延迟**: 第一次 verify 需下载 79MB 模型 + ort session init, 总 ~1.9s (CloudBase 函数内存 256MB 限制下, download 是主要耗时)
-3. **CLOUDBASE_* env vars 暴露**: 现在云端 env vars 含 CLOUDBASE_SECRET_ID/KEY (Keychain 注入), 但 admin 端点 IP allowlist ***REMOVED***.0/24 已锁, 风险可接受
+3. **CLOUDBASE_* env vars 暴露**: 现在云端 env vars 含 CLOUDBASE_SECRET_ID/KEY (Keychain 注入), 但 admin 端点 IP allowlist 192.0.2.0/24 已锁, 风险可接受
 4. **`@huggingface/transformers` 残留 = 误判**: state-p6 v1 (写时) 错误声称 package.json 加了此依赖, 实际 P6 全程只用 onnxruntime-node。P7 follow-up #2 验证时确认: `apps/api/package.json` 11 个 deps 无 huggingface, pnpm-lock.yaml 无 huggingface/xenova direct dep。node_modules/.pnpm 下有 `@huggingface+jinja` 和 `@xenova+transformers` 仅为 transitive (通过 onnx 工具链拉的, 跟代码无 import 关系)。**结论**: 无需清理, 已修正 state doc + memory。
 5. **placeholder user 测不出 NLI 真接**: DEFAULT_USER_ID=01H0000000000000000000000 不存在, retrieve chunks 失败 → NLI hypothesis 空 → score=0 → runtime_error (failOpen 兜底 OK)
 6. **真接 NLI 完整闭环需真用户**: admin token login 用 DEFAULT_USER_ID, 无 wx code 创不了真用户 (需要 mini program 端真接测试)

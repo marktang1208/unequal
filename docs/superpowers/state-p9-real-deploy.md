@@ -116,7 +116,7 @@ PG_CONNECTION_STRING  ← P8 新增 (commit 162e0dd)
 [status] Source: remote (SCF API GetFunctionConfiguration)
 [status] Captured: 2026-06-26T02:35:59.477Z
 [status] Vars (27):
-  ADMIN_IP_ALLOWLIST = ***REMOVED***.0/24
+  ADMIN_IP_ALLOWLIST = 192.0.2.0/24
   ADMIN_TOKEN = 5e5b...fcf9 (64)
   ALLOWED_ORIGIN = *
   CLOUDBASE_SECRET_ID = ***REMOVED***

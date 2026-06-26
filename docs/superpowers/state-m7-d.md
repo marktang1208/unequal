@@ -120,7 +120,7 @@ HTTP 204
 | OPTIONS /api-auth-me | ✅ 204 (CORS 正常) |
 | GET /api-auth-me 无 token | ✅ 401 (`Invalid JWT`) |
 | GET /api-auth-me 错 token | ✅ 401 (`Invalid JWT`) |
-| POST /api-auth-admin-login | ⚠️ IP_NOT_ALLOWED (你当前 IP `***REMOVED***.46` 不在 `ADMIN_IP_ALLOWLIST`,家庭 IP 漂移导致) — 不影响真机 verify,真机用 wx.login 走 user jwt,不走 admin token |
+| POST /api-auth-admin-login | ⚠️ IP_NOT_ALLOWED (你当前 IP `192.0.2.46` 不在 `ADMIN_IP_ALLOWLIST`,家庭 IP 漂移导致) — 不影响真机 verify,真机用 wx.login 走 user jwt,不走 admin token |
 
 **真机 verify**（用户截图,2026-06-24 10:37）：
 
@@ -185,7 +185,7 @@ HTTP 204
 
 ## 6.1.1 修订 (2026-06-24): ADMIN_IP_ALLOWLIST 修 CIDR ✅
 
-**问题**: M7-D 真机端到端 verify 时发现 admin 真接 100% 失败, user IP `***REMOVED***.46`(深圳电信 AS4134 CHINANET) 不在 allowlist `240e:3b4:...d8b0, 113.116.119.197` 内。minipgm 真机走 user jwt 走通不受影响, 但 admin 端任何真接 (CP-7 / P5 NLI / ARCH-V2.4 / M3-D) 都失败。
+**问题**: M7-D 真机端到端 verify 时发现 admin 真接 100% 失败, user IP `192.0.2.46`(深圳电信 AS4134 CHINANET) 不在 allowlist `240e:3b4:...d8b0, 113.116.119.197` 内。minipgm 真机走 user jwt 走通不受影响, 但 admin 端任何真接 (CP-7 / P5 NLI / ARCH-V2.4 / M3-D) 都失败。
 
 **根因**:
 - 现状 allowlist 两个单 IP 是半年前 entry。家庭 IP 漂移后失效, CloudBase allowlist 无 TTL 机制, 半年 entry 不会"自动过期" → 假安全
@@ -195,7 +195,7 @@ HTTP 204
 **修复**:
 - `src/lib/admin-ip-allowlist.ts` 加 CIDR 范围匹配 (IPv4 only, IPv6 CIDR 留未来)
 - 12 个新单测 (admin-ip-allowlist.test.ts RED→GREEN) 覆盖: 回归 / /24 / /32 / /16 / /0 / 非法 bits / 格式错误 / IPv6 CIDR / 空 / 混合 / 5 段 IP
-- Keychain `ADMIN_IP_ALLOWLIST` 改 `***REMOVED***.0/24` (深圳电信家庭 C 段 254 IP)
+- Keychain `ADMIN_IP_ALLOWLIST` 改 `192.0.2.0/24` (深圳电信家庭 C 段 254 IP)
 - 删两个老单 IP
 - 走 `pnpm -F api deploy push` (P4 pipeline), 保留 audit log
 

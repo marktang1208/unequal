@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>隐私政策 - 育儿不等号</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.7;
+    color: #1f2937;
+    background: #fafafa;
+    padding: 24px 16px 80px;
+  }
+  .container {
+    max-width: 720px;
+    margin: 0 auto;
+    background: #fff;
+    border-radius: 12px;
+    padding: 32px 24px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  }
+  h1 {
+    font-size: 24px;
+    font-weight: 700;
+    color: #111827;
+    margin-bottom: 8px;
+    text-align: center;
+  }
+  .meta {
+    font-size: 13px;
+    color: #6b7280;
+    text-align: center;
+    margin-bottom: 32px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  h2 {
+    font-size: 18px;
+    font-weight: 600;
+    color: #111827;
+    margin: 28px 0 12px;
+  }
+  p { font-size: 15px; margin-bottom: 14px; }
+  ul { margin: 12px 0 14px 20px; font-size: 15px; }
+  li { margin-bottom: 6px; }
+  .not-collect {
+    background: #fee2e2;
+    padding: 12px 16px;
+    border-radius: 8px;
+    border-left: 3px solid #ef4444;
+    margin: 16px 0;
+    font-size: 14px;
+  }
+  .not-collect li { color: #991b1b; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0 16px;
+    font-size: 14px;
+  }
+  th, td {
+    border: 1px solid #e5e7eb;
+    padding: 8px 10px;
+    text-align: left;
+  }
+  th { background: #f3f4f6; font-weight: 600; }
+  .footer {
+    margin-top: 40px;
+    padding-top: 20px;
+    border-top: 1px solid #e5e7eb;
+    font-size: 13px;
+    color: #9ca3af;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>隐私政策</h1>
+  <div class="meta">最后更新: 2026-06-26 · 适用产品: 微信小程序「育儿不等号」</div>
+
+  <h2>一、我们收集的信息</h2>
+
+  <p><strong>1.1 您主动提供的信息</strong></p>
+  <ul>
+    <li>您上传/抓取的育儿相关文档（PDF、Word、TXT、Markdown、网页内容）</li>
+    <li>您的问答历史（提问内容、AI 回答、引用来源）</li>
+  </ul>
+
+  <p><strong>1.2 微信小程序自动采集的信息</strong></p>
+  <ul>
+    <li><strong>微信 OpenID</strong>（用于会话识别, 由微信云开发生成, 我们无法直接获取您的微信号）</li>
+    <li><strong>设备信息</strong>: 设备型号、操作系统版本（仅用于排错）</li>
+    <li><strong>网络信息</strong>: IP 地址（仅用于请求路由和反滥用）</li>
+  </ul>
+
+  <p><strong>1.3 我们不收集的信息</strong></p>
+  <div class="not-collect">
+    <ul>
+      <li>❌ 您的真实姓名、身份证号、手机号</li>
+      <li>❌ 您的位置信息（GPS / IP 定位）</li>
+      <li>❌ 您的通讯录、相册、麦克风</li>
+      <li>❌ 您的微信好友关系</li>
+    </ul>
+  </div>
+
+  <h2>二、信息使用目的</h2>
+  <table>
+    <thead>
+      <tr><th>数据</th><th>用途</th><th>存储位置</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>OpenID</td><td>标识用户会话</td><td>微信云开发 D1 数据库</td></tr>
+      <tr><td>问答历史</td><td>多轮会话 + 历史记录查询</td><td>微信云开发 D1 数据库</td></tr>
+      <tr><td>上传文档</td><td>知识库构建 + 检索增强生成</td><td>微信云开发 R2 + 向量数据库</td></tr>
+      <tr><td>设备/网络信息</td><td>排错、反滥用</td><td>微信云开发日志</td></tr>
+    </tbody>
+  </table>
+
+  <h2>三、信息共享</h2>
+  <p>我们<strong>不会</strong>主动向第三方分享您的个人信息, 除非:</p>
+  <ul>
+    <li>获得您的明确同意</li>
+    <li>法律法规或行政机关要求</li>
+    <li>仅共享给必要的服务供应商:
+      <ul>
+        <li><strong>微信云开发 (CloudBase)</strong>: 提供存储、计算基础设施</li>
+        <li><strong>MiniMax API</strong>: 提供 LLM 推理和 embedding 服务 (仅传输问答内容, 不含用户身份)</li>
+      </ul>
+    </li>
+  </ul>
+
+  <h2>四、信息存储</h2>
+  <ul>
+    <li>存储位置: 腾讯云上海地域 (ap-shanghai)</li>
+    <li>存储期限: 您删除小程序账号后, 我们将在 30 天内删除您的数据</li>
+    <li>数据出境: 不出境</li>
+  </ul>
+
+  <h2>五、您的权利</h2>
+  <p>您有权:</p>
+  <ul>
+    <li><strong>查询</strong>: 通过小程序「设置」页查看 user_id 和会话列表</li>
+    <li><strong>删除</strong>: 通过小程序「设置」页请求删除账户（开发中）</li>
+    <li><strong>更正</strong>: 通过小程序「设置」页反馈错误内容</li>
+  </ul>
+
+  <h2>六、未成年人保护</h2>
+  <p>本服务面向家长群体, 14 周岁以下儿童不应直接使用本服务。如发现儿童直接使用, 家长应及时删除相关问答历史。</p>
+
+  <h2>七、本政策更新</h2>
+  <ul>
+    <li>重大变更将通过小程序内通知</li>
+    <li>继续使用本服务即视为接受更新后的政策</li>
+  </ul>
+
+  <h2>八、联系方式</h2>
+  <p>反馈: 微信小程序内「设置」页<br>邮件: [填入你的邮箱]<br>微信小程序客服入口: 「设置」→「反馈」</p>
+
+  <div class="footer">运营者承诺: 最小化采集、本地优先、用户可控</div>
+</div>
+</body>
+</html>

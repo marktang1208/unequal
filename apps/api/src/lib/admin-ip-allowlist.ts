@@ -2,7 +2,7 @@
  * CP-6: admin IP 白名单 (spec §5.3)
  *
  * 沿用 v0 M6.10 设计: string equality;
- * P0-#1 扩展: 支持 IPv4 CIDR 范围匹配 (e.g. "***REMOVED***.0/24");
+ * P0-#1 扩展: 支持 IPv4 CIDR 范围匹配 (e.g. "192.0.2.0/24");
  * IPv6 CIDR 暂不支持, 显式拒绝 (留作未来 candidate)。
  *
  * IPv6 字符串兼容: `240e:3b4:...` 全字符串包含匹配。
@@ -32,8 +32,8 @@ export function isAdminIpAllowed(clientIp: string, allowlist: string[]): boolean
 /**
  * IPv4 CIDR 范围匹配
  *
- * @param ip IPv4 字符串 (e.g. "***REMOVED***.46")
- * @param cidr CIDR 字符串 (e.g. "***REMOVED***.0/24")
+ * @param ip IPv4 字符串 (e.g. "192.0.2.46")
+ * @param cidr CIDR 字符串 (e.g. "192.0.2.0/24")
  * @returns true if ip 在 cidr 范围内
  *
  * 边界:

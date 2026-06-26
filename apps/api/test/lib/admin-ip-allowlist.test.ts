@@ -65,47 +65,47 @@ describe("isAdminIpAllowed (CP-6)", () => {
 
 describe("isAdminIpAllowed CIDR (P0-#1)", () => {
   it("[1] 单 IP 精确匹配 (回归)", () => {
-    expect(isAdminIpAllowed("***REMOVED***.46", ["***REMOVED***.46"])).toBe(true);
+    expect(isAdminIpAllowed("192.0.2.46", ["192.0.2.46"])).toBe(true);
   });
   it("[2] IPv4 在 /24 CIDR 范围内", () => {
-    expect(isAdminIpAllowed("***REMOVED***.46", ["***REMOVED***.0/24"])).toBe(true);
+    expect(isAdminIpAllowed("192.0.2.46", ["192.0.2.0/24"])).toBe(true);
   });
   it("[3] IPv4 在 /24 CIDR 范围外", () => {
-    expect(isAdminIpAllowed("***REMOVED***.46", ["***REMOVED***.0/24"])).toBe(false);
+    expect(isAdminIpAllowed("198.51.100.46", ["192.0.2.0/24"])).toBe(false);
   });
   it("[4] IPv4 在 /32 CIDR 范围内 (=单 IP)", () => {
-    expect(isAdminIpAllowed("***REMOVED***.46", ["***REMOVED***.46/32"])).toBe(true);
+    expect(isAdminIpAllowed("192.0.2.46", ["192.0.2.46/32"])).toBe(true);
   });
-  it("[5] IPv4 在 /16 CIDR 范围内 (深圳电信大段)", () => {
-    expect(isAdminIpAllowed("***REMOVED***.46", ["***REMOVED***/16"])).toBe(true);
+  it("[5] IPv4 在 /16 CIDR 范围内 (RFC 5737 文档段)", () => {
+    expect(isAdminIpAllowed("192.0.2.46", ["192.0.2.0/16"])).toBe(true);
   });
   it("[6] bits=0 匹配所有 IPv4", () => {
     expect(isAdminIpAllowed("8.8.8.8", ["0.0.0.0/0"])).toBe(true);
   });
   it("[7] bits=33 非法 → false", () => {
-    expect(isAdminIpAllowed("***REMOVED***.46", ["***REMOVED***.0/33"])).toBe(false);
+    expect(isAdminIpAllowed("192.0.2.46", ["192.0.2.0/33"])).toBe(false);
   });
   it("[8] CIDR 格式错误 (无 /) → 走精确匹配", () => {
     // 无 / 时 entry 当单 IP 处理, 不等 → false
-    expect(isAdminIpAllowed("***REMOVED***.46", ["***REMOVED***.0"])).toBe(false);
+    expect(isAdminIpAllowed("192.0.2.46", ["192.0.2.0"])).toBe(false);
     // 等于时 → true (与现有行为一致)
-    expect(isAdminIpAllowed("***REMOVED***.46", ["***REMOVED***.46"])).toBe(true);
+    expect(isAdminIpAllowed("192.0.2.46", ["192.0.2.46"])).toBe(true);
   });
   it("[9] IPv6 CIDR 暂不支持 → false", () => {
     expect(isAdminIpAllowed("240e:3b4::1", ["240e:3b4::/32"])).toBe(false);
   });
   it("[10] 空 allowlist → false", () => {
-    expect(isAdminIpAllowed("***REMOVED***.46", [])).toBe(false);
+    expect(isAdminIpAllowed("192.0.2.46", [])).toBe(false);
   });
   it("[11] 混合 allowlist (单 IP + CIDR) OR 语义", () => {
     // 单 IP 命中
-    expect(isAdminIpAllowed("1.2.3.4", ["1.2.3.4", "***REMOVED***.0/24"])).toBe(true);
+    expect(isAdminIpAllowed("1.2.3.4", ["1.2.3.4", "192.0.2.0/24"])).toBe(true);
     // CIDR 命中
-    expect(isAdminIpAllowed("***REMOVED***.99", ["1.2.3.4", "***REMOVED***.0/24"])).toBe(true);
+    expect(isAdminIpAllowed("192.0.2.99", ["1.2.3.4", "192.0.2.0/24"])).toBe(true);
     // 都不命中
-    expect(isAdminIpAllowed("9.9.9.9", ["1.2.3.4", "***REMOVED***.0/24"])).toBe(false);
+    expect(isAdminIpAllowed("9.9.9.9", ["1.2.3.4", "192.0.2.0/24"])).toBe(false);
   });
   it("[12] IPv4 格式错误 (5 段) → false", () => {
-    expect(isAdminIpAllowed("1.2.3.4.5", ["***REMOVED***.0/24"])).toBe(false);
+    expect(isAdminIpAllowed("1.2.3.4.5", ["192.0.2.0/24"])).toBe(false);
   });
 });
