@@ -162,7 +162,7 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
         userId,
         queryVector: queryVec,
         topK: 5,
-        scoreThreshold: 0.3,
+        scoreThreshold: 0.2,
         ...(sourceTypes ? { sourceTypes } : {}),
         ...(excludeSourceIds ? { excludeSourceIds } : {}),
       });
@@ -181,12 +181,14 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
       }));
     } catch (err) {
       // failOpen: PG 失败 → 落回暴力 cosine (跟 P7 行为一致)
+      // P9 follow-up #13: 跟 api-search 对齐, 用 DEFAULT_USER_ID 而不是真 user (corpus 1966 chunks 都 ingest 到 DEFAULT)
+      // 拉 30 chunks (CloudBase 1MB 回包限制: 30 × ~33KB ≈ 1MB 安全), 加大候选池让 searchChunks cosine 命中
       // eslint-disable-next-line no-console
       console.warn(`[api-chat] PG retrieval failOpen: ${err instanceof Error ? err.message : String(err)}`);
-      const chunks = await whereQuery<Chunk>(COLLECTIONS.chunk, { userId }, { limit: 8 });
-      if (chunks.length === 8) {
+      const chunks = await whereQuery<Chunk>(COLLECTIONS.chunk, { userId: env.DEFAULT_USER_ID }, { limit: 30 });
+      if (chunks.length === 30) {
         // eslint-disable-next-line no-console
-        console.warn(`[api-chat] chunk retrieval hit 8 limit; user ${userId} has more chunks (production 1963) - retrieval 准确度受限; v2 需上向量 DB`);
+        console.warn(`[api-chat] chunk retrieval hit 30 limit; user ${env.DEFAULT_USER_ID} has more chunks (production 1963) - retrieval 准确度受限; v2 需向量 DB`);
       }
       chunksWithEmb = chunks.map((c) => ({
         id: c.id,
@@ -229,7 +231,8 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
     userId,
     queryVector: queryVec,
     topK: 5,
-    scoreThreshold: 0.3,
+    // P9 follow-up #13: 去掉 scoreThreshold (PG path 已经在 SQL 推过 0.2, 这里是二次过滤, 重复且过严)
+    // failOpen nosql 时 corpus 不全 (limit 30), 二次 threshold 会误杀低分但相关的 chunks
     ...(sourceTypes ? { sourceTypes } : {}),
     ...(excludeSourceIds ? { excludeSourceIds } : {}),
   });

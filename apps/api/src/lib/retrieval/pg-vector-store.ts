@@ -78,6 +78,9 @@ export function createPgVectorStore(opts: PgVectorStoreOptions): PgVectorStore {
   const recallMul = opts.recallMultiplier ?? 10;
   const maxCand = opts.maxCandidates ?? 50;
   const stmtTimeout = opts.statementTimeoutMs ?? opts.queryTimeoutMs ?? 3000;
+  // P9 follow-up #13: 跟 api-ingest.ts:138 的 env.DEFAULT_USER_ID 对齐
+  // corpus 1966 chunks 全部 ingest 成这个 userId,真 user 需 UNION 它才能命中
+  const DEFAULT_CORPUS_USER_ID = "01H0000000000000000000000";
 
   async function queryTopK(q: QueryTopKOptions): Promise<ChunkWithEmbedding[]> {
     const candidates = Math.min(q.topK * recallMul, maxCand);
@@ -85,7 +88,8 @@ export function createPgVectorStore(opts: PgVectorStoreOptions): PgVectorStore {
     const threshold = q.scoreThreshold ?? 0;
 
     // 动态构建 SQL + params (防 injection 用 parameter binding)
-    const params: unknown[] = [vecStr, q.userId, threshold];
+    // P9 follow-up #13: 加 $4 = DEFAULT_USER_ID (corpus 共享 owner),让真 user 也能命中
+    const params: unknown[] = [vecStr, q.userId, threshold, DEFAULT_CORPUS_USER_ID];
     let extraWhere = "";
     if (q.sourceTypes && q.sourceTypes.length > 0) {
       params.push(q.sourceTypes);
@@ -96,6 +100,10 @@ export function createPgVectorStore(opts: PgVectorStoreOptions): PgVectorStore {
       extraWhere += ` AND NOT (source_id = ANY($${params.length}))`;
     }
 
+    // P9 真接 follow-up #13: corpus 共享给所有 user (DEFAULT_USER_ID = 01H... 是 ingest 默认 owner)
+    // 1966 chunks 全部 ingest 到 DEFAULT,真 user (e.g. 01KVCZ...) 实际空
+    // 修: WHERE user_id IN ($2, DEFAULT_USER_ID) 让真 user 也能命中 corpus
+    // P10+ 真 multi-tenant 设计时改回单 user_id 过滤
     const sql = `
       SET LOCAL statement_timeout = ${stmtTimeout};
       SELECT id, document_id AS "documentId", source_id AS "sourceId", user_id AS "userId",
@@ -103,7 +111,7 @@ export function createPgVectorStore(opts: PgVectorStoreOptions): PgVectorStore {
              source_type AS "sourceType", created_at AS "createdAt",
              1 - (embedding <=> $1::vector) AS vectorize_score
       FROM chunks
-      WHERE user_id = $2
+      WHERE (user_id = $2 OR user_id = $4)
         AND (1 - (embedding <=> $1::vector)) >= $3
         ${extraWhere}
       ORDER BY embedding <=> $1::vector

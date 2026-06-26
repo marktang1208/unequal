@@ -91,7 +91,7 @@ describe("createPgVectorStore", () => {
     });
     await store.queryTopK({ userId: "u1", queryVector: EMB, topK: 5, sourceTypes: ["pdf", "webpage"] });
     const sql = queryFn.mock.calls[0]![0] as string;
-    expect(sql).toMatch(/source_type = ANY\(\$4\)/);
+    expect(sql).toMatch(/source_type = ANY\(\$5\)/); // P9 follow-up #13: $4 = DEFAULT_USER_ID, sourceTypes 现在 $5
   });
 
   it("7. excludeSourceIds: SQL 含 NOT source_id = ANY", async () => {
@@ -102,7 +102,7 @@ describe("createPgVectorStore", () => {
     });
     await store.queryTopK({ userId: "u1", queryVector: EMB, topK: 5, excludeSourceIds: ["s1", "s2"] });
     const sql = queryFn.mock.calls[0]![0] as string;
-    expect(sql).toMatch(/NOT \(source_id = ANY\(\$4\)\)/);
+    expect(sql).toMatch(/NOT \(source_id = ANY\(\$5\)\)/); // P9 follow-up #13: $4 = DEFAULT_USER_ID, excludeSourceIds 现在 $5
   });
 
   it("8. 连接池耗尽: connect 抛 ETIMEDOUT → fallback 抛 error (caller 处理)", async () => {

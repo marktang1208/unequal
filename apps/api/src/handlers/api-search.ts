@@ -65,7 +65,7 @@ export async function main(event: HttpTriggerEvent): Promise<HttpTriggerResponse
         userId: env.DEFAULT_USER_ID,
         queryVector: queryVec,
         topK: 5,
-        scoreThreshold: 0.3,
+        scoreThreshold: 0.2,
         ...(sourceTypes ? { sourceTypes } : {}),
         ...(excludeSourceIds ? { excludeSourceIds } : {}),
       });

@@ -1,5 +1,5 @@
 {
-  "description": "不等号 / unequal 微信小程序配置。已配置真 AppID wxf5b8ce05a977f0c6，等待 Cloudflare 资源 + 微信开发者工具真机预览。",
+  "description": "不等号 / unequal 微信小程序配置。AppID wxf5b8ce05a977f0c6 (个人主体), 云开发 envId unequal-d4ggf7rwg82e0900b, 后端 api-router 真接 P8 vector DB + P9 NLI polling。等待微信开发者工具真机预览 + 提交审核。",
   "packOptions": {
     "ignore": [],
     "include": []
