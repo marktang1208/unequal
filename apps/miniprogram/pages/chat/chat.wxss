@@ -78,40 +78,6 @@
   font-weight: 500;
 }
 
-/* 提问按钮 — 启用态：暖橙 + 粗描边 + 偏移阴影 */
-.input-bar .btn-send {
-  flex-shrink: 0;
-  margin: 0 6rpx 0 0; /* 右侧留 shadow 空间 */
-  padding: 0 40rpx;
-  height: 80rpx;
-  line-height: 74rpx;
-  background: #ff8a65;
-  color: #ffffff;
-  font-size: 28rpx;
-  font-weight: 800;
-  border: 3px solid #3d2914;
-  border-radius: 24rpx;
-  box-shadow: 6rpx 6rpx 0 0 #3d2914;
-  letter-spacing: 1rpx;
-}
-
-.input-bar .btn-send::after {
-  border: none;
-}
-
-.input-bar .btn-send:active {
-  transform: translate(3rpx, 3rpx);
-  box-shadow: 3rpx 3rpx 0 0 #3d2914;
-}
-
-/* 禁用态：暖橙降饱和度 + 阴影保留（保持视觉一致性） */
-.input-bar .btn-send[disabled] {
-  background: #ffd0b8;
-  color: #ffffff;
-  border: 3px solid #3d2914;
-  box-shadow: 4rpx 4rpx 0 0 #a89887;
-}
-
 /* M7-B: source type picker（多选 chip，水平滚动） */
 .source-picker {
   display: flex;
@@ -152,6 +118,34 @@
 .source-picker .chip:active {
   transform: translate(2rpx, 2rpx);
   box-shadow: 0rpx 0rpx 0 0 #3d2914;
+}
+
+/* 头部左侧：新会话入口（+ 号，镜像 .settings-fab 风格） */
+.new-session-fab {
+  position: fixed;
+  top: 24rpx;
+  left: 24rpx;
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.new-session-fab:active {
+  transform: scale(0.92);
+}
+
+.new-session-fab-icon {
+  font-size: 48rpx;
+  font-weight: 600;
+  color: #333;
+  line-height: 1;
+  margin-top: -4rpx; /* 视觉居中微调 */
 }
 
 /* M7-D: 右上角设置入口 FAB */

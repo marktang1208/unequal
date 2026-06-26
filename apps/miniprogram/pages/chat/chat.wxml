@@ -1,4 +1,9 @@
 <view class="chat-page">
+  <!-- 头部左侧：新会话入口（+ 号） -->
+  <view class="new-session-fab" bindtap="onTapNewSession">
+    <text class="new-session-fab-icon">+</text>
+  </view>
+
   <scroll-view
     class="message-list"
     scroll-y
@@ -50,11 +55,6 @@
       confirm-type="send"
       bindconfirm="onSubmit"
     />
-    <button
-      class="btn-send"
-      bindtap="onSubmit"
-      disabled="{{submitting || !q}}"
-    >提问</button>
   </view>
 
   <!-- M7-D: 设置入口（右上角悬浮） -->
