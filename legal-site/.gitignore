@@ -1,0 +1,8 @@
+# Build artifacts
+.DS_Store
+node_modules/
+
+# Editor
+.vscode/
+.idea/
+*.swp
