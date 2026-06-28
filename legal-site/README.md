@@ -4,8 +4,10 @@
 
 ## 在线访问
 
-- 用户协议: <https://YOUR_GITHUB_USERNAME.github.io/unequal-legal/>
-- 隐私政策: <https://YOUR_GITHUB_USERNAME.github.io/unequal-legal/privacy.html>
+- 用户协议: <https://marktang1208.github.io/unequal/>
+- 隐私政策: <https://marktang1208.github.io/unequal/privacy.html>
+
+> 注: 当前部署在 marktang1208/unequal repo 的 gh-pages 分支(不是独立的 unequal-legal repo)。
 
 ## 文件说明
 

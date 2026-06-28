@@ -106,10 +106,10 @@
 
 | 字段 | URL |
 |---|---|
-| 用户协议 | `https://YOUR_GITHUB_USERNAME.github.io/unequal-legal/` |
-| 隐私政策 | `https://YOUR_GITHUB_USERNAME.github.io/unequal-legal/privacy.html` |
+| 用户协议 | `https://marktang1208.github.io/unequal/` |
+| 隐私政策 | `https://marktang1208.github.io/unequal/privacy.html` |
 
-> ⚠️ 这两个 URL 必须是**公开可访问的 HTTPS URL**。如果没部署, 审核会被打回。
+> ⚠️ 这两个 URL 必须是**公开可访问的 HTTPS URL**。当前部署在 marktang1208/unequal repo 的 gh-pages 分支（独立 unequal-legal repo 不存在）。如果不可访问，审核会被打回。
 
 ### 3.4 提交
 
