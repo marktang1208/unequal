@@ -18,25 +18,35 @@
   position: relative;
 }
 
-/* user 气泡：橙黄 + 3px 深棕粗描边 + 8rpx 金黄偏移阴影 */
+/* P11: chat 页气泡镜像 (user 靠左 / assistant 靠右)
+ * - 避免 + 号 FAB (左上) 视觉冲突
+ * - 提供 user/assistant 视觉差异化 (跟 industry 默认相反, 是产品决策)
+ * - max-width 78% 保留, box-shadow 偏移方向镜像
+ */
+
+/* user 气泡：橙黄 + 3px 深棕粗描边 + 8rpx 金黄偏移阴影
+ * 镜像后: 靠左 (flex-start), border-radius 小角从右下移到左下 */
 .bubble.user {
-  align-self: flex-end;
+  align-self: flex-start;
+  margin: 22rpx 24rpx 22rpx 32rpx;
   background: #ffb84d;
   color: #3d2914;
   border: 3px solid #3d2914;
-  border-radius: 28rpx 8rpx 28rpx 28rpx;
-  box-shadow: 8rpx 8rpx 0 0 #f5a623;
+  border-radius: 8rpx 28rpx 28rpx 28rpx;
+  box-shadow: -8rpx 8rpx 0 0 #f5a623;
   font-weight: 600;
 }
 
-/* assistant 气泡：白卡 + 3px 深棕粗描边 + 8rpx 橙黄偏移阴影 */
+/* assistant 气泡：白卡 + 3px 深棕粗描边 + 8rpx 橙黄偏移阴影
+ * 镜像后: 靠右 (flex-end), border-radius 小角从左上移到右上 */
 .bubble.assistant {
-  align-self: flex-start;
+  align-self: flex-end;
+  margin: 22rpx 32rpx 22rpx 24rpx;
   background: #ffffff;
   color: #3d2914;
   border: 3px solid #3d2914;
-  border-radius: 8rpx 28rpx 28rpx 28rpx;
-  box-shadow: 8rpx 8rpx 0 0 #ffb84d;
+  border-radius: 28rpx 8rpx 28rpx 28rpx;
+  box-shadow: -8rpx 8rpx 0 0 #ffb84d;
   font-weight: 500;
 }
 

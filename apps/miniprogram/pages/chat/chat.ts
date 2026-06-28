@@ -130,6 +130,8 @@ Page({
     showWarning: false,
     /** P9: NLI 警告文本 */
     warningText: "" as string,
+    /** P11: 信息源筛选 popup 是否打开 */
+    sourceFilterOpen: false,
   },
 
   onLoad(): void {
@@ -219,14 +221,29 @@ Page({
     this.setData({ q: e.detail.value });
   },
 
-  /** M7-B: chip toggle — 多选/取消 sourceType；空数组 = 不过滤 */
-  onToggleSourceType(e: WechatMiniprogram.Tap): void {
+  /** P11: 打开信息源筛选 popup (替代旧 chip 条) */
+  onOpenSourceFilter(): void {
+    this.setData({ sourceFilterOpen: true });
+  },
+
+  /** P11: 关闭信息源筛选 popup (mask 点击 / × 点击 / 应用) */
+  onCloseSourceFilter(): void {
+    this.setData({ sourceFilterOpen: false });
+  },
+
+  /** P11: popup 内 toggle — 多选/取消 sourceType; 实时生效, 不关 popup */
+  onToggleSourceTypeInPopup(e: WechatMiniprogram.Tap): void {
     const value = e.currentTarget.dataset.value as string;
     const current = this.data.selectedSourceTypes;
     const next = current.indexOf(value) >= 0
       ? current.filter((v) => v !== value)
       : [...current, value];
     this.setData({ selectedSourceTypes: next });
+  },
+
+  /** P11: 重置 source 过滤 (空数组 = 不过滤, 走默认) */
+  onResetSourceFilter(): void {
+    this.setData({ selectedSourceTypes: [] });
   },
 
   onSubmit(): void {

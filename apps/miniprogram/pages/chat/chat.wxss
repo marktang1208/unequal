@@ -1,4 +1,5 @@
 /* CP-7-B round 8: 06 童心日历 — chat 页 px 单位修描边
+ * P11: 删 source-picker (底部 chip 条), 加 .source-filter-fab (🔍) + .source-popup (半屏弹层)
  */
 
 .chat-page {
@@ -78,48 +79,6 @@
   font-weight: 500;
 }
 
-/* M7-B: source type picker（多选 chip，水平滚动） */
-.source-picker {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 16rpx;
-  padding: 12rpx 24rpx;
-  background: #fff9e6;
-  border-top: 2px dashed #3d2914;
-  white-space: nowrap;
-  position: relative;
-  z-index: 1;
-}
-
-.source-picker .chip {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-  padding: 8rpx 24rpx;
-  background: #ffffff;
-  color: #3d2914;
-  font-size: 24rpx;
-  font-weight: 600;
-  border: 2px solid #3d2914;
-  border-radius: 100rpx;
-  letter-spacing: 1rpx;
-  /* offset shadow 让选中态可见 */
-  box-shadow: 2rpx 2rpx 0 0 #a89887;
-}
-
-.source-picker .chip--active {
-  background: #ff8a65;
-  color: #ffffff;
-  border-color: #3d2914;
-  box-shadow: 3rpx 3rpx 0 0 #3d2914;
-}
-
-.source-picker .chip:active {
-  transform: translate(2rpx, 2rpx);
-  box-shadow: 0rpx 0rpx 0 0 #3d2914;
-}
-
 /* 头部左侧：新会话入口（+ 号，镜像 .settings-fab 风格） */
 .new-session-fab {
   position: fixed;
@@ -171,4 +130,181 @@
 .settings-fab-icon {
   font-size: 40rpx;
   color: #333;
+}
+
+/* P11: 信息源筛选入口 (⚙ 下方, 镜像 .settings-fab 风格) */
+.source-filter-fab {
+  position: fixed;
+  top: 112rpx; /* 24rpx + 72rpx + 16rpx 间距 */
+  right: 24rpx;
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.source-filter-fab:active {
+  transform: scale(0.92);
+}
+
+.source-filter-fab-icon {
+  font-size: 36rpx;
+  line-height: 1;
+}
+
+/* P11: 已选数量小红徽章 (右上角 -4rpx) */
+.filter-badge {
+  position: absolute;
+  top: -4rpx;
+  right: -4rpx;
+  min-width: 32rpx;
+  height: 32rpx;
+  padding: 0 8rpx;
+  background: #ff3b30;
+  color: #ffffff;
+  font-size: 20rpx;
+  font-weight: 800;
+  border: 2rpx solid #ffffff;
+  border-radius: 100rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+/* P11: popup 弹层 — 半透明黑遮罩 */
+.source-popup-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 200;
+}
+
+/* P11: popup 弹层 — 半屏主体 (从底部滑入) */
+.source-popup {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #fff9e6;
+  border-top-left-radius: 32rpx;
+  border-top-right-radius: 32rpx;
+  box-shadow: 0 -8rpx 24rpx rgba(0, 0, 0, 0.15);
+  padding-bottom: calc(24rpx + env(safe-area-inset-bottom));
+  z-index: 201;
+  transform: translateY(100%);
+  transition: transform 240ms ease;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.source-popup--open {
+  transform: translateY(0);
+}
+
+.source-popup-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24rpx 32rpx;
+  border-bottom: 2rpx dashed #3d2914;
+  flex-shrink: 0;
+}
+
+.source-popup-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #3d2914;
+}
+
+.source-popup-close {
+  width: 56rpx;
+  height: 56rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 48rpx;
+  font-weight: 600;
+  color: #3d2914;
+  line-height: 1;
+}
+
+.source-popup-close:active {
+  transform: scale(0.9);
+}
+
+.source-popup-body {
+  padding: 8rpx 32rpx;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.source-popup-row {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+  padding: 24rpx 16rpx;
+  border-bottom: 2rpx dashed #3d2914;
+}
+
+.source-popup-row--active {
+  background: rgba(255, 138, 101, 0.15);
+}
+
+.source-popup-checkbox {
+  width: 40rpx;
+  height: 40rpx;
+  border: 3rpx solid #3d2914;
+  border-radius: 8rpx;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28rpx;
+  font-weight: 800;
+  color: #ffffff;
+  flex-shrink: 0;
+}
+
+.source-popup-row--active .source-popup-checkbox {
+  background: #ff8a65;
+}
+
+.source-popup-label {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #3d2914;
+  flex: 1;
+}
+
+.source-popup-footer {
+  padding: 24rpx 32rpx;
+  border-top: 2rpx dashed #3d2914;
+  flex-shrink: 0;
+}
+
+.source-popup-btn {
+  text-align: center;
+  padding: 24rpx;
+  background: #ffffff;
+  border: 3rpx solid #3d2914;
+  border-radius: 16rpx;
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #3d2914;
+  box-shadow: 4rpx 4rpx 0 0 #ffb84d;
+}
+
+.source-popup-btn:active {
+  transform: translate(2rpx, 2rpx);
+  box-shadow: 2rpx 2rpx 0 0 #ffb84d;
 }

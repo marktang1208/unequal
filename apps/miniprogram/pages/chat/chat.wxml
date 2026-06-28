@@ -33,17 +33,6 @@
     <text>{{error}}</text>
   </view>
 
-  <!-- M7-B: source type picker（多选 chip；选空 = 不过滤） -->
-  <scroll-view class="source-picker" scroll-x enhanced show-scrollbar="{{false}}">
-    <view
-      wx:for="{{availableSourceTypes}}"
-      wx:key="value"
-      class="chip {{selectedSourceTypes.indexOf(item.value) >= 0 ? 'chip--active' : ''}}"
-      data-value="{{item.value}}"
-      bindtap="onToggleSourceType"
-    >{{item.label}}</view>
-  </scroll-view>
-
   <view class="input-bar">
     <textarea
       class="input"
@@ -60,5 +49,39 @@
   <!-- M7-D: 设置入口（右上角悬浮） -->
   <view class="settings-fab" bindtap="onTapSettings">
     <text class="settings-fab-icon">⚙</text>
+  </view>
+
+  <!-- P11: 信息源筛选入口（⚙ 下方，🔍 + 数字徽章显示已选数） -->
+  <view class="source-filter-fab" bindtap="onOpenSourceFilter">
+    <text class="source-filter-fab-icon">🔍</text>
+    <view class="filter-badge" wx:if="{{selectedSourceTypes.length > 0}}">{{selectedSourceTypes.length}}</view>
+  </view>
+
+  <!-- P11: 信息源筛选 popup 弹层（半屏 + mask） -->
+  <view
+    class="source-popup-mask"
+    wx:if="{{sourceFilterOpen}}"
+    bindtap="onCloseSourceFilter"
+  ></view>
+  <view class="source-popup {{sourceFilterOpen ? 'source-popup--open' : ''}}">
+    <view class="source-popup-header">
+      <text class="source-popup-title">信息来源筛选</text>
+      <view class="source-popup-close" bindtap="onCloseSourceFilter">×</view>
+    </view>
+    <view class="source-popup-body">
+      <view
+        wx:for="{{availableSourceTypes}}"
+        wx:key="value"
+        class="source-popup-row {{selectedSourceTypes.indexOf(item.value) >= 0 ? 'source-popup-row--active' : ''}}"
+        data-value="{{item.value}}"
+        bindtap="onToggleSourceTypeInPopup"
+      >
+        <view class="source-popup-checkbox">{{selectedSourceTypes.indexOf(item.value) >= 0 ? '✓' : ''}}</view>
+        <text class="source-popup-label">{{item.label}}</text>
+      </view>
+    </view>
+    <view class="source-popup-footer">
+      <view class="source-popup-btn" bindtap="onResetSourceFilter">全部（默认）</view>
+    </view>
   </view>
 </view>
