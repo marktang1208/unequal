@@ -92,11 +92,11 @@
 | 1 | chat 页气泡镜像（user 左 / assistant 右） | 真机回归 + 号不遮消息 | in-progress | `.claude/plans/launch-ui-mirror-and-source-popup.plan.md` |
 | 2 | chat 页信息源 popup 弹层（取代 chip 条） | popup 可开关 + 筛选生效 | in-progress | `.claude/plans/launch-ui-mirror-and-source-popup.plan.md` |
 | 3 | docs/launch 协议 URL 占位符替换 | 真实 URL 写入提审物料 | pending | `.claude/plans/launch-ui-mirror-and-source-popup.plan.md` |
-| 4 | legal HTML 邮箱占位符替换 + push gh-pages | 公开 URL 邮箱正确 | pending | `.claude/plans/launch-ui-mirror-and-source-popup.plan.md` |
+| 4 | legal HTML 邮箱占位符替换 + push gh-pages | 公开 URL 邮箱正确 | complete | `.claude/plans/launch-ui-mirror-and-source-popup.plan.md` |
 | 5 | 5 路径真机回归 + 截 5 张新截图 | 截图替换 + 提审就绪 | pending | `.claude/plans/launch-ui-mirror-and-source-popup.plan.md` |
 | 6 | 上传 1.0.0 + 提交审核 | 等待 1-3 天审核 | pending | — |
 
-> **🟡 BLOCKER (T8)**: legal HTML 邮箱替换需要用户先提供真实邮箱（[填入你的邮箱] 占位符在 `legal-site/index.html:125` + `legal-site/privacy.html:160`）。未替换前 gh-pages 公开 URL 仍含占位符，提审会被打回。建议 `support@unequal.app` 或用户个人邮箱。
+> ✅ T8 done (2026-06-28): legal HTML 邮箱占位符 → `mark_tang@163.com` (commit `3df5cc3` master + `1142a10` gh-pages). 公开 URL `https://marktang1208.github.io/unequal/` 已见邮箱, curl 验证 200 OK + 邮箱可见.
 
 ## Open Questions
 
@@ -104,7 +104,7 @@
 - ❓ popup 关闭策略：每次 tap checkbox 立即关闭 popup 写入？还是「应用 / 取消」双按钮？**倾向：每次 tap checkbox 立即生效 + popup 保留开着（实时预览），右上角 [×] 关闭**。原因：5 个选项不多，实时反馈更直接
 - ❓ 🔍 图标位置：右上 ⚙ 下方 vs 左上 + 号右侧？**倾向：右上 ⚙ 下方**（信息源跟设置是同类 = 配置类，分散放更对称）。具体位置待 plan 阶段
 - ❓ 真机回归发现 + 号其实没遮消息怎么办？**退路**: 仅保留镜像改动的 chip border-radius 视觉差异化（user/assistant 用不同色系），对齐保持现状 + 只做信息源 popup 改动
-- ❓ legal-site 邮箱用什么？用户需提供（推送前 fill）
+- ❓ legal-site 邮箱用什么？用户需提供（推送前 fill） → ✅ 已解决: `mark_tang@163.com`
 - ❓ 5 张新截图要不要包含「信息源 popup 打开状态」？**倾向：要**（展示新功能，但只占 5 张中的 1 张）
 - ❓ 提审时备注要不要提「chat 页布局有调整」？**倾向：不提**（保持审核备注精简，不引导审核员细看）
 
