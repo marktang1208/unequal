@@ -233,11 +233,21 @@ Page({
 
   /** P11: popup 内 toggle — 多选/取消 sourceType; 实时生效, 不关 popup */
   onToggleSourceTypeInPopup(e: WechatMiniprogram.Tap): void {
-    const value = e.currentTarget.dataset.value as string;
+    const target = e.currentTarget;
+    const value = target?.dataset?.value as string;
+    // eslint-disable-next-line no-console
+    console.log("[chat] onToggleSourceTypeInPopup target:", JSON.stringify(target?.dataset), "value:", value);
+    if (!value) {
+      // eslint-disable-next-line no-console
+      console.warn("[chat] toggle source: no value found in dataset");
+      return;
+    }
     const current = this.data.selectedSourceTypes;
     const next = current.indexOf(value) >= 0
       ? current.filter((v) => v !== value)
       : [...current, value];
+    // eslint-disable-next-line no-console
+    console.log("[chat] selectedSourceTypes:", JSON.stringify(current), "->", JSON.stringify(next));
     this.setData({ selectedSourceTypes: next });
   },
 
