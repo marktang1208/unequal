@@ -1,0 +1,2 @@
+<!-- P11.2: 微信内置 webview 页面 (用于跳用户协议 / 隐私政策) -->
+<web-view src="{{url}}"></web-view>

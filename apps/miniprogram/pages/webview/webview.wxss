@@ -1,0 +1,9 @@
+/* P11.2: webview 页面样式 (实际渲染交给微信内置浏览器, 样式仅占位) */
+.webview-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  font-size: 28rpx;
+  color: #999;
+}

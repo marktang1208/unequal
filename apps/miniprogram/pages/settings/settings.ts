@@ -20,6 +20,11 @@ Page({
     error: "",
     me: null as MeResponse | null,
     createdAtText: "",
+    /** P11.2: 法律文档 URL (用于点击跳转) */
+    legalUrls: {
+      agreement: "https://marktang1208.github.io/unequal/",
+      privacy: "https://marktang1208.github.io/unequal/privacy.html",
+    },
   },
 
   onShow(): void {
@@ -66,6 +71,26 @@ Page({
           wx.switchTab({ url: "/pages/chat/chat" });
         }, 800);
       },
+    });
+  },
+
+  /** P11.2: 跳用户协议 (在微信内置浏览器打开 GitHub Pages) */
+  onTapAgreement(e: WechatMiniprogram.Tap): void {
+    const url = e.currentTarget?.dataset?.url as string;
+    if (!url) return;
+    // @ts-expect-error wx 全局类型 mock-first 缺失
+    wx.navigateTo({
+      url: `/pages/webview/webview?url=${encodeURIComponent(url)}&title=用户协议`,
+    });
+  },
+
+  /** P11.2: 跳隐私政策 */
+  onTapPrivacy(e: WechatMiniprogram.Tap): void {
+    const url = e.currentTarget?.dataset?.url as string;
+    if (!url) return;
+    // @ts-expect-error wx 全局类型 mock-first 缺失
+    wx.navigateTo({
+      url: `/pages/webview/webview?url=${encodeURIComponent(url)}&title=隐私政策`,
     });
   },
 });

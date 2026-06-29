@@ -4,6 +4,7 @@
     "pages/history/history",
     "pages/source-detail/source-detail",
     "pages/settings/settings",
+    "pages/webview/webview",
     "pages/cloudbase-test/cloudbase-test"
   ],
   "window": {
