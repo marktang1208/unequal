@@ -79,11 +79,13 @@
   font-weight: 500;
 }
 
-/* 头部左侧：新会话入口（+ 号，镜像 .settings-fab 风格） */
+/* P11.2: 新会话入口（+ 号, 挪到右上跟 ⚙/🔍 垂直排 3 列）
+ * 布局: ⚙ top:24 / 🔍 top:112 / + top:200 (间距 16rpx, 对齐美观)
+ * Why: 避免遮消息 (user 靠左时, 左上 + 会挡 user 消息左上角) */
 .new-session-fab {
   position: fixed;
-  top: 24rpx;
-  left: 24rpx;
+  top: 200rpx;
+  right: 24rpx;
   width: 72rpx;
   height: 72rpx;
   border-radius: 50%;

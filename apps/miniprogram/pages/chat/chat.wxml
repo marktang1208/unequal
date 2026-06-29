@@ -1,8 +1,5 @@
 <view class="chat-page">
-  <!-- 头部左侧：新会话入口（+ 号） -->
-  <view class="new-session-fab" bindtap="onTapNewSession">
-    <text class="new-session-fab-icon">+</text>
-  </view>
+  <!-- 头部左侧空出 (P11.2: + 号挪到右上避免遮消息) -->
 
   <scroll-view
     class="message-list"
@@ -55,6 +52,11 @@
   <view class="source-filter-fab" bindtap="onOpenSourceFilter">
     <text class="source-filter-fab-icon">🔍</text>
     <view class="filter-badge" wx:if="{{selectedSourceTypes.length > 0}}">{{selectedSourceTypes.length}}</view>
+  </view>
+
+  <!-- P11.2: 新会话入口（+ 号，挪到右上跟 ⚙/🔍 垂直排 3 列，避免遮消息） -->
+  <view class="new-session-fab" bindtap="onTapNewSession">
+    <text class="new-session-fab-icon">+</text>
   </view>
 
   <!-- P11: 信息源筛选 popup 弹层（半屏 + mask） -->
