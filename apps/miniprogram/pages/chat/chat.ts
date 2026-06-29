@@ -223,6 +223,8 @@ Page({
 
   /** P11: 打开信息源筛选 popup (替代旧 chip 条) */
   onOpenSourceFilter(): void {
+    // eslint-disable-next-line no-console
+    console.log("[chat] onOpenSourceFilter: opening popup, current selectedSourceTypes:", JSON.stringify(this.data.selectedSourceTypes));
     this.setData({ sourceFilterOpen: true });
   },
 
@@ -236,7 +238,7 @@ Page({
     const target = e.currentTarget;
     const value = target?.dataset?.value as string;
     // eslint-disable-next-line no-console
-    console.log("[chat] onToggleSourceTypeInPopup target:", JSON.stringify(target?.dataset), "value:", value);
+    console.warn("[chat] onToggleSourceTypeInPopup dataset:", JSON.stringify(target?.dataset), "value:", value, "selectedSourceTypes:", JSON.stringify(this.data.selectedSourceTypes));
     if (!value) {
       // eslint-disable-next-line no-console
       console.warn("[chat] toggle source: no value found in dataset");
@@ -247,7 +249,7 @@ Page({
       ? current.filter((v) => v !== value)
       : [...current, value];
     // eslint-disable-next-line no-console
-    console.log("[chat] selectedSourceTypes:", JSON.stringify(current), "->", JSON.stringify(next));
+    console.warn("[chat] selectedSourceTypes:", JSON.stringify(current), "->", JSON.stringify(next));
     this.setData({ selectedSourceTypes: next });
   },
 
