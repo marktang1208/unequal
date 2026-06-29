@@ -71,24 +71,18 @@
       <view class="source-popup-close" bindtap="onCloseSourceFilter">×</view>
     </view>
     <view class="source-popup-body">
-      <!-- P11.2 round 4d: 临时 debug button — 验证 popup 事件系统是否工作 -->
-      <button
-        type="primary"
-        size="mini"
-        style="margin-bottom: 16rpx;"
-        bindtap="onDebugPopupEvent"
-      >测试 popup 事件</button>
       <view
         wx:for="{{availableSourceTypes}}"
         wx:key="value"
-        class="source-popup-row {{selectedSourceTypes.indexOf(item.value) >= 0 ? 'source-popup-row--active' : ''}}"
+        wx:for-item="src"
+        class="source-popup-row {{activeMap[src.value] ? 'source-popup-row--active' : ''}}"
         hover-class="source-popup-row--hover"
         hover-stay-time="100"
-        data-value="{{item.value}}"
-        bindtap="onDebugToggle"
+        data-value="{{src.value}}"
+        bindtap="onToggleSourceTypeInPopup"
       >
-        <view class="source-popup-checkbox">{{selectedSourceTypes.indexOf(item.value) >= 0 ? '✓' : ''}}</view>
-        <text class="source-popup-label">{{item.label}}</text>
+        <view class="source-popup-checkbox">{{activeMap[src.value] ? '✓' : ''}}</view>
+        <text class="source-popup-label">{{src.label}}</text>
       </view>
     </view>
     <view class="source-popup-footer">

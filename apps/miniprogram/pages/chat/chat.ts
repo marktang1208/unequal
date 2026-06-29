@@ -116,6 +116,8 @@ Page({
     sessionTitle: "" as string,
     /** M7-B: 选中的 sourceType；空数组 = 不过滤（默认全部） */
     selectedSourceTypes: [] as string[],
+    /** P11.2 round 5: activeMap — 派生状态提到 data 上避免 wx:for 三元表达式追踪失败 */
+    activeMap: {} as Record<string, boolean>,
     /** M7-B: sourceType 候选（硬编码全集；未来可改成从 user source 动态拉） */
     availableSourceTypes: [
       { value: "webpage", label: "网页" },
@@ -223,9 +225,12 @@ Page({
 
   /** P11: 打开信息源筛选 popup (替代旧 chip 条) */
   onOpenSourceFilter(): void {
-    // eslint-disable-next-line no-console
-    console.log("[chat] onOpenSourceFilter: opening popup, current selectedSourceTypes:", JSON.stringify(this.data.selectedSourceTypes));
-    this.setData({ sourceFilterOpen: true });
+    // 同步 activeMap (从 selectedSourceTypes 派生)
+    const activeMap: Record<string, boolean> = {};
+    for (const v of this.data.selectedSourceTypes) {
+      activeMap[v] = true;
+    }
+    this.setData({ sourceFilterOpen: true, activeMap });
   },
 
   /** P11: 关闭信息源筛选 popup (mask 点击 / × 点击 / 应用) */
@@ -233,39 +238,31 @@ Page({
     this.setData({ sourceFilterOpen: false });
   },
 
-  /** P11: popup 内 toggle — 多选/取消 sourceType; 实时生效, 不关 popup */
-  onDebugToggle(e: WechatMiniprogram.Tap): void {
-    // eslint-disable-next-line no-console
-    console.warn("[chat] onDebugToggle FIRED!");
-    // 用 showToast 强制可见
-    // @ts-expect-error wx 全局类型 mock-first 缺失
-    wx.showToast({ title: "TOGGLE FIRED", icon: "none", duration: 1500 });
+  /** P11.2 round 5: popup 内 toggle — 维护 activeMap (派生 state) 让 wxml 三元表达式可追踪 */
+  onToggleSourceTypeInPopup(e: WechatMiniprogram.Tap): void {
     const value = e?.currentTarget?.dataset?.value as string;
-    if (!value) {
-      // @ts-expect-error wx 全局类型 mock-first 缺失
-      wx.showToast({ title: "no value", icon: "none", duration: 1500 });
-      return;
-    }
+    if (!value) return;
     const current = this.data.selectedSourceTypes;
-    const next = current.indexOf(value) >= 0
+    const wasActive = !!this.data.activeMap[value];
+    const next = wasActive
       ? current.filter((v) => v !== value)
       : [...current, value];
-    this.setData({ selectedSourceTypes: next });
-    // @ts-expect-error wx 全局类型 mock-first 缺失
-    wx.showToast({ title: `set ${value}: ${next.length}`, icon: "none", duration: 1500 });
+    // 同步维护 activeMap (避免 wx:for 三元表达式响应式追踪失败)
+    const newActiveMap = { ...this.data.activeMap };
+    if (next.indexOf(value) >= 0) {
+      newActiveMap[value] = true;
+    } else {
+      delete newActiveMap[value];
+    }
+    this.setData({
+      selectedSourceTypes: next,
+      activeMap: newActiveMap,
+    });
   },
 
   /** P11: 重置 source 过滤 (空数组 = 不过滤, 走默认) */
   onResetSourceFilter(): void {
-    this.setData({ selectedSourceTypes: [] });
-  },
-
-  /** P11.2 round 4d: debug button — 验证 popup 事件系统是否工作 */
-  onDebugPopupEvent(): void {
-    // eslint-disable-next-line no-console
-    console.warn("[chat] onDebugPopupEvent: popup 事件系统工作中!");
-    // @ts-expect-error wx 全局类型 mock-first 缺失
-    wx.showToast({ title: "popup 事件 OK", icon: "success" });
+    this.setData({ selectedSourceTypes: [], activeMap: {} });
   },
 
   onSubmit(): void {
