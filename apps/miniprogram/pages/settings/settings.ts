@@ -74,23 +74,48 @@ Page({
     });
   },
 
-  /** P11.2: 跳用户协议 (在微信内置浏览器打开 GitHub Pages) */
-  onTapAgreement(e: WechatMiniprogram.Tap): void {
-    const url = e.currentTarget?.dataset?.url as string;
-    if (!url) return;
+  /** P11.2: 跳用户协议 (复制 URL 到剪贴板 + toast 提示)
+   * 退路: web-view 业务域名限制会让白屏, 用 clipboard 更可靠 */
+  onTapAgreement(): void {
+    const url = this.data.legalUrls.agreement;
     // @ts-expect-error wx 全局类型 mock-first 缺失
-    wx.navigateTo({
-      url: `/pages/webview/webview?url=${encodeURIComponent(url)}&title=用户协议`,
+    wx.setClipboardData({
+      data: url,
+      success: () => {
+        // @ts-expect-error wx 全局类型 mock-first 缺失
+        wx.showModal({
+          title: "用户协议链接已复制",
+          content: `链接已复制到剪贴板:\n${url}\n\n请在浏览器粘贴打开查看。`,
+          confirmText: "我知道了",
+          showCancel: false,
+        });
+      },
+      fail: () => {
+        // @ts-expect-error wx 全局类型 mock-first 缺失
+        wx.showToast({ title: "复制失败", icon: "none" });
+      },
     });
   },
 
-  /** P11.2: 跳隐私政策 */
-  onTapPrivacy(e: WechatMiniprogram.Tap): void {
-    const url = e.currentTarget?.dataset?.url as string;
-    if (!url) return;
+  /** P11.2: 跳隐私政策 (复制 URL 到剪贴板 + toast 提示) */
+  onTapPrivacy(): void {
+    const url = this.data.legalUrls.privacy;
     // @ts-expect-error wx 全局类型 mock-first 缺失
-    wx.navigateTo({
-      url: `/pages/webview/webview?url=${encodeURIComponent(url)}&title=隐私政策`,
+    wx.setClipboardData({
+      data: url,
+      success: () => {
+        // @ts-expect-error wx 全局类型 mock-first 缺失
+        wx.showModal({
+          title: "隐私政策链接已复制",
+          content: `链接已复制到剪贴板:\n${url}\n\n请在浏览器粘贴打开查看。`,
+          confirmText: "我知道了",
+          showCancel: false,
+        });
+      },
+      fail: () => {
+        // @ts-expect-error wx 全局类型 mock-first 缺失
+        wx.showToast({ title: "复制失败", icon: "none" });
+      },
     });
   },
 });
