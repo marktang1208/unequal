@@ -236,15 +236,23 @@ Page({
   /** P11: popup 内 toggle — 多选/取消 sourceType; 实时生效, 不关 popup */
   onDebugToggle(e: WechatMiniprogram.Tap): void {
     // eslint-disable-next-line no-console
-    console.warn("[chat] onDebugToggle FIRED! dataset:", JSON.stringify(e?.currentTarget?.dataset), "selectedSourceTypes:", JSON.stringify(this.data.selectedSourceTypes));
-    // 暂时直接 setData 看 UI 反应
+    console.warn("[chat] onDebugToggle FIRED!");
+    // 用 showToast 强制可见
+    // @ts-expect-error wx 全局类型 mock-first 缺失
+    wx.showToast({ title: "TOGGLE FIRED", icon: "none", duration: 1500 });
     const value = e?.currentTarget?.dataset?.value as string;
-    if (!value) return;
+    if (!value) {
+      // @ts-expect-error wx 全局类型 mock-first 缺失
+      wx.showToast({ title: "no value", icon: "none", duration: 1500 });
+      return;
+    }
     const current = this.data.selectedSourceTypes;
     const next = current.indexOf(value) >= 0
       ? current.filter((v) => v !== value)
       : [...current, value];
     this.setData({ selectedSourceTypes: next });
+    // @ts-expect-error wx 全局类型 mock-first 缺失
+    wx.showToast({ title: `set ${value}: ${next.length}`, icon: "none", duration: 1500 });
   },
 
   /** P11: 重置 source 过滤 (空数组 = 不过滤, 走默认) */
