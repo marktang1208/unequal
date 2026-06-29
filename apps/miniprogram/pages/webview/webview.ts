@@ -17,6 +17,9 @@ Page({
   onLoad(query: PageQuery): void {
     const url = query.url ?? "";
     const title = query.title ?? "加载中…";
+    // P11.2 debug: 真机白屏排查 — log 出实际收到的 URL
+    // eslint-disable-next-line no-console
+    console.log("[webview] onLoad query:", JSON.stringify(query), "decoded url:", url);
     if (url) {
       // @ts-expect-error wx 全局类型 mock-first 缺失
       wx.setNavigationBarTitle({ title });
