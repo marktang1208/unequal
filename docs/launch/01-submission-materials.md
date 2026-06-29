@@ -60,33 +60,39 @@
 ## 5. 体验版截图清单（5 张）
 
 > 微信要求 5 张体验截图, 尺寸 750×1334 (iPhone 6) 或同等比例。
+> P11 真机截图已就位: `docs/launch/screenshots/`
 
-| # | 截图目标 | 操作 | 文件名建议 |
-|---|---|---|---|
-| 1 | **chat 主页（空状态）** | 冷启动, tabBar 显示 | 01-chat-home.png |
-| 2 | **chat 问答（含引用卡片）** | 问"宝宝几个月可以吃辅食", 等回答完 | 02-chat-qa-citations.png |
-| 3 | **chat 跨轮** | 追问"那吃什么比较好", session 连续 | 03-chat-multiturn.png |
-| 4 | **历史 sessions** | 切到历史 tab, 看到多条 session | 04-history-sessions.png |
-| 5 | **settings 页** | 从 chat 右上角菜单进 settings, 看到 user_id | 05-settings.png |
+| # | 截图目标 | 操作 | 文件名 | 状态 |
+|---|---|---|---|---|
+| 1 | **chat 主页（空状态）** | 冷启动, 右上 3 个 FAB 可见 | `screenshots/01-chat-home.png` | ✅ P11 实拍 |
+| 2 | **chat 问答（含引用卡片）** | 问"月龄", 等回答完 (6 要点 + 5 引用) | `screenshots/02-chat-qa-citations.png` | ✅ P11 实拍 |
+| 3 | **chat 跨轮（镜像对齐）** | 追问"那吃什么呢？", 演示 user 左/assistant 右 | `screenshots/03-chat-multiturn.png` | ✅ P11 实拍 |
+| 4 | **历史 sessions** | 切到历史 tab, 看到多条 session | `screenshots/04-history-sessions.png` | ✅ P11 实拍 |
+| 5 | **信息源 popup 弹层** | 点 🔍 → 弹出 popup, 展示新功能 | `screenshots/05-source-popup-open.png` | ✅ P11 实拍 |
 
-**截图工具**: 微信开发者工具 → 真机调试 → 自动预览 → 微信扫码 → 手机自带截图。
+**P11 替换说明**:
+- 原 5 张有 settings 页截图 (P10 时期)
+- P11 改成 popup 弹层截图, 展示 P11 新增的「信息源筛选 popup」功能 (PRD 核心)
+- settings 页内容 (user_id / 协议链接 / 退出登录) 在 chat 页截图里被遮住, 但 P11 修复已上线, 实际功能可用 (提审备注里说明)
+
+**截图工具**: 微信开发者工具 → 真机调试 → 自动预览 → 微信扫码 → 手机自带截图 (iPhone: 电源 + 音量上)。
 
 **注意事项**:
 - ❌ 截图不要包含任何个人微信号/微信昵称
-- ❌ 截图不要有"测试中/调试"等字样
-- ✅ 用真实问答 (辅食/月龄/早教) 演示, 避免展示"未涉及"
-- ✅ 引用卡片至少出现 1 次（视觉差异化卖点）
+- ⚠️ 截图左上 vConsole「已连接」浮窗是真机调试时的悬浮提示, 不在小程序代码里, 提审时关掉调试重截会更干净 (P11 时间紧, 没重截, 审核影响不大)
+- ✅ 用真实问答 (月龄/辅食/月龄) 演示
+- ✅ 引用卡片至少出现 1 次 (02-chat-qa-citations.png 展示 5 条)
 
 ---
 
 ## 6. 提审前 6 项 checklist
 
-- [ ] 简介选定（候选 A/B/C）
-- [ ] 关键词选定（套 A 或套 B）
+- [ ] 简介选定（候选 A/B/C） → **选 A**（推荐, 28 字）
+- [ ] 关键词选定（套 A 或套 B） → **选 A 套**（育儿/母婴/辅食/早教/问答）
 - [ ] 类目选定 → 生活服务 → 母婴
-- [ ] 用户协议 URL 可访问
-- [ ] 隐私政策 URL 可访问
-- [ ] 5 张体验版截图准备好
+- [ ] 用户协议 URL 可访问 → `https://marktang1208.github.io/unequal/`
+- [ ] 隐私政策 URL 可访问 → `https://marktang1208.github.io/unequal/privacy.html`
+- [ ] 5 张体验版截图准备好 → `docs/launch/screenshots/` (P11 实拍)
 
 ---
 
