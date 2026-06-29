@@ -85,7 +85,7 @@
         hover-class="source-popup-row--hover"
         hover-stay-time="100"
         data-value="{{item.value}}"
-        catchtap="onToggleSourceTypeInPopup"
+        bindtap="onDebugToggle"
       >
         <view class="source-popup-checkbox">{{selectedSourceTypes.indexOf(item.value) >= 0 ? '✓' : ''}}</view>
         <text class="source-popup-label">{{item.label}}</text>

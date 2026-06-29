@@ -234,22 +234,16 @@ Page({
   },
 
   /** P11: popup 内 toggle — 多选/取消 sourceType; 实时生效, 不关 popup */
-  onToggleSourceTypeInPopup(e: WechatMiniprogram.Tap): void {
-    const target = e.currentTarget;
-    const value = target?.dataset?.value as string;
+  onDebugToggle(e: WechatMiniprogram.Tap): void {
     // eslint-disable-next-line no-console
-    console.warn("[chat] onToggleSourceTypeInPopup dataset:", JSON.stringify(target?.dataset), "value:", value, "selectedSourceTypes:", JSON.stringify(this.data.selectedSourceTypes));
-    if (!value) {
-      // eslint-disable-next-line no-console
-      console.warn("[chat] toggle source: no value found in dataset");
-      return;
-    }
+    console.warn("[chat] onDebugToggle FIRED! dataset:", JSON.stringify(e?.currentTarget?.dataset), "selectedSourceTypes:", JSON.stringify(this.data.selectedSourceTypes));
+    // 暂时直接 setData 看 UI 反应
+    const value = e?.currentTarget?.dataset?.value as string;
+    if (!value) return;
     const current = this.data.selectedSourceTypes;
     const next = current.indexOf(value) >= 0
       ? current.filter((v) => v !== value)
       : [...current, value];
-    // eslint-disable-next-line no-console
-    console.warn("[chat] selectedSourceTypes:", JSON.stringify(current), "->", JSON.stringify(next));
     this.setData({ selectedSourceTypes: next });
   },
 
