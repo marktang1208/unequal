@@ -258,6 +258,14 @@ Page({
     this.setData({ selectedSourceTypes: [] });
   },
 
+  /** P11.2 round 4d: debug button — 验证 popup 事件系统是否工作 */
+  onDebugPopupEvent(): void {
+    // eslint-disable-next-line no-console
+    console.warn("[chat] onDebugPopupEvent: popup 事件系统工作中!");
+    // @ts-expect-error wx 全局类型 mock-first 缺失
+    wx.showToast({ title: "popup 事件 OK", icon: "success" });
+  },
+
   onSubmit(): void {
     if (this.data.submitting) return;
     const q = this.data.q.trim();
