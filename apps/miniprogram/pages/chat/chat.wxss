@@ -246,7 +246,8 @@
 
 .source-popup-body {
   padding: 8rpx 32rpx;
-  overflow-y: auto;
+  /* P11.2 round 4c: 去掉 overflow-y: auto 解决 iOS 点击被吞问题
+   * 5 个 row 总高度 ~440rpx, popup max-height: 80vh 足够, 不需要滚动 */
   flex: 1;
 }
 
@@ -256,6 +257,11 @@
   gap: 24rpx;
   padding: 24rpx 16rpx;
   border-bottom: 2rpx dashed #3d2914;
+}
+
+/* P11.2 round 4c: hover 态 — 验证 click 事件触发 */
+.source-popup-row--hover {
+  background: rgba(255, 138, 101, 0.3);
 }
 
 .source-popup-row--active {
