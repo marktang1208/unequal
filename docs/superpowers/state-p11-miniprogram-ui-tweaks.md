@@ -1,191 +1,244 @@
-# state-p11-miniprogram-ui-tweaks — 上线前 UI 改动 commit family (2026-06-28)
+# state-p11-miniprogram-ui-tweaks — 上线前 UI 改动 + 备案阻塞 (2026-06-28)
 
 > 日期: 2026-06-28
 > 项目: unequal 微信小程序 (AppID `wxf5b8ce05a977f0c6`, 个人主体)
-> 触发: memory `feedback_pending_ui_tweaks.md` + 2026-06-26 深夜 user UI 反馈
-> 状态: 🟢 **代码 + docs + legal 全收官, 1 人工待办** (真机回归 + 提交审核)
+> 状态: 🟡 **代码 + docs + legal 全收官, 微信备案阻塞 (P11 UI 改动已 PASS), 2.0 架构调研完成 (仅记录不执行)**
 
 ## 0. TL;DR
 
-**上线前最后 UI 改动 (P11)** 落地 5 个 commit, 解决 3 个上线阻塞 (chat 页镜像 + docs 占位符 + legal 邮箱占位符) + 1 个视觉/交互痛点 (信息源 chip → popup)。
+**今日 (2026-06-28) 完成**:
 
-**P11 改动** (5 commit, 49/49 单测 PASS, typecheck 0 错, gh-pages 已 rebuild 含真实邮箱):
+1. ✅ **P11 UI 改动全收官** (5 commit + 49/49 PASS + 5 张真机截图)
+   - chat 页气泡镜像 (user 左 / assistant 右)
+   - 信息源 popup 弹层 (取代底部 chip 条)
+   - docs/launch 协议 URL 占位符替换 (真实 URL)
+   - legal HTML 邮箱占位符替换 (mark_tang@163.com) + gh-pages 已 rebuild
+   - 真机 5 路径回归全 PASS
 
-| commit | 改动 | 影响 |
-|---|---|---|
-| `a6ba87e` `feat(miniprogram): chat 页气泡镜像 + 信息源 popup 弹层` | message-bubble 镜像 + 删 chip 加 popup | chat 页布局, 4 文件, +249/-63 |
-| `caf0520` `fix(launch): 替换 docs 协议 URL 占位符为真实 GitHub Pages URL` | 04 提审文档 + legal-site README | 提审 / gh-pages 公开页, 2 文件, +7/-5 |
-| `1767d04` `docs(launch): PRD — 上线前 UI 改动 chat 页气泡镜像 + 信息源 popup` | PRD 归档 | .claude/prds/, 1 文件, +126 |
-| `3df5cc3` `fix(legal): 替换邮箱占位符 [填入你的邮箱] → mark_tang@163.com` | legal HTML 邮箱占位符 | master legal-site/, 2 文件, +2/-2 |
-| `1142a10` `fix(legal): gh-pages 同步 master 邮箱替换 (mark_tang@163.com)` | gh-pages 分支同步 (公开 URL rebuild) | gh-pages index.html + privacy.html, 2 文件, +2/-2 |
+2. ✅ **P11.2 round 2-5 修复** (5 commit)
+   - + 号挪到右上避免遮消息
+   - settings 页加法律文档卡片
+   - 协议链接: web-view 白屏 → clipboard 退路
+   - popup checkbox activeMap 派生 state (修响应式追踪问题)
 
-**P11 全部代码 / docs / legal 收官, 1 人工待办**:
+3. 🟡 **微信小程序 1.0.0 上传成功**, 但 **mp.weixin.qq.com 提交审核时遇到备案提醒**
 
-- 🟡 **真机 5 路径回归 + 5 张新截图** (P10 已 PASS, 改动后需再走一遍): 1-2 小时
-- 🟡 **微信开发者工具上传 + 公众平台提交审核**: 30 min
+4. 🟡 **2.0 架构可行性分析完成** (仅记录, 不执行)
+   - 5 方案对比 + 网络可达性硬 gate 实测
+   - 决策: **暂不迁移, 继续微信备案**
 
-## 1. 设计决策
+**关键 memory**:
+- `project_unequal_2_0_architecture_roadmap.md` — 2.0 完整路线图
+- `wechat_miniprogram_webview_gotcha.md` — web-view 跳外链白屏
+- `feedback_china_network_constraints.md` — 国内网络 §1 硬 gate
+- `resolved_miniprogram_ui_tweaks.md` — UI 反馈消化
 
-### 1.1 镜像气泡 (user 左 / assistant 右)
-
-**Why**: 解决 + 号 FAB (左上 fixed) 跟 user 消息右上角可能视觉重叠的设计推断 + 提供 user/assistant 视觉差异化 (对齐方向 + 圆角方向 + box-shadow 偏移方向都镜像)
-
-**实现** (`apps/miniprogram/components/message-bubble/message-bubble.wxss`):
-- `.bubble.user`:
-  - `align-self: flex-end` → `flex-start` (靠左)
-  - `border-radius: 28rpx 8rpx 28rpx 28rpx` → `8rpx 28rpx 28rpx 28rpx` (小角从右下移到左下)
-  - `box-shadow: 8rpx 8rpx 0 0 #f5a623` → `-8rpx 8rpx 0 0 #f5a623` (偏移方向镜像)
-  - `margin: 22rpx 32rpx 22rpx 24rpx` → `22rpx 24rpx 22rpx 32rpx` (左右 margin 镜像)
-- `.bubble.assistant`:
-  - `align-self: flex-start` → `flex-end` (靠右)
-  - `border-radius: 8rpx 28rpx 28rpx 28rpx` → `28rpx 8rpx 28rpx 28rpx` (小角从左上移到右上)
-  - `box-shadow: 8rpx 8rpx 0 0 #ffb84d` → `-8rpx 8rpx 0 0 #ffb84d`
-  - `margin: 22rpx 24rpx 22rpx 32rpx`
-
-**风险 + 退路**:
-- ⚠️ 反行业惯例 (微信/QQ/iMessage 都 user 靠右代表「我说的」)
-- ⚠️ 审核员可能觉得「不像聊天工具」被打回 → 备注栏说明「差异化布局, 便于家长快速识别自己提的问题」+ 截图清晰展示 user/assistant 区分
-- 🟢 退路: 真机回归发现 + 号没遮消息 → 保留镜像 (视觉差异化收益) + 仍做信息源 popup (核心收益) + 不回退
-
-### 1.2 信息源 popup 弹层
-
-**Why**: 信息源筛选是次要设置, 不该长期占 chat 页底部 80rpx。chip 条夹在 message-list 和 input-bar 中间挤空间, 选中态视觉弱 (5 个橙色 chip 并排难以辨识「我选了啥」)
-
-**实现** (`apps/miniprogram/pages/chat/chat.{wxml,wxss,ts}`):
-- 删底部 `<scroll-view class="source-picker">` 整块 + `.source-picker` / `.chip` 全部样式
-- 加 `.source-filter-fab` (🔍 + 数字徽章) 在 ⚙ 下方 (right: 24rpx, top: 112rpx)
-  - `.filter-badge` 红色 32rpx 圆, 已选 N 项时显示
-- 加 `.source-popup` 半屏弹层 (从底部滑入, 240ms ease CSS transition)
-  - mask 半透明黑 (rgba(0,0,0,0.4)) 点关闭
-  - 标题「信息来源筛选」+ × 关闭
-  - 5 个 row (网页/文件/PDF/小红书/公众号), 每个有 40rpx checkbox + label
-  - 底部「全部 (默认)」按钮 → 清空 selectedSourceTypes
-- `chat.ts` data 加 `sourceFilterOpen: false`, 4 个新方法:
-  - `onOpenSourceFilter` (🔍 触发)
-  - `onCloseSourceFilter` (mask/× 触发)
-  - `onToggleSourceTypeInPopup` (checkbox 触发, 实时预览, 不关 popup)
-  - `onResetSourceFilter` (全部按钮触发, 空数组 = 不过滤默认)
-- 保留 `availableSourceTypes` + `selectedSourceTypes` 数据结构, `chat()` 调用照常从 `selectedSourceTypes` 读 `source_types` 透传给后端 (api-chat.ts:126)
-
-**P11 决策: popup 关闭策略 = checkbox 实时生效 + 右上 [×] 显式关闭**
-- 5 个选项不多, 实时反馈更直接
-- 不用「应用/取消」双按钮 (chip 时代也是即时反馈, 一致性)
-
-**P11 决策: 🔍 位置 = 右上 ⚙ 下方 (不是左上 + 号右侧)**
-- 信息源 + 设置都是「配置类」, 分散放更对称
-- 避开 navigationBar 胶囊按钮 (右上区域是 safe area)
-
-**风险**:
-- ⚠️ popup 在低端机卡顿 → 用 CSS transition 而非 JS setData, 5 行内容, runtime 无网络请求
-- ⚠️ popup mask z-index 200 遮住 ⚙ (z-index 100) → 关闭 popup 后 ⚙ 可点; mask 不能点击穿透, 设计上是对的
-
-### 1.3 docs 协议 URL 占位符替换
-
-**Why**: memory `project_github_push_complete.md` 写的实际部署 URL 是 `marktang1208.github.io/unequal/`, 但 `04-submit-review.md §3.3` + `legal-site/README.md` 仍用占位符 `YOUR_GITHUB_USERNAME.github.io/unequal-legal/`, 该独立 repo **不存在 (404)**。如果照占位符填入提交审核会被打回。
-
-**实现**:
-- `docs/launch/04-submit-review.md:109-110`: 替换为真实 URL + 加「独立 unequal-legal repo 不存在」备注
-- `legal-site/README.md:6-8`: 替换为真实 URL + 加「主 repo gh-pages 分支」备注
-- `docs/launch/02-github-pages-setup.md`: **不改** (新人部署指引, 实际部署方案已在 commit `9ffc97a` 改用主 repo gh-pages)
-
-**教训**: 之前 `docs/launch/README.md` 标 "✅ done (daytime)" + state-p10 §6 "GitHub push 全收官" 都误判, 实际 repo 没建, 文档占位符没替换。**state 文档不能等同于实际部署** — 必须 curl 验证。
-
-## 2. 真接验证 (待 T9 跑)
-
-P10 5 路径脚本 (`docs/launch/03-real-device-test.md` + state-p10 §1.2) 走一遍:
-
-| # | 路径 | 预期 |
-|---|---|---|
-| 1 | 冷启动 | chat 空状态, 🔍 (右上 ⚙ 下方) + ⚙ + + 号 (左上) 三个 FAB 都可见, vConsole `[unequal] wx.cloud.init ok` |
-| 2 | chat 短问 (宝宝几个月可以吃辅食) | 30s 内有回答, **user 消息靠左 + assistant 消息靠右 + 无 + 号遮消息** + 引用卡片可见 |
-| 3 | + 号新会话 | 点 + 号 → modal 弹 + messages 清空 (P10 验证过的行为不变) |
-| 4 | 历史 sessions tab | 看到刚才 session (P10 PASS 不变) |
-| 5 | settings 页 | user_id 显示 + 独立 source 过滤 (settings 页冗余保留) |
-| **新加 6** | 信息源 popup | 点 🔍 → 弹出 popup (240ms 滑入) → 点 checkbox → 选中态 + 数字徽章更新 → 发新 query → 后端 audit_log 看 source_types 字段 |
-
-**5 张新截图** (替换 `docs/launch/01-submission-materials.md §5`):
-- 01-chat-home.png (冷启动空状态)
-- 02-chat-qa-citations.png (含引用卡片)
-- 03-chat-multiturn.png (chat 跨轮, 展示镜像对齐)
-- 04-history-sessions.png (历史 tab)
-- 05-source-popup-open.png (新加, 替换原 settings 截图, 展示 popup 弹层)
-
-## 3. 提审流程 (待 T9-T10 走)
-
-按 `docs/launch/04-submit-review.md` (URL 已更新):
-
-1. 微信开发者工具 → 编译 → 上传 1.0.0 + 项目备注「首发版本: 育儿知识问答, 引用追溯, P8 + P9 + P11 真接」
-2. 公众平台 → 版本管理 → 设为体验版 → 用非管理员微信号扫码
-3. 体验版走 5 路径 (跟 P10 同样的脚本)
-4. 提交审核: 类目「生活服务 - 母婴」+ 简介 A 套 28 字 + 关键词「育儿, 母婴, 辅食, 早教, 问答」+ 5 张新截图 + 协议 URL (已替换)
-5. 等审核 1-3 天
-6. 通过 → 发布 (个人主体默认全量)
-
-## 4. 测试 + 部署
-
-- **单测**: `pnpm -F miniprogram test` → **49/49 PASS** (跟 baseline 一致, message-bubble 单测只测 onCiteTap, 不测样式)
-- **typecheck**: `pnpm -F miniprogram typecheck` → **0 错**
-- **后端**: 不动 (P9 已定型的 api-chat.ts:126 sourceTypes 透传路径不变)
-- **deploy**: 不需要 (前端改动, 微信开发者工具编译即可)
-- **gh-pages**: ✅ T8 已完成 (commit `1142a10`), 公开 URL `https://marktang1208.github.io/unequal/` 邮箱已可见 `mark_tang@163.com` (curl 验证 200 OK + 邮箱可见)
-
-## 5. 完整 commit 链 (P11 阶段)
+## 1. P11 UI 改动 (5 commit 链)
 
 ```
-gh-pages 分支:
-1142a10 fix(legal): gh-pages 同步 master 邮箱替换 (mark_tang@163.com)
-
-master 分支:
-3df5cc3 fix(legal): 替换邮箱占位符 [填入你的邮箱] → mark_tang@163.com
-3c870d6 docs(state): P11 上线前 UI 改动 — chat 镜像 + popup + docs 占位符
-1767d04 docs(launch): PRD — 上线前 UI 改动 chat 页气泡镜像 + 信息源 popup
-caf0520 fix(launch): 替换 docs 协议 URL 占位符为真实 GitHub Pages URL
-a6ba87e feat(miniprogram): chat 页气泡镜像 + 信息源 popup 弹层
+bebc8ae2 docs(launch): 重截 05-source-popup-open.png (P11.2 popup 修复后)
+9754d31d fix(miniprogram): P11.2 round 5 — popup checkbox 选中态 UI 不更新 (用 activeMap 派生 state)
+36db5a18 fix(miniprogram): P11.2 round 4f — 用 wx.showToast 强制可见 (替代 console.warn)
+c8b144ce fix(miniprogram): P11.2 round 4d — popup 加 debug button 验证事件系统
+3b352ed1 fix(miniprogram): P11.2 round 4 — popup checkbox 点击无反应排查
+e066d99f fix(miniprogram): P11.2 webview 白屏修复
+5362a47e fix(miniprogram): P11.2 round 3 — settings 协议改用 clipboard
+dae3ad53 fix(miniprogram): P11.2 — + 号挪到右上
+5f35fe6e (合并行) 
+a6ba87e5 feat(miniprogram): chat 页气泡镜像 + 信息源 popup 弹层
+caf0520  fix(launch): 替换 docs 协议 URL 占位符
+1767d04  docs(launch): PRD — 上线前 UI 改动
+3df5cc3  fix(legal): 替换邮箱占位符 → mark_tang@163.com
+1142a10  fix(legal): gh-pages 同步 master 邮箱替换
 ```
 
 **前序 (P10)**:
 ```
-0854ed0 docs(launch): 同步 P10 完成状态 - 5 路径 PASS + 剩 2 阻塞
-3ef7a17 docs(state): P10 微信小程序真接 5 路径 PASS
-a05ff19 feat(miniprogram): chat UI 改进 - 去掉提问按钮 + 加新会话入口
-61a01e6 fix(api): P10+ 真接 getClientIp undefined crash bugfix
+3c870d6  docs(state): P11 上线前 UI 改动
+0854ed0  docs(launch): 同步 P10 完成状态
+a05ff19  feat(miniprogram): chat UI 改进 - 去掉提问按钮 + 加新会话入口
+61a01e6  fix(api): P10+ 真接 getClientIp undefined crash bugfix
 ```
 
-## 6. 阻塞清单 (上线 1.0.0 前)
+## 2. P11.2 关键 bug 修复故事 (5 round)
 
-| # | 阻塞 | 耗时 | 解决 | 状态 |
-|---|---|---|---|---|
-| 1 | legal HTML 邮箱占位符 (2 处) | 5min | user 给邮箱 → 1 行 sed + push | ✅ done (commit `3df5cc3` + `1142a10`, 邮箱 `mark_tang@163.com`) |
-| 2 | 真机 5 路径回归 + 5 张新截图 | 1.5-2h | user 拿手机扫码 | 🟡 pending (人工) |
-| 3 | 微信开发者工具上传 + 提交审核 | 30min | 微信公众平台操作 | 🟡 pending (人工) |
+| Round | Bug | 根因 | 修法 |
+|---|---|---|---|
+| 2 | + 号遮消息 (左上 fixed 跟 user 消息冲突) | user 消息靠右延伸到 + 号区域 | + 号挪到右上 (top: 200rpx) 跟 ⚙/🔍 垂直排 3 列 |
+| 3 | settings 协议链接白屏 (web-view 跳 github.io) | 微信 web-view 需配业务域名 (memory `wechat_miniprogram_webview_gotcha.md`) | 改用 wx.setClipboardData + showModal 提示浏览器打开 |
+| 4 | popup checkbox 点击无反应 | 微信响应式系统 wx:for 嵌套 + 三元表达式 + .indexOf 数组方法不重渲染 | **activeMap 派生 state 提到 data** + 用对象属性访问替代 .indexOf |
+| 5 | popup checkbox 选中态 UI 不更新 (但 setData 成功) | 同 round 4 根因 | 同 round 4 修法 (activeMap 维护同步 selectedSourceTypes) |
 
-**剩人工 2-2.5h** + 审核 1-3 天 = **最早 2026-06-30 上线** (假设 6/29 提交, 6/30 通过)。
+**核心教训**: 微信小程序 wxml **嵌套三元表达式 + 数组方法调用 (.indexOf) 不一定触发重渲染**。**派生 state 提到 data 上** 是经典优化技巧。
 
-## 7. 关联
+## 3. 1.0.0 上传状态
+
+| 阶段 | 状态 |
+|---|---|
+| 微信开发者工具上传 1.0.0 | ✅ done (2026-06-28 上午) |
+| 公众平台 mp.weixin.qq.com 提交审核 | 🟡 **被备案提醒阻塞** |
+| 公众平台操作 | 解除微搭低代码第三方授权后开发管理恢复 |
+| 弹窗 | "**小程序备案提醒** - 你的小程序还未履行备案手续" |
+| 用户决策 | 暂停提交审核, **先做 2.0 架构可行性分析** |
+
+## 4. 2.0 架构可行性分析 (仅记录, 不执行)
+
+**完整路线图**: `~/.claude/projects/-Users-Mark-cc-project-unequal/memory/project_unequal_2_0_architecture_roadmap.md`
+
+### 5 候选方案
+
+| 方案 | 月成本 | 国内可达 | 状态 |
+|---|---|---|---|
+| **A. 阿里云 ECS 免费试用** ⭐推荐 | ¥0 试用 3 个月 | ✅ | 待 P12+ 触发 |
+| B. 阿里云函数计算 FC + OSS | ¥0-5/月 | ✅ | 待 P12+ 触发 |
+| C. 华为云 HECS + OBS | ¥8-12/月 | ✅ | 待 P12+ 触发 |
+| D. 腾讯云轻量 + 静态站 | ¥8-16/月 | ✅ | 仍是腾讯云 (用户顾虑) |
+| E. 本地 + Tailscale VPN | ¥30/月 | ⚠️ 朋友需装客户端 | 不推荐 |
+
+### §1 网络可达性硬 gate (2026-06-28 实测)
+
+| 服务 | HTTP | 延迟 | 评估 |
+|---|---|---|---|
+| 腾讯云 | 200 | 0.09ms | ✅ |
+| 阿里云 | 403 (需登录) | 0.04ms | ✅ |
+| 华为云 | 302 (需登录) | 0.07ms | ✅ |
+| 字节火山 | 200 | 0.32ms | ✅ |
+| 百度智能云 | 200 | 0.21ms | ✅ |
+| **Cloudflare** | 000 (timeout) | 5s+ | ❌ GFW 阻 |
+| **Vercel** | 000 (timeout) | 8s+ | ❌ GFW 阻 |
+
+→ **境外服务 (Cloudflare / Vercel / Render) 在国内不稳定, 朋友体验差**。
+
+### 用户决策 (2026-06-28)
+
+| 决策 | 选择 |
+|---|---|
+| 香港 vs 上海 | 倾向香港 (保留调国外 API 灵活性) |
+| 立即迁移 | **否** (P12+ 触发才实施) |
+| 微信备案 | **继续走** (打印承诺书 + 7-14 天工信部) |
+
+## 5. 触发 2.0 实施的条件 (P12+)
+
+任一发生启动 2.0:
+1. 微信小程序备案失败 / 反复被打回
+2. CloudBase 月费用持续 > ¥50 (1-2 个月观察)
+3. 真用户开始用, 体验到 CloudBase 性能瓶颈
+4. 产品验证期结束, 进入产品迭代期
+5. 用户明确说「现在就开始迁移」
+
+## 6. 当前阻塞 + 优先动作
+
+| 阻塞 | 耗时 | 谁做 |
+|---|---|---|
+| 微信小程序备案 (打印承诺书 + 7-14 天工信部) | 7-14 天 + 30 min 打印 | 用户 |
+| 2.0 架构迁移 | 半天-1 天 (4-8 h) | 待 P12+ 触发 |
+
+**当前优先**: 微信小程序备案 (用户下午打印承诺书, 上传)
+
+## 7. 关键文件位置
 
 - **PRD**: `.claude/prds/launch-ui-mirror-and-source-popup.prd.md`
-- **Plan**: `.claude/plans/launch-ui-mirror-and-source-popup.plan.md` (gitignored, 本地留底)
-- **state-p10**: `docs/superpowers/state-p10-miniprogram-real-deploy.md` — P10 5 路径 PASS 完整 evidence
-- **state-miniprogram-pre-launch**: `docs/superpowers/state-miniprogram-pre-launch.md` — 上线前 checklist
-- **launch README**: `docs/launch/README.md` — 4 步执行清单
-- **launch playbook**: `docs/launch/01-submission-materials.md` / `02-github-pages-setup.md` / `03-real-device-test.md` / `04-submit-review.md`
-- **memory** `feedback_pending_ui_tweaks.md` — 触发本次 P11 改动的源头
-- **memory** `project_github_push_complete.md` — 实际部署 URL 跟 state 文档脱节的教训
+- **Plan**: `.claude/plans/launch-ui-mirror-and-source-popup.plan.md` (gitignored, 本地)
+- **State 文档**: `docs/superpowers/state-p11-miniprogram-ui-tweaks.md` (本文档)
+- **真机截图**: `docs/launch/screenshots/01-05.png`
+- **Memory** (P11 关键):
+  - `~/.claude/projects/-Users-Mark-cc-project-unequal/memory/project_unequal_2_0_architecture_roadmap.md`
+  - `~/.claude/projects/-Users-Mark-cc-project-unequal/memory/resolved_miniprogram_ui_tweaks.md`
+  - `~/.claude/projects/-Users-Mark-cc-project-unequal/memory/wechat_miniprogram_webview_gotcha.md`
+  - `~/.claude/projects/-Users-Mark-cc-project-unequal/memory/feedback_china_network_constraints.md`
 
-## 8. P11+ 待办 (不阻塞上线)
+## 8. 微信小程序提审填写字段 (备案下来后)
 
-- 真育儿 corpus ingest (公开公众号/育儿网站 5-10K chunks) — "未涉及" 率从 ~80% → ~20%
-- NLI cold-start race (35.3% → 80%+ success rate) — 改 NliCosDownloader 用 direct COS URL 绕过 SDK getTempFileURL
-- chat 跨轮 session 复用 bug (state-p10 §2.2) — P10 真接发现, P11+ 排查
-- P11 本地推理 (OMLX Qwen3-4B) — LLM 20s → 5-10s
-- 监控 + 日志平台 (Sentry/LogRocket)
+### 必填项
+- **服务类目**: 生活服务 → 母婴
+- **标签**: 育儿, 母婴, 辅食, 早教, 问答
+- **简介 (A 套)**: "家长经验驱动的育儿问答助手, 每条回答标注引用来源, 拒绝 AI 幻觉" (28 字)
+- **页面截图**: 5 张 (在 docs/launch/screenshots/)
+- **用户协议 URL**: https://marktang1208.github.io/unequal/
+- **隐私政策 URL**: https://marktang1208.github.io/unequal/privacy.html
+
+### 备注 (写给审核员)
+```
+本小程序为家长提供育儿问答服务, 基于用户上传/抓取的个人育儿知识库
+进行检索增强生成, 每条回答附带原文引用卡片。
+
+核心功能:
+1. 一对一问答 (chat 页, 含引用卡片)
+2. 历史问答记录
+3. 引用原文详情查看
+4. 用户设置 (user_id 显示, 信息源筛选, 协议链接)
+
+技术: 微信云开发 (CloudBase) + 微信小程序, 不涉及支付/位置/通讯录/广告,
+不收集个人敏感信息。
+
+个人主体可用类目: 生活服务 - 母婴。
+
+UI 设计: chat 页采用差异化左右镜像布局 (user 消息靠左 / assistant 消息靠右),
+便于家长快速识别自己提的问题与 AI 回答。
+```
+
+### 测试账号
+填「无」(个人主体无需登录)
+
+## 9. 完整 commit 链 (今日累计)
+
+```
+master 分支 (14 commit):
+bebc8ae2 docs(launch): 重截 05-source-popup-open.png
+9754d31d fix(miniprogram): popup checkbox 选中态 UI 不更新 (activeMap)
+36db5a18 fix(miniprogram): wx.showToast 强制可见
+c8b144ce fix(miniprogram): popup 加 debug button
+3b352ed1 fix(miniprogram): popup checkbox 点击无反应排查
+e066d99f fix(miniprogram): webview 白屏修复
+5362a47e fix(miniprogram): settings 协议改用 clipboard
+dae3ad53 fix(miniprogram): + 号挪到右上
+5f35fe6e docs(launch): 更新 P11 milestone — T8 完成
+a6ba87e5 feat(miniprogram): chat 页气泡镜像 + popup 弹层
+caf0520  fix(launch): 替换 docs 协议 URL 占位符
+1767d04  docs(launch): PRD
+3c870d6  docs(state): P11 完整收尾
+10405e4  docs(launch): 更新 P11 milestone
+
+gh-pages 分支 (1 commit):
+1142a10 fix(legal): gh-pages 同步 master 邮箱替换
+```
+
+**测试**: 49/49 单测 PASS + 0 typecheck 错 + gh-pages 含 mark_tang@163.com
+
+## 10. 已知限制 (P12+ 改进)
+
+### 不阻塞上线
+- 1966 chunks 实际只有 ~3 条真育儿 → "未涉及" 率 ~80%
+- NLI cold-start race (35.3% success rate) → SDK 临时 URL 问题
+- chat 跨轮 session 复用 bug (P10 真接发现, 不阻塞单 query)
+- 微信 web-view 跳外链 (用 clipboard 退路)
+
+### P12+ 改进
+- 加真育儿 corpus (公开公众号/网站 ingest 5-10K chunks)
+- 修 NLI cold-start race
+- 修 chat 跨轮 session 复用
+- 配 web-view 合法域名 (1.0.1 优化)
+- 监控 + 日志平台
 - chat UX streaming 整合
-- settings 页 source 过滤迁移 (跟 chat popup 合并) — 1.1.0 candidate
+- P13: 本地推理 (OMLX Qwen3-4B)
+- 2.0 架构迁移 (触发条件: 见 §5)
 
-## 9. 回滚路径
+## 11. 关联
 
-| 阶段 | 命令 | 影响 |
-|---|---|---|
-| 前端回滚 (P11 全) | `git revert a6ba87e caf0520 1767d04` + 微信开发者工具重编译 | 回到 P10 状态 (user 靠右, chip 条, 占位符 URL) |
-| 前端回滚 (仅 chat 改动) | `git revert a6ba87e` + 微信开发者工具重编译 | 回到 P10 chat 布局 + chip 条 (docs URL 替换保留) |
-| docs 回滚 | `git revert caf0520 1767d04` | 04 + legal-site README 恢复占位符 (注意: 这会再次阻塞提审) |
+- **state-p10**: `docs/superpowers/state-p10-miniprogram-real-deploy.md` (P10 5 路径 PASS)
+- **state-miniprogram-pre-launch**: `docs/superpowers/state-miniprogram-pre-launch.md` (上线前 checklist)
+- **launch README**: `docs/launch/README.md` (4 步执行清单)
+- **PRD**: `.claude/prds/launch-ui-mirror-and-source-popup.prd.md`
+
+## 12. 回滚路径
+
+| 阶段 | 命令 |
+|---|---|
+| 前端回滚 (P11 全) | `git revert 10405e4..bebc8ae2` + 微信开发者工具重编译 |
+| 后端不动 | P11 全是前端改动 |
+| 取消 CloudBase | 启动 2.0 迁移流程 (见 §5 触发条件) |
+| 微信小程序下架 | 微信公众平台 → 设置 → 暂停服务 |
+
+---
+
+*文档状态: 今日收工收口. 下次会话直接从此处接上.*
