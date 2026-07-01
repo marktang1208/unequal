@@ -20,13 +20,14 @@
 import { fetchUrl } from "./sources/webpage.js";
 import { fetchXiaohongshuNote } from "./sources/xiaohongshu.js";
 import { fetchWechatMpArticle } from "./sources/wechat-mp.js";
+import { fetchPdf } from "./sources/pdf.js";
 import { chunkText } from "@unequal/shared/chunking";
 import { createEmbedder, type Embedder } from "@unequal/local-llm";
 import { ingestCrawlerMarkdown, createCrawlerStore } from "./ingest-sqlite.js";
 import { SeedsLoader, type SeedRecord } from "./seeds-loader.js";
 import type { CrawledDocument } from "./types.js";
 
-export type SourceType = "xhs" | "wechat-mp" | "webpage" | "all";
+export type SourceType = "xhs" | "wechat-mp" | "webpage" | "pdf" | "all";
 
 export interface TriggerOptions {
   /** 单一来源或 "all" */
@@ -69,6 +70,8 @@ async function fetchOne(url: string, sourceType: SourceType, fetchImpl?: typeof 
     return await fetchXiaohongshuNote(url, opts);
   } else if (sourceType === "wechat-mp") {
     return await fetchWechatMpArticle(url, opts);
+  } else if (sourceType === "pdf") {
+    return await fetchPdf(url, opts);
   }
   return await fetchUrl(url, opts);
 }

@@ -1,0 +1,50 @@
+{
+  "source": "pdf",
+  "version": 1,
+  "updated_at": "2026-07-01T10:34:29.265Z",
+  "urls": [
+    {
+      "url": "https://iris.who.int/bitstream/handle/10665/44117/9789241597494_eng.pdf",
+      "trust_level": 3,
+      "active": true,
+      "last_crawled_at": null,
+      "last_status": null
+    },
+    {
+      "url": "https://apps.who.int/gb/ebwha/pdf_files/wha54/ea54id4.pdf",
+      "trust_level": 3,
+      "active": true,
+      "last_crawled_at": null,
+      "last_status": null
+    },
+    {
+      "url": "https://www.unicef.org/media/108381/file/Facilitator%20Guide.pdf",
+      "trust_level": 3,
+      "active": true,
+      "last_crawled_at": null,
+      "last_status": null
+    },
+    {
+      "url": "https://apps.who.int/gb/ebwha/pdf_files/EB117/B117_29-en.pdf",
+      "trust_level": 2,
+      "active": true,
+      "last_crawled_at": null,
+      "last_status": null
+    },
+    {
+      "url": "file:///Users/Mark/Downloads/pdf",
+      "trust_level": 1,
+      "active": false,
+      "last_crawled_at": null,
+      "last_status": null,
+      "_comment": "TODO: 用户补具体本地 PDF 文件路径（不是目录）。fetchPdf 不支持目录扫描，需具体 .pdf 文件。"
+    },
+    {
+      "url": "file:///Users/Mark/cc_project/unequal/apps/crawler/test/fixtures/01-valid.pdf",
+      "trust_level": 1,
+      "active": true,
+      "last_crawled_at": null,
+      "last_status": null
+    }
+  ]
+}

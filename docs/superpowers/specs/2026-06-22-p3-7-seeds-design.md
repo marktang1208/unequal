@@ -119,17 +119,48 @@ P3-7 v1 简化把"种子 URL 列表"留作"未来 spec 补"。本 spec 补完：
 ```
 
 **字段说明**：
-- `source`: `"xhs" | "wechat-mp" | "webpage"`（4 个文件各一份，不存 `all`）
+- `source`: `"xhs" | "wechat-mp" | "webpage" | "pdf"`（4 个文件各一份，不存 `all`；**2026-06-29 Track B 加 pdf**）
 - `version`: 1（schema 升级时 +1）
 - `updated_at`: ISO 8601，最后修改时间
 - `urls[]`: URL 列表
-  - `url`: 完整 URL
-  - `trust_level`: 0-3（admin 设；source 默认值：xhs=0, wechat-mp=2, webpage=1）
+  - `url`: 完整 URL（**pdf 可用 `file://` 协议标识本地文件路径**）
+  - `trust_level`: 0-3（admin 设；source 默认值：xhs=0, wechat-mp=2, webpage=1, **pdf=1**）
   - `active`: true/false（false = 跳过）
   - `last_crawled_at`: ISO 8601 | null（null = 未拉过，**优先拉**）
   - `last_status`: `"done" | "failed" | "pending"`（最近状态）
+  - **xhs 扩展字段**：`xhs_user_id` + `xhs_red_id`（仅 metadata，不参与爬取逻辑）
+  - **可忽略字段**：`_note` / `_comment`（JSON schema 不强制严格，crawler 跳过未知字段）
 
-**`all.json` 不存文件**——crawler 触发 `--source=all` 时 = 读 3 份 JSON 合并。
+**`all.json` 不存文件**——crawler 触发 `--source=all` 时 = 读 4 份 JSON 合并。
+
+### 3.2.1 PDF source 双模式（2026-06-29 Track B 新增）
+
+PDF 解析（`apps/crawler/src/sources/pdf.ts`）支持双模式入口：
+
+1. **URL 模式**：`url = "https://example.com/feed.pdf"` → fetch 拉 binary → mineru/pdf-parse
+2. **本地路径模式**：`url = "file:///Users/Mark/foo.pdf"` 自动识别 + 走 `fs.readFile`，无需 fetch
+3. **显式 localPath**：调用 `fetchPdf(url, { localPath })` 直接传，url 仅作 metadata
+
+**解析策略**：与 admin `apps/admin/server/local-parser.ts:85-176` 同模式：
+- 首选 mineru 3.2.3 CLI（spawn 子进程，`MINERU_MODEL_SOURCE=modelscope` 国内 GFW 友好）
+- 失败 fallback pdf-parse@1.1.1（老 pdfjs 解析率低但能跑）
+- 两个都失败抛 Error（含 mineru stderr）
+
+**v1 简化**：仅单 URL 单 PDF 进 `local_ingest`，不进 `crawler_seeds` 重复（重复会导致主键冲突）。
+
+### 3.2.2 xhs source 博主主页（2026-06-29 Track B 新增）
+
+xhs 抓取可走博主主页（`user/profile/<user_id>?xsec_token=...&xsec_source=...`），**关键约束**：
+- URL 必须带 `?xsec_token=...&xsec_source=...`（xhs 内部 signed token），否则 captcha 拦截
+- HTTP 200 + 完整 SSR JSON；`window.__INITIAL_STATE__` 内 `state.profile.noteData` 解出博主主页笔记列表
+- 每条 note 含 `id` / `title` / `user.nickname` / `likes` / `cover.url`
+- **desc 字段在 profile 列表为空**，需二次进单 explore URL 拿正文（**P1 之后**）
+
+v1 xhs 路径：单 explore URL 走 `fetchXiaohongshuNote`（cheerio + `#detail-desc p` 抽取）。
+
+v2 路径（计划中）：`fetchXhsProfileNotes` 抓主页 → 解 SSR → 返 N 条 CrawledDocument（**依赖 Task 3b**，本 Track B 暂未实现）。
+
+**已知限制**：博主主页仅博主信息（`userInfo.nickname` / `redId` / `fans`）+ 笔记 id 列表可解；正文（`desc`）需 explore URL 二次抓取。
 
 ### 3.3 SQLite schema
 

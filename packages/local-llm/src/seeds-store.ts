@@ -27,7 +27,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { readJsonAtomic, writeJsonAtomic, withFileLock } from "@unequal/local-llm";
 
-export type SeedSource = "xhs" | "wechat-mp" | "webpage";
+export type SeedSource = "xhs" | "wechat-mp" | "webpage" | "pdf";
 export type SeedLastStatus = "done" | "failed" | "pending" | null;
 
 export interface SeedUrl {
@@ -73,7 +73,7 @@ CREATE INDEX IF NOT EXISTS idx_seeds_source_active ON crawler_seeds(source, acti
 CREATE INDEX IF NOT EXISTS idx_seeds_last_crawled ON crawler_seeds(last_crawled_at);
 `;
 
-const VALID_SOURCES: SeedSource[] = ["xhs", "wechat-mp", "webpage"];
+const VALID_SOURCES: SeedSource[] = ["xhs", "wechat-mp", "webpage", "pdf"];
 
 function isSeedSource(s: string): s is SeedSource {
   return (VALID_SOURCES as string[]).includes(s);

@@ -27,6 +27,7 @@
 import { fetchUrl } from "./sources/webpage.js";
 import { fetchXiaohongshuNote } from "./sources/xiaohongshu.js";
 import { fetchWechatMpArticle } from "./sources/wechat-mp.js";
+import { fetchPdf } from "./sources/pdf.js";
 import { submitToIngest } from "./ingest-sqlite.js";
 import { runCrawler } from "./trigger.js";
 import type { CrawledDocument } from "./types.js";
@@ -63,11 +64,11 @@ function parseArgs(argv: string[]): Record<string, string | boolean> {
 function printUsage(): void {
   console.error("Usage:");
   console.error("  P3-7 单条暂存：");
-  console.error("    --url <URL> --source-type <xhs|wechat-mp|webpage> [--trust 0-3]");
+  console.error("    --url <URL> --source-type <webpage|xiaohongshu|wechat-mp|pdf> [--trust 0-3]");
   console.error("  P3-7 批量触发：");
-  console.error("    --source <xhs|wechat-mp|webpage|all> [--limit N] [--since TS] [--until TS] [--full-scan]");
+  console.error("    --source <webpage|xiaohongshu|wechat-mp|pdf|all> [--limit N] [--since TS] [--until TS] [--full-scan]");
   console.error("  Legacy 直推云：");
-  console.error("    --url <URL> --source-type <xhs|wechat-mp|webpage> --direct-cloud");
+  console.error("    --url <URL> --source-type <webpage|xiaohongshu|wechat-mp|pdf> --direct-cloud");
   console.error("    [--token <T> | --ingest-proxy-secret <S>] [--user-id <U>]");
   console.error("    [--ingest-url <URL>]");
 }
@@ -91,8 +92,8 @@ async function main() {
 
   if (url && !directCloud) {
     // 模式 2：单条暂存
-    if (!["webpage", "xiaohongshu", "wechat-mp"].includes(sourceType)) {
-      console.error(`[crawler] invalid --source-type: ${sourceType} (must be webpage|xiaohongshu|wechat-mp)`);
+    if (!["webpage", "xiaohongshu", "wechat-mp", "pdf"].includes(sourceType)) {
+      console.error(`[crawler] invalid --source-type: ${sourceType} (must be webpage|xiaohongshu|wechat-mp|pdf)`);
       process.exit(1);
     }
     console.log(`[crawler] P3-7 single-url store: ${url} (source-type: ${sourceType}, trust=${trustLevel})`);
@@ -132,8 +133,8 @@ async function main() {
     process.exit(1);
   }
 
-  if (!["webpage", "xiaohongshu", "wechat-mp"].includes(sourceType)) {
-    console.error(`[crawler] invalid --source-type: ${sourceType} (must be webpage|xiaohongshu|wechat-mp)`);
+  if (!["webpage", "xiaohongshu", "wechat-mp", "pdf"].includes(sourceType)) {
+    console.error(`[crawler] invalid --source-type: ${sourceType} (must be webpage|xiaohongshu|wechat-mp|pdf)`);
     process.exit(1);
   }
 
@@ -143,6 +144,8 @@ async function main() {
     doc = await fetchXiaohongshuNote(url);
   } else if (sourceType === "wechat-mp") {
     doc = await fetchWechatMpArticle(url);
+  } else if (sourceType === "pdf") {
+    doc = await fetchPdf(url);
   } else {
     doc = await fetchUrl(url);
   }

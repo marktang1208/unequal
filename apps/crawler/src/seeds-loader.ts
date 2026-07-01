@@ -16,7 +16,7 @@ import Database from "better-sqlite3";
 import { dirname } from "node:path";
 import { mkdirSync } from "node:fs";
 
-export type SeedSource = "xhs" | "wechat-mp" | "webpage";
+export type SeedSource = "xhs" | "wechat-mp" | "webpage" | "pdf";
 export type SeedLastStatus = "done" | "failed" | "pending" | null;
 
 export interface SeedRecord {
@@ -80,7 +80,7 @@ export class SeedsLoader {
   loadAll(opts: LoadOptions = {}): SeedRecord[] {
     return this.loadInternal(
       opts.includeInactive ? "" : " AND active = 1",
-      ["xhs", "wechat-mp", "webpage"],
+      ["xhs", "wechat-mp", "webpage", "pdf"],
       opts.limit,
     );
   }

@@ -37,7 +37,7 @@ export interface CrawlerChunk {
 export interface CrawlerIngestInput {
   url: string;
   title?: string;
-  sourceType: "xhs" | "wechat-mp" | "webpage";
+  sourceType: "xhs" | "wechat-mp" | "webpage" | "pdf";
   markdown: string;                            // crawler parse 出的纯文本
   chunks: CrawlerChunk[];                     // crawler 端 chunk + embed
   trustLevel: 0 | 1 | 2 | 3;
