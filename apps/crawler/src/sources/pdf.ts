@@ -100,7 +100,13 @@ function resolveLocalPath(url: string, optLocalPath?: string): string | undefine
   if (optLocalPath) return optLocalPath;
   if (url.startsWith("file://")) {
     // file:///Users/Mark/foo.pdf → /Users/Mark/foo.pdf
-    return url.slice("file://".length);
+    // 中文/特殊字符 URL encode（如 `file:///Users/Mark/Downloads/pdf/2%E3%80%81...pdf`）→ fs.readFile 需要原始字节
+    try {
+      return decodeURIComponent(url.slice("file://".length));
+    } catch {
+      // URL decode fail，fallback 直接 slice
+      return url.slice("file://".length);
+    }
   }
   return undefined;
 }
@@ -235,8 +241,12 @@ async function parsePdfMineru(
 async function parsePdfFallback(buf: Buffer, filename: string): Promise<string> {
   const result = await pdfParse(buf);
   const text = result.text ?? "";
-  if (!text.trim()) {
-    throw new Error(`pdf-parse returned empty text for ${filename}`);
+  // 防御性 trim 后非空校验（避免扫描版 PDF 仅含换行符假阳性）
+  const trimmed = text.trim();
+  if (!trimmed) {
+    throw new Error(
+      `pdf-parse returned empty text for ${filename} (PDF 可能是扫描版/图片，老 pdfjs 无法 OCR；mineru 可解析但需启动 modelscope 模型下载)`,
+    );
   }
   return text;
 }

@@ -103,4 +103,36 @@ describe("fetchPdf", () => {
     });
     expect(r.title).toBe("feeding-guide");
   });
+
+  it("中文 URL encoded file:// → decode 后 fs.readFile 成功", async () => {
+    // 模拟 `file:///Users/Mark/Downloads/pdf/2%E3%80%81%E5%B4%94%E7%8E%89%E6%B6%9B...pdf`
+    // encodeURIComponent 对中文字符 → `%E5%B4%94...`
+    // pdf.ts resolveLocalPath 应 decode URI 后 fs.readFile 找原文件
+    const originalPath = "/Users/Mark/Downloads/pdf/2、崔玉涛自然养育法.pdf";
+    if (!existsSync(originalPath)) {
+      console.warn("[skip] 本地 PDF 不存在，跳过此 case");
+      return;
+    }
+    const encodedUrl =
+      "file://" +
+      originalPath.split("/").map((seg) => encodeURIComponent(seg)).join("/");
+    // 验证 URL 真的被编码
+    expect(encodedUrl).toContain("%E5%B4%94");
+
+    const r = await fetchPdf(encodedUrl, { preferMineru: false });
+    expect(r.title).toBe("2、崔玉涛自然养育法");
+    expect(r.totalChars).toBeGreaterThan(1000);
+  });
+
+  it("扫描版 PDF (font=false) → pdf-parse 返空文本 → throw 友好提示", async () => {
+    // 真 82MB 崔玉涛育儿百科扫描版测试
+    const scanPdf = "/Users/Mark/Downloads/pdf/3、崔玉涛育儿百科.pdf";
+    if (!existsSync(scanPdf)) {
+      console.warn("[skip] 本地扫描版 PDF 不存在，跳过此 case");
+      return;
+    }
+    await expect(
+      fetchPdf("file://" + scanPdf, { preferMineru: false })
+    ).rejects.toThrow(/扫描版|empty/);
+  });
 });

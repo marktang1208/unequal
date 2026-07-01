@@ -1,7 +1,8 @@
 {
   "source": "pdf",
   "version": 1,
-  "updated_at": "2026-07-01T10:34:29.265Z",
+  "updated_at": "2026-07-01T22:30:00Z",
+  "_note": "PDF 双模式 URL: URL 模式走公开 PDF；本地路径模式（file://）走用户私有 corpus。中文文件名需 URL encode（pdf.ts 自动 decodeURIComponent）。",
   "urls": [
     {
       "url": "https://iris.who.int/bitstream/handle/10665/44117/9789241597494_eng.pdf",
@@ -32,19 +33,60 @@
       "last_status": null
     },
     {
-      "url": "file:///Users/Mark/Downloads/pdf",
+      "url": "file:///Users/Mark/Downloads/pdf/2%E3%80%81%E5%B4%94%E7%8E%89%E6%B6%9B%E8%87%AA%E7%84%B6%E5%85%BB%E8%82%B2%E6%B3%95.pdf",
+      "trust_level": 1,
+      "active": true,
+      "last_crawled_at": null,
+      "last_status": null,
+      "local_filename": "2、崔玉涛自然养育法.pdf",
+      "size_bytes": 4980574
+    },
+    {
+      "url": "file:///Users/Mark/Downloads/pdf/3%E3%80%81%E5%B4%94%E7%8E%89%E6%B6%9B%E8%82%B2%E5%84%BF%E7%99%BE%E7%A7%91.pdf",
       "trust_level": 1,
       "active": false,
       "last_crawled_at": null,
       "last_status": null,
-      "_comment": "TODO: 用户补具体本地 PDF 文件路径（不是目录）。fetchPdf 不支持目录扫描，需具体 .pdf 文件。"
+      "local_filename": "3、崔玉涛育儿百科.pdf",
+      "size_bytes": 86684129,
+      "_note": "82MB 610 页纯图片扫描版 PDF（font=false）；pdf-parse 老 pdfjs 解不了 OCR；mineru 处理需 30+ 分钟且不一定完成。Track B 暂跳过，等 Track C admin UI 加 OCR 选项后再启。"
+    },
+    {
+      "url": "file:///Users/Mark/Downloads/pdf/4%E3%80%81%E7%9C%9F%E5%B8%8C%E6%9C%9B%E6%88%91%E7%88%B6%E6%AF%8D%E8%AF%BB%E8%BF%87%E8%BF%99%E6%9C%AC%E4%B9%A6.pdf",
+      "trust_level": 1,
+      "active": true,
+      "last_crawled_at": null,
+      "last_status": null,
+      "local_filename": "4、真希望我父母读过这本书.pdf",
+      "size_bytes": 2241201
+    },
+    {
+      "url": "file:///Users/Mark/Downloads/pdf/%E4%B8%AD%E5%9B%BD%E5%A9%B4%E5%B9%BC%E5%84%BF%E6%8E%92%E5%B0%BF%E6%8E%92%E4%BE%BF%E8%AE%AD%E7%BB%83%E5%92%8C%E5%B0%BF%E4%B8%8D%E6%B9%BF%E5%90%88%E7%90%86%E5%BA%94%E7%94%A8%E6%8C%87%E5%8D%97(2025%E7%89%88).pdf",
+      "trust_level": 1,
+      "active": true,
+      "last_crawled_at": null,
+      "last_status": null,
+      "local_filename": "中国婴幼儿排尿排便训练和尿不湿合理应用指南(2025版).pdf",
+      "size_bytes": 2429279
+    },
+    {
+      "url": "file:///Users/Mark/Downloads/pdf/%E7%BE%8E%E5%9B%BD%E5%84%BF%E7%A7%91%E5%AD%A6%E4%BC%9A%E8%82%B2%E5%84%BF%E7%99%BE%E7%A7%91%20-%20%E6%96%AF%E8%92%82%E6%96%87%C2%B7%E8%B0%A2%E5%B0%94%E5%BC%97%20%26%20ePUBw.COM.pdf",
+      "trust_level": 1,
+      "active": true,
+      "last_crawled_at": null,
+      "last_status": null,
+      "local_filename": "美国儿科学会育儿百科 - 斯蒂文·谢尔弗 & ePUBw.COM.pdf",
+      "size_bytes": 28537766
     },
     {
       "url": "file:///Users/Mark/cc_project/unequal/apps/crawler/test/fixtures/01-valid.pdf",
       "trust_level": 1,
       "active": true,
       "last_crawled_at": null,
-      "last_status": null
+      "last_status": null,
+      "local_filename": "01-valid.pdf",
+      "size_bytes": 1016315,
+      "_note": "test fixture (Trace-based JIT paper, en) - for development only"
     }
   ]
 }
