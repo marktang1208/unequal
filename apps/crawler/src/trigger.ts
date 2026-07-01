@@ -18,7 +18,7 @@
  */
 
 import { fetchUrl } from "./sources/webpage.js";
-import { fetchXiaohongshuNote } from "./sources/xiaohongshu.js";
+import { fetchXiaohongshuNote, fetchXhsProfileNotes, isXhsProfileUrl } from "./sources/xiaohongshu.js";
 import { fetchWechatMpArticle } from "./sources/wechat-mp.js";
 import { fetchPdf } from "./sources/pdf.js";
 import { chunkText } from "@unequal/shared/chunking";
@@ -64,8 +64,19 @@ export interface CrawlerResult {
  * 单 URL 抓取 + 解析（不调 /ingest；不写 SQLite；返回 CrawledDocument）。
  * 复用现有 sources/* fetch 实现。
  */
-async function fetchOne(url: string, sourceType: SourceType, fetchImpl?: typeof fetch): Promise<CrawledDocument> {
+/**
+ * 单 URL 抓取 + 解析（不调 /ingest；不写 SQLite；返 CrawledDocument）。
+ * 复用现有 sources/* fetch 实现。
+ *
+ * xhs 博主主页（user/profile/）返 CrawledDocument[]（多 note）；
+ * 其他 source 返 CrawledDocument（单文档）。主循环需根据 isXhsProfileUrl 区分。
+ */
+async function fetchOne(url: string, sourceType: SourceType, fetchImpl?: typeof fetch): Promise<CrawledDocument | CrawledDocument[]> {
   const opts = fetchImpl ? { fetchImpl } : {};
+  // xhs 博主主页 v2: 返多 note
+  if (sourceType === "xhs" && isXhsProfileUrl(url)) {
+    return await fetchXhsProfileNotes(url, opts);
+  }
   if (sourceType === "xhs") {
     return await fetchXiaohongshuNote(url, opts);
   } else if (sourceType === "wechat-mp") {
@@ -197,24 +208,45 @@ export async function runCrawler(opts: TriggerOptions): Promise<CrawlerResult> {
   const result: CrawlerResult = { total: 0, succeeded: 0, failed: 0, file_ids: [], errors: [] };
 
   for (const { url, sourceType: src, trustLevel } of seedUrls) {
-    result.total++;
+    result.total++;  // 整 URL 算 1 个 total（不论内部 N doc）
     try {
-      const doc = await fetchOne(url, src, opts.fetchImpl);
-      const r = await processOne(store, embedder, doc, trustLevel, src);
-      if ("file_id" in r) {
-        result.succeeded++;
-        result.file_ids.push(r.file_id);
+      const docsOrDoc = await fetchOne(url, src, opts.fetchImpl);
+      const docs = Array.isArray(docsOrDoc) ? docsOrDoc : [docsOrDoc];
+
+      // 单 URL → N doc (xhs profile) / 1 doc (其他)
+      let allSucceeded = true;
+      let firstError: string | undefined;
+      const producedFileIds: string[] = [];
+
+      for (const doc of docs) {
+        const r = await processOne(store, embedder, doc, trustLevel, src);
+        if ("file_id" in r) {
+          result.succeeded++;
+          result.file_ids.push(r.file_id);
+          producedFileIds.push(r.file_id);
+          console.log(`[crawler-trigger] OK url=${doc.url} (from ${url}) file_id=${r.file_id} trust=${trustLevel}`);
+        } else {
+          result.failed++;
+          result.errors.push({ url: doc.url, error: r.error });
+          if (!firstError) firstError = r.error;
+          allSucceeded = false;
+          console.error(`[crawler-trigger] FAIL url=${doc.url} error=${r.error}`);
+        }
+      }
+
+      // seed URL 整体状态：多 doc 全成功 → done；任一失败 → failed（部分失败也算失败，避免下次重跑整 URL）
+      if (allSucceeded) {
         seedsLoader.markCrawled(url, "done");
-        console.log(`[crawler-trigger] OK url=${url} file_id=${r.file_id} trust=${trustLevel}`);
+        console.log(
+          `[crawler-trigger] seed URL done: ${url} → ${producedFileIds.length} file_ids`,
+        );
       } else {
-        result.failed++;
-        result.errors.push({ url, error: r.error });
-        seedsLoader.markCrawled(url, "failed", r.error);
-        console.error(`[crawler-trigger] FAIL url=${url} error=${r.error}`);
+        seedsLoader.markCrawled(url, "failed", firstError);
       }
     } catch (err) {
-      result.failed++;
+      // 单 URL 整体抓取失败（captcha / 网络错 / SSR parse 失败等）
       const msg = err instanceof Error ? err.message : String(err);
+      result.failed++;
       result.errors.push({ url, error: msg });
       seedsLoader.markCrawled(url, "failed", msg);
       console.error(`[crawler-trigger] FAIL url=${url} error=${msg}`);

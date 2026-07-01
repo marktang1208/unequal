@@ -7,12 +7,11 @@
     {
       "url": "https://www.xiaohongshu.com/user/profile/5c010c88000000000801ae4f?xsec_token=AB6QF4raPMwn3H1esA3tf4xPSLai1SNIw8aoRFwMpvDpU%3D&xsec_source=pc_search",
       "trust_level": 1,
-      "active": false,
+      "active": true,
       "last_crawled_at": null,
       "last_status": null,
       "xhs_user_id": "5c010c88000000000801ae4f",
-      "xhs_red_id": "Dingxiangmama",
-      "_comment": "TODO: 博主主页多 note 抓取 (fetchXhsProfileNotes) 还没写（Task 3b）；当前 v1 fetchXiaohongshuNote 走 profile HTML 拿不到 paragraphs。"
+      "xhs_red_id": "Dingxiangmama"
     },
     {
       "url": "https://www.xiaohongshu.com/user/profile/554727273",
